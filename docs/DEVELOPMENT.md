@@ -60,6 +60,13 @@ users get text, color, and shape cues together. Screens that can touch the
 status bar, navigation bar, or camera cutout should apply
 `applySystemInsetsPadding(...)` to their top-level content container.
 
+## Icon Assets
+
+The launcher and monitoring notification use Google's Material Symbols
+`lock_clock` icon as an Android vector drawable. Material Symbols are licensed
+under Apache License 2.0 and can be found in the Google Material icons
+repository: <https://github.com/google/material-design-icons>.
+
 ## Permission Notes
 
 ### Usage Access

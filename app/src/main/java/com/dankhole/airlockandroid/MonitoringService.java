@@ -604,7 +604,7 @@ public class MonitoringService extends Service {
         return builder
                 .setContentTitle("AirLock is monitoring")
                 .setContentText("Selected app limits are active.")
-                .setSmallIcon(R.drawable.ic_stat_lock)
+                .setSmallIcon(R.drawable.ic_stat_lock_clock)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .build();
