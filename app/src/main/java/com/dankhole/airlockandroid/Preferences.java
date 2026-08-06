@@ -3,6 +3,9 @@ package com.dankhole.airlockandroid;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
 import java.util.Collections;
@@ -16,11 +19,14 @@ final class Preferences {
     static final String KEY_ENABLED = "enabled";
     static final String KEY_SELECTED_PACKAGES = "selected_packages";
     static final String KEY_DAILY_LIMIT_MINUTES = "daily_limit_minutes";
-    static final String KEY_EXTRA_TIME_MINUTES = "extra_time_minutes";
     static final String KEY_ACCOUNTABILITY_NUMBER = "accountability_number";
+    static final String KEY_MASTER_PIN_HASH = "master_pin_hash";
+    static final String KEY_MASTER_PIN_SALT = "master_pin_salt";
 
-    private static final String CODE_PREFIX = "code_";
-    private static final String CODE_EXPIRY_PREFIX = "code_expiry_";
+    private static final String APPROVAL_CODE_PREFIX = "approval_code_";
+    private static final String APPROVAL_CODE_EXPIRY_PREFIX = "approval_code_expiry_";
+    private static final String APPROVAL_CODE_MINUTES_PREFIX = "approval_code_minutes_";
+    private static final String APP_LIMIT_PREFIX = "limit_minutes_";
     private static final String UNLOCK_PREFIX = "unlock_until_";
     private static final String USAGE_PREFIX = "usage_";
     private static final long CODE_TTL_MS = 10 * 60 * 1000L;
@@ -48,8 +54,76 @@ final class Preferences {
         return Math.max(1, prefs(context).getInt(KEY_DAILY_LIMIT_MINUTES, 15));
     }
 
-    static int extraTimeMinutes(Context context) {
-        return Math.max(1, prefs(context).getInt(KEY_EXTRA_TIME_MINUTES, 5));
+    static int dailyLimitMinutes(Context context, String packageName) {
+        return Math.max(1, prefs(context).getInt(limitKey(packageName), dailyLimitMinutes(context)));
+    }
+
+    static boolean hasLimitedApps(Context context) {
+        return !selectedPackages(context).isEmpty();
+    }
+
+    static void saveLimitForPackages(Context context, Set<String> packageNames, int minutes) {
+        if (packageNames.isEmpty()) {
+            return;
+        }
+        Set<String> limitedPackages = selectedPackages(context);
+        limitedPackages.addAll(packageNames);
+
+        SharedPreferences.Editor editor = prefs(context).edit()
+                .putStringSet(KEY_SELECTED_PACKAGES, new HashSet<>(limitedPackages));
+        int safeMinutes = Math.max(1, minutes);
+        for (String packageName : packageNames) {
+            editor.putInt(limitKey(packageName), safeMinutes);
+        }
+        editor.apply();
+    }
+
+    static void removeLimitsForPackages(Context context, Set<String> packageNames) {
+        if (packageNames.isEmpty()) {
+            return;
+        }
+        Set<String> limitedPackages = selectedPackages(context);
+        limitedPackages.removeAll(packageNames);
+
+        SharedPreferences.Editor editor = prefs(context).edit()
+                .putStringSet(KEY_SELECTED_PACKAGES, new HashSet<>(limitedPackages));
+        for (String packageName : packageNames) {
+            editor.remove(limitKey(packageName));
+        }
+        editor.apply();
+    }
+
+    static boolean hasAccountabilityNumber(Context context) {
+        return !prefs(context)
+                .getString(KEY_ACCOUNTABILITY_NUMBER, "")
+                .trim()
+                .isEmpty();
+    }
+
+    static boolean hasMasterPin(Context context) {
+        SharedPreferences preferences = prefs(context);
+        return preferences.contains(KEY_MASTER_PIN_HASH)
+                && preferences.contains(KEY_MASTER_PIN_SALT);
+    }
+
+    static void setMasterPin(Context context, String pin) {
+        String salt = randomHex(16);
+        prefs(context).edit()
+                .putString(KEY_MASTER_PIN_SALT, salt)
+                .putString(KEY_MASTER_PIN_HASH, hashPin(salt, pin))
+                .apply();
+    }
+
+    static boolean verifyMasterPin(Context context, String pin) {
+        SharedPreferences preferences = prefs(context);
+        String salt = preferences.getString(KEY_MASTER_PIN_SALT, "");
+        String expected = preferences.getString(KEY_MASTER_PIN_HASH, "");
+        if (salt.isEmpty() || expected.isEmpty() || pin == null) {
+            return false;
+        }
+        byte[] expectedBytes = expected.getBytes(StandardCharsets.UTF_8);
+        byte[] actualBytes = hashPin(salt, pin).getBytes(StandardCharsets.UTF_8);
+        return MessageDigest.isEqual(expectedBytes, actualBytes);
     }
 
     static long getUsageTodayMs(Context context, String packageName) {
@@ -66,8 +140,20 @@ final class Preferences {
         preferences.edit().putLong(key, next).apply();
     }
 
+    static void reconcileUsageTodayMs(Context context, String packageName, long observedUsageMs) {
+        if (observedUsageMs <= 0L) {
+            return;
+        }
+        SharedPreferences preferences = prefs(context);
+        String key = usageKey(packageName);
+        long current = preferences.getLong(key, 0L);
+        if (observedUsageMs > current) {
+            preferences.edit().putLong(key, observedUsageMs).apply();
+        }
+    }
+
     static boolean isOverLimit(Context context, String packageName) {
-        long limitMs = dailyLimitMinutes(context) * 60_000L;
+        long limitMs = dailyLimitMinutes(context, packageName) * 60_000L;
         return getUsageTodayMs(context, packageName) >= limitMs;
     }
 
@@ -75,51 +161,95 @@ final class Preferences {
         return prefs(context).getLong(UNLOCK_PREFIX + packageName, 0L) > System.currentTimeMillis();
     }
 
-    static void grantExtraTime(Context context, String packageName) {
-        long until = System.currentTimeMillis() + extraTimeMinutes(context) * 60_000L;
+    static void grantExtraTime(Context context, String packageName, int minutes) {
+        long until = System.currentTimeMillis() + Math.max(1, minutes) * 60_000L;
         prefs(context).edit().putLong(UNLOCK_PREFIX + packageName, until).apply();
     }
 
-    static String getOrCreateCode(Context context, String packageName) {
+    static String createRequestCode(Context context, String packageName, int requestedMinutes) {
         SharedPreferences preferences = prefs(context);
         long now = System.currentTimeMillis();
-        String codeKey = CODE_PREFIX + packageName;
-        String expiryKey = CODE_EXPIRY_PREFIX + packageName;
-        String existing = preferences.getString(codeKey, null);
-        long expiry = preferences.getLong(expiryKey, 0L);
-        if (existing != null && expiry > now) {
-            return existing;
-        }
+        String codeKey = APPROVAL_CODE_PREFIX + packageName;
+        String expiryKey = APPROVAL_CODE_EXPIRY_PREFIX + packageName;
+        String minutesKey = APPROVAL_CODE_MINUTES_PREFIX + packageName;
 
-        String code = String.format(Locale.US, "%06d", RANDOM.nextInt(1_000_000));
+        String requestCode = String.format(Locale.US, "%06d", RANDOM.nextInt(1_000_000));
         preferences.edit()
-                .putString(codeKey, code)
+                .putString(codeKey, approvalCodeForRequest(requestCode))
                 .putLong(expiryKey, now + CODE_TTL_MS)
+                .putInt(minutesKey, Math.max(1, requestedMinutes))
                 .apply();
-        return code;
+        return requestCode;
     }
 
-    static boolean consumeCodeIfValid(Context context, String packageName, String enteredCode) {
+    static int consumeApprovalCodeMinutesIfValid(Context context, String packageName, String enteredCode) {
         SharedPreferences preferences = prefs(context);
-        String codeKey = CODE_PREFIX + packageName;
-        String expiryKey = CODE_EXPIRY_PREFIX + packageName;
+        String codeKey = APPROVAL_CODE_PREFIX + packageName;
+        String expiryKey = APPROVAL_CODE_EXPIRY_PREFIX + packageName;
+        String minutesKey = APPROVAL_CODE_MINUTES_PREFIX + packageName;
         String expected = preferences.getString(codeKey, "");
         long expiry = preferences.getLong(expiryKey, 0L);
-        boolean valid = expected.equals(enteredCode) && expiry > System.currentTimeMillis();
+        int minutes = preferences.getInt(minutesKey, -1);
+        boolean valid = expected.equals(enteredCode)
+                && expiry > System.currentTimeMillis()
+                && minutes > 0;
         if (valid) {
             preferences.edit()
                     .remove(codeKey)
                     .remove(expiryKey)
+                    .remove(minutesKey)
                     .apply();
+            return minutes;
         }
-        return valid;
+        return -1;
+    }
+
+    static String approvalCodeForRequest(String requestCode) {
+        StringBuilder builder = new StringBuilder(requestCode.length());
+        for (int i = 0; i < requestCode.length(); i++) {
+            char character = requestCode.charAt(i);
+            if (!Character.isDigit(character)) {
+                continue;
+            }
+            int shifted = ((character - '0') + 5) % 10;
+            builder.append(shifted);
+        }
+        return builder.toString();
     }
 
     private static String usageKey(String packageName) {
         return USAGE_PREFIX + today() + "_" + packageName;
     }
 
+    private static String limitKey(String packageName) {
+        return APP_LIMIT_PREFIX + packageName;
+    }
+
     private static String today() {
         return new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date());
+    }
+
+    private static String hashPin(String salt, String pin) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest((salt + ":" + pin).getBytes(StandardCharsets.UTF_8));
+            return toHex(bytes);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    private static String randomHex(int byteCount) {
+        byte[] bytes = new byte[byteCount];
+        RANDOM.nextBytes(bytes);
+        return toHex(bytes);
+    }
+
+    private static String toHex(byte[] bytes) {
+        StringBuilder builder = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) {
+            builder.append(String.format(Locale.US, "%02x", value & 0xff));
+        }
+        return builder.toString();
     }
 }

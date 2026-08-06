@@ -1,20 +1,20 @@
 # AirLock Android
 
-AirLock Android is a native Android MVP for adding AirLock-style friction to distracting phone apps. Users choose apps, set a daily usage budget, and get a blocking wall after the limit is reached. Extra time requires a one-time access code that can be sent to a preset accountability phone number.
+AirLock Android is a native Android MVP for adding AirLock-style friction to distracting phone apps. Users choose apps, set a daily usage budget, and get a blocking wall after the limit is reached. Extra time requires an approval code requested through a preset accountability phone number.
 
-This repo is scaffolded for development, but the APK has not been compiled in this environment because Android SDK and Gradle are not installed locally.
+This repo builds locally with the Gradle wrapper after Android SDK setup.
 
 ## Current MVP
 
 - Native Android Java, no AndroidX, no Compose, no third-party dependencies.
-- App picker for launchable installed apps.
-- Daily limit and extra-time settings.
+- App picker for launchable installed apps with per-app daily limits.
 - Preset accountability phone number.
+- Local master override PIN for changing monitoring state and active app limits.
 - Foreground monitoring service.
 - Usage Access based foreground-app detection.
 - Overlay blocking screen after the selected app exceeds its limit.
-- SMS compose intent for requesting an access code.
-- Code entry grants the configured extra minutes.
+- SMS compose intent for sending a numeric request code tied to requested extra minutes.
+- Approval code entry grants the minutes approved when the request code was generated.
 - Boot receiver restarts monitoring if monitoring was enabled.
 
 ## Why This Shape
@@ -42,10 +42,8 @@ With Android Studio:
 With command-line tooling:
 
 ```sh
-gradle :app:assembleDebug
+./gradlew :app:assembleDebug
 ```
-
-This repo does not include a Gradle wrapper yet because no local Gradle installation was available to generate one.
 
 ## First Device Test
 
@@ -53,16 +51,15 @@ This repo does not include a Gradle wrapper yet because no local Gradle installa
 2. Tap `Grant Usage Access` and enable AirLock Android.
 3. Tap `Grant Display Over Other Apps` and allow overlays.
 4. Enter:
-   - Daily limit: `1`
-   - Extra time: `1`
    - Accountability phone number: a test number you control
-5. Tap `Select Apps` and choose one non-critical app.
-6. Tap `Start Monitoring`.
+   - Master override PIN: at least four digits
+5. Tap `Set App Limits`, choose one non-critical app, continue, and set daily limit to `1`.
+6. Tap `Start Monitoring` and enter the master PIN.
 7. Open the selected app and keep it foregrounded for over one minute.
 8. Confirm the AirLock overlay appears.
-9. Tap `Text access code`.
-10. Return to the blocked app and enter the code from the composed SMS.
-11. Confirm the overlay disappears for roughly one extra minute.
+9. Enter requested extra minutes and tap `Text Request Code`.
+10. Convert the request code with the temporary test rule, return to the blocked app, and enter the approval code.
+11. Confirm the overlay disappears for the requested duration.
 
 ## Project Map
 
@@ -100,11 +97,11 @@ docs/TEST_PLAN.md
 
 ## Current Limitations
 
-- The SMS step opens the user's SMS app with the code in the message body. That avoids restricted SMS permissions, but it is weak accountability because the user can see the code.
+- The SMS step opens the user's SMS app with the request code and requested minutes. That avoids restricted SMS permissions, but the current deterministic test conversion is not production-grade accountability.
 - Overlay blocking is friction, not hard security. A determined user can revoke special permissions, force-stop, or uninstall the app.
 - The foreground app detector uses polling and UsageStats; OEM battery management can affect reliability.
 - No settings-change delay, unlock caps, audit trail, or backend SMS provider yet.
-- No release signing, Gradle wrapper, CI, store listing, or Play policy submission package yet.
+- No release signing, CI, store listing, or Play policy submission package yet.
 
 ## Documentation
 

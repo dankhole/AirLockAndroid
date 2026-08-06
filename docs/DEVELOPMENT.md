@@ -39,6 +39,27 @@ Then prefer:
 - Do not request direct SMS permissions for the default MVP path.
 - Do not request Accessibility Service for whole-app blocking.
 
+## Programmatic UI Styling
+
+This app uses platform Java views, so shared styling lives in `UiStyle.java`.
+New UI should use that helper for colors, spacing, text styles, cards, buttons,
+input fields, status messages, selectable rows, overlay controls, and system
+inset padding. Avoid hardcoded colors, corner radii, button backgrounds, and
+screen padding in activities or services unless a new reusable style is first
+added to `UiStyle`.
+
+Use the named button styles by intent:
+
+- `primaryButton`: main forward action.
+- `secondaryButton`: alternate or setup action.
+- `dangerButton`: destructive or stop action.
+- `overlaySecondaryButton`: secondary action on the dark blocking overlay.
+
+Requirement and error states should use `statusText` with `setStatus(...)` so
+users get text, color, and shape cues together. Screens that can touch the
+status bar, navigation bar, or camera cutout should apply
+`applySystemInsetsPadding(...)` to their top-level content container.
+
 ## Permission Notes
 
 ### Usage Access

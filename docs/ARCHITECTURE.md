@@ -13,13 +13,13 @@ MonitoringService
   starts as a foreground service
   polls UsageStatsManager every second
   tracks the active foreground package
-  increments today's usage counter for selected apps
-  shows overlay when usage >= daily limit and no extra-time unlock is active
+  increments today's usage counter for apps with configured limits
+  shows overlay when usage >= that app's daily limit and no extra-time unlock is active
 
 Overlay
   blocks interaction with the selected foreground app
-  can open SMS compose for the accountability code
-  accepts the code and grants temporary extra time
+  can open SMS compose for an accountability code tied to requested minutes
+  accepts the code and grants the minutes associated with that code
   can send the user back home
 ```
 
@@ -31,14 +31,13 @@ The settings surface. It owns:
 
 - Permission shortcuts.
 - Monitoring on/off state.
-- Daily limit minutes.
-- Extra time minutes.
 - Accountability phone number.
-- Navigation to app selection.
+- Master override PIN setup.
+- Navigation to app limit setup.
 
 ### `AppSelectionActivity`
 
-Queries launchable apps through an `ACTION_MAIN` / `CATEGORY_LAUNCHER` intent and persists selected package names. This avoids requesting broad package visibility permissions.
+Queries launchable apps through an `ACTION_MAIN` / `CATEGORY_LAUNCHER` intent. The user selects one app or a group of apps, confirms, then assigns a daily limit to that selection. This avoids requesting broad package visibility permissions.
 
 ### `MonitoringService`
 
@@ -48,7 +47,7 @@ A foreground service with a persistent notification. It is the runtime core of t
 - Infers the current foreground package from `UsageStatsManager`.
 - Adds elapsed milliseconds to the current day/package counter.
 - Displays a `TYPE_APPLICATION_OVERLAY` view when a selected app is over limit.
-- Generates and validates short-lived numeric access codes.
+- Generates numeric request codes and validates short-lived approval codes.
 
 The service deliberately uses a simple one-second poll because it is easier to reason about than a more complex scheduler. Battery impact needs device testing.
 
@@ -58,13 +57,15 @@ Small helper around `SharedPreferences`. Current keys:
 
 - `enabled`
 - `selected_packages`
-- `daily_limit_minutes`
-- `extra_time_minutes`
+- `limit_minutes_<packageName>`
 - `accountability_number`
+- `master_pin_hash`
+- `master_pin_salt`
 - `usage_<yyyyMMdd>_<packageName>`
 - `unlock_until_<packageName>`
-- `code_<packageName>`
-- `code_expiry_<packageName>`
+- `approval_code_<packageName>`
+- `approval_code_expiry_<packageName>`
+- `approval_code_minutes_<packageName>`
 
 This is acceptable for MVP. Move to Room only after usage history, analytics, or migrations become meaningful.
 
@@ -94,7 +95,7 @@ Accessibility can become useful later for blocking specific in-app surfaces like
 
 The MVP uses `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. That opens the user's messaging app and avoids direct SMS permissions.
 
-Known weakness: the generated code is visible in the compose screen. A stronger production version should generate and deliver the code server-side, or use a companion-accountability app.
+Known weakness: the request code and requested minutes are visible in the compose screen, and the current test conversion is deterministic. A stronger production version should generate and deliver the approval code server-side, or use a companion-accountability app.
 
 ## Safety Rules
 
@@ -118,7 +119,6 @@ Known weakness: the generated code is visible in the compose screen. A stronger 
 - Add a repository layer and typed settings object.
 - Add a safety exclusion list before any strict mode.
 - Add setting-change delay for weakening limits.
-- Add per-app limits instead of one global limit.
 - Add unlock attempt throttling.
 - Add a backend SMS code provider if accountability becomes the core differentiator.
 - Add instrumentation tests after the project compiles locally.

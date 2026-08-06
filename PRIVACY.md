@@ -8,16 +8,17 @@ AirLock Android is designed as a local-first app blocker.
 
 - Selected app package names.
 - Daily usage counters for selected apps.
-- Daily limit and extra-time settings.
+- Per-app daily limits.
 - Accountability phone number.
+- Master PIN hash and salt.
 - Temporary unlock expiration timestamps.
-- Short-lived access codes.
+- Short-lived approval codes and their requested extra-minute duration.
 
 ## Data Shared
 
 The MVP does not send data to an AirLock server and does not include analytics, ads, or trackers.
 
-When the user taps `Text access code`, Android opens the user's chosen SMS app with a prefilled message to the configured accountability number. Sending that SMS is controlled by the user and by their SMS app/carrier.
+When the user taps `Text Request Code`, Android opens the user's chosen SMS app with a prefilled message to the configured accountability number. The message includes the numeric request code and requested extra minutes, not the stored approval code. Sending that SMS is controlled by the user and by their SMS app/carrier.
 
 ## Sensitive Permissions
 
