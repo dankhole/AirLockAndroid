@@ -1,6 +1,6 @@
 # AirLock Android
 
-AirLock Android is a goose-themed native Android MVP for adding AirLock-style friction to distracting phone apps. Users choose apps, set a daily usage budget, and get a blocking wall after the limit is reached. Extra time requires an approval code requested through a preset accountability phone number.
+AirLock Android is a goose-themed native Android MVP for adding AirLock-style friction to distracting phone apps. Users choose apps, set a daily usage budget, and get a blocking wall after the limit is reached. Extra time requires an approval code requested from a trusted Keyholder.
 
 This repo builds locally with the Gradle wrapper after Android SDK setup.
 
@@ -8,7 +8,7 @@ This repo builds locally with the Gradle wrapper after Android SDK setup.
 
 - Native Android Java, no AndroidX, no Compose, no third-party dependencies.
 - App picker for launchable installed apps with per-app daily limits.
-- Preset accountability phone number.
+- Preset Keyholder phone number.
 - Local master override PIN for changing monitoring state and active app limits.
 - Foreground monitoring service.
 - Usage Access based foreground-app detection.
@@ -51,13 +51,13 @@ With command-line tooling:
 2. Tap `Grant Usage Access` and enable AirLock Goose.
 3. Tap `Grant Display Over Other Apps` and allow overlays.
 4. Enter:
-   - Accountability phone number: a test number you control
+   - Keyholder phone number: a test number you control
    - Master override PIN: at least four digits
 5. Tap `Set Goose Limits!`, choose one non-critical app, continue, and set daily limit to `1`.
 6. Tap `Start Goose Duty!` and enter the master PIN.
 7. Open the selected app and keep it foregrounded for over one minute.
 8. Confirm the goose overlay appears.
-9. Enter requested extra minutes and tap `Text the Goose!`.
+9. Enter requested extra minutes and tap `Text the Keyholder!`.
 10. Return to the blocked app and enter the approval code for that request.
 11. Confirm the goose animation plays and the overlay disappears for the requested duration.
 
@@ -79,6 +79,9 @@ app/src/main/java/com/dankhole/airlockandroid/MonitoringService.java
 app/src/main/java/com/dankhole/airlockandroid/Preferences.java
   SharedPreferences keys, daily counters, unlocks, one-time codes
 
+docs/PRODUCT_LANGUAGE.md
+  Product roles, terminology, voice, and approval-flow copy rules
+
 app/src/main/java/com/dankhole/airlockandroid/BootReceiver.java
   Restarts monitoring after reboot when enabled
 
@@ -97,7 +100,7 @@ docs/TEST_PLAN.md
 
 ## Current Limitations
 
-- The SMS step opens the user's SMS app with the request code and requested minutes. The local approval code is derived from the request code, and the requested minutes are stored against that pending approval code. This still is not production-grade accountability without a backend or companion app.
+- The SMS step opens the user's SMS app with the request code and requested minutes for the Keyholder. The local approval code is derived from the request code, and the requested minutes are stored against that pending approval code. This still is not production-grade accountability without a backend or companion app.
 - Overlay blocking is friction, not hard security. A determined user can revoke special permissions, force-stop, or uninstall the app.
 - The foreground app detector uses polling and UsageStats; OEM battery management can affect reliability.
 - No settings-change delay, unlock caps, audit trail, or backend SMS provider yet.

@@ -158,11 +158,11 @@ public class MainActivity extends Activity {
 
     private LinearLayout buildAccountabilityCard(SharedPreferences preferences) {
         LinearLayout card = sectionCard(
-                "Goose hotline",
-                "The goose opens your SMS app with a generated code request! It does not request SMS permissions."
+                "The Keyholder",
+                "The goose opens your SMS app to ask the Keyholder for extra time. It does not request SMS permissions."
         );
 
-        card.addView(UiStyle.fieldLabel(this, "Accountability phone number"), UiStyle.fullWidth(this, 6));
+        card.addView(UiStyle.fieldLabel(this, "Keyholder phone number"), UiStyle.fullWidth(this, 6));
         phoneInput = UiStyle.inputField(this, "Phone number");
         KeyboardHelper.prepareNumericInput(phoneInput);
         phoneInput.setText(preferences.getString(Preferences.KEY_ACCOUNTABILITY_NUMBER, ""));
@@ -488,7 +488,7 @@ public class MainActivity extends Activity {
                 ? "Selected apps will meet the goose once today's limit is reached!"
                 : readyToMonitor
                 ? "Use Goose duty controls below when it is time to honk!"
-                : "The goose controls stay locked until permissions, accountability, PIN, and at least one app limit are ready.");
+                : "The goose controls stay locked until permissions, Keyholder, PIN, and at least one app limit are ready.");
 
         setRequirement(
                 usageAccessRequiredText,
@@ -509,12 +509,12 @@ public class MainActivity extends Activity {
         String accountabilityDetail = hasAccountabilityNumber
                 ? enabled
                 ? "Locked while goose duty is on. Stop duty with the master PIN before changing it!"
-                : "Goose request texts will go to this number!"
-                : "Enter the 10-digit phone number that should receive goose request codes!";
+                : "Goose requests will be texted to the Keyholder at this number!"
+                : "Enter the Keyholder's 10-digit phone number!";
         setRequirement(
                 accountabilityRequiredText,
                 hasAccountabilityNumber,
-                hasAccountabilityNumber ? "READY: Goose hotline saved!" : "REQUIRED BEFORE GOOSE DUTY: Goose hotline missing!",
+                hasAccountabilityNumber ? "READY: Keyholder number saved!" : "REQUIRED BEFORE GOOSE DUTY: Keyholder number missing!",
                 accountabilityDetail
         );
         phoneInput.setEnabled(!enabled);
@@ -712,7 +712,7 @@ public class MainActivity extends Activity {
             return "Grant Display Over Other Apps before the goose can pop up!";
         }
         if (!accountability) {
-            return "Add the goose hotline number!";
+            return "Add the Keyholder phone number!";
         }
         if (!masterPin) {
             return "Set the master PIN!";
@@ -742,7 +742,7 @@ public class MainActivity extends Activity {
             Preferences.prefs(this).edit().putBoolean(Preferences.KEY_ENABLED, false).apply();
             UiStyle.styleInput(phoneInput, true);
             phoneInput.setError("Required before goose duty");
-            Toast.makeText(this, "Add the goose hotline before starting duty!", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Add the Keyholder phone number before starting duty!", Toast.LENGTH_LONG).show();
             refresh();
             return false;
         }

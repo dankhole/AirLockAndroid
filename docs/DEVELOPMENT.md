@@ -66,6 +66,8 @@ Goose-themed visuals are plain Java `View` classes with Canvas drawing, not
 image dependencies. Use `GooseMascotView` with `UiStyle.gooseBannerParams(...)`
 near the top of setup/wizard screens. `GooseCelebrationView` is reserved for
 the successful extra-time unlock animation so that moment feels distinct.
+Follow `docs/PRODUCT_LANGUAGE.md` for the roles of AirLock, the Goose, and the
+Keyholder and for all user-facing copy.
 
 ## Icon Assets
 
@@ -76,7 +78,7 @@ repository: <https://github.com/google/material-design-icons>.
 
 ## Usage Tracking
 
-The main screen's "Today's usage" section only renders apps that already have
+The main screen's "Today's goose count" section only renders apps that already have
 AirLock limits. Usage is stored locally in `Preferences` and reconciled from
 Android UsageStats when Usage Access is available.
 

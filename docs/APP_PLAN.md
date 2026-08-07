@@ -12,7 +12,7 @@ The first product shape is:
 - Set a daily usage budget per selected app.
 - Show a full-screen blocking wall after the budget is exhausted.
 - Allow an extra-time grant when the user enters a one-time approval code tied to requested minutes.
-- Let a numeric request code be sent to a preset accountability phone number.
+- Let a numeric request code be sent to a preset Keyholder phone number.
 
 ## Target User
 
@@ -37,12 +37,12 @@ The MVP should prove the core loop with the least Android-policy risk:
 3. User grants Display Over Other Apps.
 4. User selects one launchable app or a group of apps.
 5. User confirms that selection and sets its daily limit in minutes.
-6. User enters an accountability phone number.
+6. User enters a Keyholder phone number.
 7. User sets a local master override PIN.
 8. A foreground service polls the foreground app.
 9. Usage time accrues only while a selected app is foregrounded.
 10. When the daily limit is exceeded, an overlay appears.
-11. The overlay asks how many extra minutes to request and can compose a text message to the accountability number.
+11. The overlay asks how many extra minutes the Goose should request and can compose a text message to the Keyholder.
 12. Entering the valid approval code grants the minutes bound to that generated request code.
 
 ## Recommended Architecture
@@ -60,7 +60,7 @@ The MVP should prove the core loop with the least Android-policy risk:
 - Monitoring enabled flag.
 - Selected package names.
 - Per-app daily limit minutes.
-- Accountability phone number.
+- Keyholder phone number.
 - Master PIN hash and salt.
 - Per-day usage counters keyed by date and package name.
 - Temporary unlock expiration timestamps keyed by package name.
@@ -93,10 +93,10 @@ Use a foreground service with a persistent notification. On Android 14+ foregrou
 
 Avoid `SEND_SMS` in the MVP. Google Play heavily restricts SMS and Call Log permissions. Use an `ACTION_SENDTO` intent with an `smsto:` URI to open the user's SMS app with a prefilled message.
 
-This has an accountability weakness: the request code and requested minutes are visible to the user before the message is sent. The local approval code is derived from the request code, and the approved duration is stored against that pending approval code, but a production-grade version should use one of these instead:
+This has an accountability weakness: the request code and requested minutes are visible to the user before the message is sent to the Keyholder. The local approval code is derived from the request code, and the approved duration is stored against that pending approval code, but a production-grade version should use one of these instead:
 
 - Backend-generated code sent by Twilio or another SMS provider.
-- Companion app for accountability partners.
+- Companion app for Keyholders.
 - Direct `SEND_SMS` only for sideload/F-Droid builds, after accepting the distribution tradeoff.
 
 ## Hardening Options After MVP
@@ -181,7 +181,7 @@ Why it matters: open-source screen-time app with Play Store presence, Flutter UI
 ### Milestone 3: Accountability
 
 - Replace the deterministic request-code conversion with backend-generated SMS.
-- Add accountability contact verification.
+- Add Keyholder contact verification.
 - Add rate limits and audit trail stored locally.
 - Add unlock caps and optional delay.
 

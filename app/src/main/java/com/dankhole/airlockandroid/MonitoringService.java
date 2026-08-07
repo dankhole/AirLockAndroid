@@ -11,6 +11,7 @@ import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.PixelFormat;
@@ -24,10 +25,12 @@ import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
@@ -38,6 +41,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,26 +51,36 @@ public class MonitoringService extends Service {
     public static final String ACTION_STOP = "com.dankhole.airlockandroid.STOP";
 
     private static final String CHANNEL_ID = "airlock_monitoring";
+    private static final String TAG = "AirLockMonitor";
     private static final int NOTIFICATION_ID = 42;
     private static final long POLL_INTERVAL_MS = 1000L;
+    private static final long TRANSIENT_POLL_INTERVAL_MS = 200L;
+    private static final long USAGE_RECONCILE_INTERVAL_MS = 1000L;
     private static final long OVERLAY_STICKY_MS = 5 * 60 * 1000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private WindowManager windowManager;
     private View overlayView;
     private String overlayPackageName;
+    private String stickyBlockedPackageName;
     private String homePackageName;
+    private Set<String> homePackageNames;
     private String lastForegroundPackage;
     private long lastTickElapsedMs;
+    private long lastUsageReconcileElapsedMs;
+    private long lastUsageQueryEndMs;
     private long keepOverlayUntilMs;
+    private long leaveAppGraceUntilElapsedMs;
     private boolean unlockCelebrationRunning;
+    private boolean overlayNeedsRefresh;
+    private boolean overlayWindowObscured;
     private final Map<String, OverlayFormState> overlayFormStates = new HashMap<>();
 
     private final Runnable pollRunnable = new Runnable() {
         @Override
         public void run() {
             poll();
-            handler.postDelayed(this, POLL_INTERVAL_MS);
+            handler.postDelayed(this, nextPollDelayMs());
         }
     };
 
@@ -76,6 +90,7 @@ public class MonitoringService extends Service {
         windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         startForeground(NOTIFICATION_ID, buildNotification());
         lastTickElapsedMs = SystemClock.elapsedRealtime();
+        lastUsageQueryEndMs = System.currentTimeMillis();
         handler.post(pollRunnable);
     }
 
@@ -154,9 +169,18 @@ public class MonitoringService extends Service {
 
         long now = System.currentTimeMillis();
         long elapsedNow = SystemClock.elapsedRealtime();
+        String previousForegroundPackage = lastForegroundPackage;
         String foregroundPackage = findForegroundPackage(now);
+        if (!samePackage(previousForegroundPackage, foregroundPackage)) {
+            debugLog("foreground " + previousForegroundPackage + " -> " + foregroundPackage
+                    + ", overlay=" + overlayPackageName
+                    + ", sticky=" + stickyBlockedPackageName);
+        }
         Set<String> selectedPackages = Preferences.selectedPackages(this);
-        UsageTracker.reconcileTodayFromSystemStats(this, selectedPackages);
+        if (elapsedNow - lastUsageReconcileElapsedMs >= USAGE_RECONCILE_INTERVAL_MS) {
+            UsageTracker.reconcileTodayFromSystemStats(this, selectedPackages);
+            lastUsageReconcileElapsedMs = elapsedNow;
+        }
 
         if (foregroundPackage != null
                 && selectedPackages.contains(foregroundPackage)
@@ -167,24 +191,47 @@ public class MonitoringService extends Service {
         lastForegroundPackage = foregroundPackage;
         lastTickElapsedMs = elapsedNow;
 
-        if (foregroundPackage == null || !selectedPackages.contains(foregroundPackage)) {
-            if (shouldKeepExistingOverlay(now, foregroundPackage)) {
+        boolean foregroundSelected = foregroundPackage != null && selectedPackages.contains(foregroundPackage);
+        if (!foregroundSelected) {
+            String stickyPackage = stickyBlockedPackageForTransient(
+                    now,
+                    foregroundPackage,
+                    selectedPackages
+            );
+            if (stickyPackage != null) {
+                overlayNeedsRefresh = true;
+                hideOverlay(true, true);
                 return;
             }
             hideOverlay(true);
             return;
         }
 
+        if (elapsedNow < leaveAppGraceUntilElapsedMs) {
+            hideOverlay(true);
+            return;
+        }
+        leaveAppGraceUntilElapsedMs = 0L;
+
         boolean shouldBlock = Preferences.isOverLimit(this, foregroundPackage)
                 && !Preferences.isTemporarilyUnlocked(this, foregroundPackage);
         if (shouldBlock) {
+            if (!samePackage(previousForegroundPackage, foregroundPackage)
+                    && foregroundPackage.equals(stickyBlockedPackageName)) {
+                overlayNeedsRefresh = true;
+            }
             showOverlay(foregroundPackage);
         } else {
+            if (foregroundPackage.equals(stickyBlockedPackageName)) {
+                clearStickyBlockedPackage();
+            }
             hideOverlay(false);
         }
     }
 
     private String findForegroundPackage(long now) {
+        long previousQueryEndMs = lastUsageQueryEndMs;
+        lastUsageQueryEndMs = now;
         UsageStatsManager usageStatsManager = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
         if (usageStatsManager == null) {
             return lastForegroundPackage;
@@ -199,7 +246,7 @@ public class MonitoringService extends Service {
 
         UsageEvents.Event event = new UsageEvents.Event();
         String candidate = lastForegroundPackage;
-        boolean sawEvent = false;
+        boolean sawForegroundEvent = false;
         while (events != null && events.hasNextEvent()) {
             events.getNextEvent(event);
             int type = event.getEventType();
@@ -207,25 +254,34 @@ public class MonitoringService extends Service {
             if (eventPackageName == null) {
                 continue;
             }
-            if (type == UsageEvents.Event.MOVE_TO_FOREGROUND
-                    || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                    && type == UsageEvents.Event.ACTIVITY_RESUMED)) {
-                sawEvent = true;
+
+            if (event.getTimeStamp() > previousQueryEndMs
+                    && isLifecycleEvent(type)
+                    && isOverlayInterruptionPackage(eventPackageName)) {
+                overlayNeedsRefresh = true;
+                debugLog("overlay interruption event=" + type + " package=" + eventPackageName);
+            }
+
+            // A canceled recents gesture can pause an app without resuming a replacement.
+            // Keep the last real foreground app until another foreground event names one.
+            if (isForegroundEvent(type)) {
+                sawForegroundEvent = true;
                 candidate = eventPackageName;
-            } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND
-                    || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                    && type == UsageEvents.Event.ACTIVITY_PAUSED)) {
-                sawEvent = true;
-                if (eventPackageName.equals(candidate)) {
-                    candidate = null;
-                }
+            } else if (isBackgroundEvent(type)
+                    && eventPackageName.equals(candidate)
+                    && isTransientSystemSurface(eventPackageName)
+                    && stickyBlockedPackageName != null) {
+                // Returning to the same task from recents often pauses/stops the launcher
+                // without sending another resumed event for the underlying app.
+                candidate = stickyBlockedPackageName;
+                debugLog("transient surface exited; restoring candidate=" + candidate);
             }
         }
 
         if (candidate != null) {
             return candidate;
         }
-        if (sawEvent) {
+        if (sawForegroundEvent) {
             return null;
         }
 
@@ -252,20 +308,49 @@ public class MonitoringService extends Service {
         return mostRecent == null ? lastForegroundPackage : mostRecent.getPackageName();
     }
 
+    private long nextPollDelayMs() {
+        boolean waitingForBlockedAppReturn = stickyBlockedPackageName != null
+                && overlayView == null
+                && System.currentTimeMillis() <= keepOverlayUntilMs;
+        return waitingForBlockedAppReturn ? TRANSIENT_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
+    }
+
     private void showOverlay(String packageName) {
+        rememberBlockedPackage(packageName);
         if (overlayView != null && packageName.equals(overlayPackageName)) {
-            keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
-            return;
+            if (!overlayNeedsRefresh && overlayView.isAttachedToWindow()) {
+                return;
+            }
+            debugLog("rebuilding overlay for " + packageName
+                    + ", refresh=" + overlayNeedsRefresh
+                    + ", attached=" + overlayView.isAttachedToWindow());
+            hideOverlay(true, true);
+        } else if (overlayView != null) {
+            hideOverlay(true, true);
         }
-        hideOverlay(true);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             return;
         }
 
         overlayPackageName = packageName;
-        keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
         overlayView = buildOverlay(packageName);
+        View observedOverlay = overlayView;
+        ViewTreeObserver viewTreeObserver = observedOverlay.getViewTreeObserver();
+        viewTreeObserver.addOnWindowFocusChangeListener(hasFocus -> {
+            if (overlayView != observedOverlay) {
+                return;
+            }
+            if (!hasFocus) {
+                overlayWindowObscured = true;
+                debugLog("overlay window lost focus for " + overlayPackageName);
+            } else if (overlayWindowObscured) {
+                // Android can suppress an attached overlay while recents owns the display.
+                overlayWindowObscured = false;
+                overlayNeedsRefresh = true;
+                debugLog("overlay window regained focus; refresh requested");
+            }
+        });
 
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -287,6 +372,8 @@ public class MonitoringService extends Service {
 
         try {
             windowManager.addView(overlayView, params);
+            overlayNeedsRefresh = false;
+            debugLog("overlay added for " + packageName);
             OverlayFormState formState = overlayFormState(packageName);
             EditText firstInput = overlayView.findViewWithTag(
                     formState.lastRequestedMinutes > 0 ? "code_input" : "minutes_input"
@@ -297,6 +384,8 @@ public class MonitoringService extends Service {
         } catch (RuntimeException ignored) {
             overlayView = null;
             overlayPackageName = null;
+            overlayNeedsRefresh = true;
+            debugLog("overlay add failed for " + packageName);
         }
     }
 
@@ -339,7 +428,7 @@ public class MonitoringService extends Service {
             requestStatus.setText(requestSentMessage(formState.lastRequestedMinutes));
             UiStyle.setStatus(requestStatus, UiStyle.STATUS_READY);
         } else {
-            requestStatus.setText("Need more time? The goose needs an approval code first!");
+            requestStatus.setText("Need more time? Ask the Keyholder for an approval code!");
             UiStyle.setStatus(requestStatus, UiStyle.STATUS_WARNING);
         }
         card.addView(requestStatus, UiStyle.fullWidth(this, 14));
@@ -385,8 +474,8 @@ public class MonitoringService extends Service {
         });
         card.addView(minutesInput, UiStyle.fullWidth(this, 12));
 
-        card.addView(UiStyle.overlayStepLabel(this, "2. Text the goose!"), UiStyle.fullWidth(this, 6));
-        Button textCodeButton = UiStyle.primaryButton(this, "Text the Goose!");
+        card.addView(UiStyle.overlayStepLabel(this, "2. Text the Keyholder!"), UiStyle.fullWidth(this, 6));
+        Button textCodeButton = UiStyle.primaryButton(this, "Text the Keyholder!");
         card.addView(textCodeButton, UiStyle.buttonParams(this));
 
         card.addView(UiStyle.overlayStepLabel(this, "3. Enter approval code!"), UiStyle.fullWidth(this, 6));
@@ -493,12 +582,13 @@ public class MonitoringService extends Service {
                 showOverlayError(
                         errorText,
                         formState,
-                        "That code did not honk! Request a new one if needed!"
+                        "That code did not honk! Request a new one from the Keyholder if needed!"
                 );
             }
         });
 
         leaveButton.setOnClickListener(v -> {
+            leaveAppGraceUntilElapsedMs = SystemClock.elapsedRealtime() + 1_500L;
             Intent home = new Intent(Intent.ACTION_MAIN);
             home.addCategory(Intent.CATEGORY_HOME);
             home.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -552,8 +642,8 @@ public class MonitoringService extends Service {
     }
 
     private String requestSentMessage(int requestedMinutes) {
-        return "Goose request sent for " + requestedMinutes
-                + " minutes! Each approval code unlocks the amount that goose asked for!";
+        return "Goose request sent to the Keyholder for " + requestedMinutes
+                + " minutes! Enter the approval code the Keyholder sends back!";
     }
 
     private void showOverlayError(TextView errorText, OverlayFormState formState, String message) {
@@ -583,42 +673,60 @@ public class MonitoringService extends Service {
         KeyboardHelper.show(this, input);
     }
 
-    private boolean shouldKeepExistingOverlay(long now, String foregroundPackage) {
-        if (overlayView == null || overlayPackageName == null) {
-            return false;
+    private String stickyBlockedPackageForTransient(
+            long now,
+            String foregroundPackage,
+            Set<String> selectedPackages
+    ) {
+        String packageName = overlayPackageName != null ? overlayPackageName : stickyBlockedPackageName;
+        if (packageName == null
+                || now > keepOverlayUntilMs
+                || !selectedPackages.contains(packageName)
+                || !isTransientSystemSurface(foregroundPackage)
+                || !Preferences.isOverLimit(this, packageName)
+                || Preferences.isTemporarilyUnlocked(this, packageName)) {
+            return null;
         }
-        if (foregroundPackage != null
-                && foregroundPackage.equals(overlayPackageName)) {
-            return Preferences.isOverLimit(this, overlayPackageName)
-                    && !Preferences.isTemporarilyUnlocked(this, overlayPackageName);
-        }
-        if (foregroundPackage != null && foregroundPackage.equals(getPackageName())) {
-            return Preferences.isOverLimit(this, overlayPackageName)
-                    && !Preferences.isTemporarilyUnlocked(this, overlayPackageName);
-        }
-        if (now > keepOverlayUntilMs) {
-            return false;
-        }
-        if (isTransientSystemSurface(foregroundPackage)) {
-            return Preferences.isOverLimit(this, overlayPackageName)
-                    && !Preferences.isTemporarilyUnlocked(this, overlayPackageName);
-        }
-        if (foregroundPackage != null
-                && !foregroundPackage.equals(overlayPackageName)) {
-            return false;
-        }
-        return Preferences.isOverLimit(this, overlayPackageName)
-                && !Preferences.isTemporarilyUnlocked(this, overlayPackageName);
+        return packageName;
+    }
+
+    private boolean isForegroundEvent(int type) {
+        return type == UsageEvents.Event.MOVE_TO_FOREGROUND
+                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && type == UsageEvents.Event.ACTIVITY_RESUMED);
+    }
+
+    private boolean isLifecycleEvent(int type) {
+        return isForegroundEvent(type) || isBackgroundEvent(type);
+    }
+
+    private boolean isBackgroundEvent(int type) {
+        return type == UsageEvents.Event.MOVE_TO_BACKGROUND
+                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && (type == UsageEvents.Event.ACTIVITY_PAUSED
+                || type == UsageEvents.Event.ACTIVITY_STOPPED));
+    }
+
+    private boolean isOverlayInterruptionPackage(String packageName) {
+        String blockedPackage = overlayPackageName != null
+                ? overlayPackageName
+                : stickyBlockedPackageName;
+        return blockedPackage != null
+                && (blockedPackage.equals(packageName) || isTransientSystemSurface(packageName));
+    }
+
+    private boolean samePackage(String left, String right) {
+        return left == null ? right == null : left.equals(right);
     }
 
     private boolean isTransientSystemSurface(String packageName) {
         if (packageName == null) {
             return true;
         }
-        if ("com.android.systemui".equals(packageName)) {
+        if ("android".equals(packageName) || "com.android.systemui".equals(packageName)) {
             return true;
         }
-        return packageName.equals(homePackageName());
+        return packageName.equals(homePackageName()) || homePackageNames().contains(packageName);
     }
 
     private String homePackageName() {
@@ -636,6 +744,38 @@ public class MonitoringService extends Service {
         return homePackageName;
     }
 
+    private Set<String> homePackageNames() {
+        if (homePackageNames != null) {
+            return homePackageNames;
+        }
+        Set<String> packageNames = new HashSet<>();
+        Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+        homeIntent.addCategory(Intent.CATEGORY_HOME);
+        List<ResolveInfo> resolveInfos = getPackageManager().queryIntentActivities(
+                homeIntent,
+                PackageManager.MATCH_DEFAULT_ONLY
+        );
+        for (ResolveInfo resolveInfo : resolveInfos) {
+            if (resolveInfo != null && resolveInfo.activityInfo != null) {
+                packageNames.add(resolveInfo.activityInfo.packageName);
+            }
+        }
+        homePackageNames = packageNames;
+        return homePackageNames;
+    }
+
+    private void rememberBlockedPackage(String packageName) {
+        stickyBlockedPackageName = packageName;
+        keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
+    }
+
+    private void clearStickyBlockedPackage() {
+        stickyBlockedPackageName = null;
+        keepOverlayUntilMs = 0L;
+        overlayNeedsRefresh = false;
+        overlayWindowObscured = false;
+    }
+
     private int parsePositiveInt(EditText input) {
         try {
             int parsed = Integer.parseInt(input.getText().toString().trim());
@@ -648,15 +788,15 @@ public class MonitoringService extends Service {
     private boolean composeCodeSms(String packageName, int requestedMinutes) {
         String phone = Preferences.accountabilityPhoneNumber(this);
         if (phone.length() != 10) {
-            Toast.makeText(this, "Add a 10-digit accountability number first!", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Add the Keyholder's 10-digit phone number first!", Toast.LENGTH_LONG).show();
             return false;
         }
 
         String requestCode = Preferences.createRequestCode(this, packageName, requestedMinutes);
-        String message = "A goose is asking for " + requestedMinutes
+        String message = "The Goose is asking for " + requestedMinutes
                 + " minutes of extra time in " + appLabel(packageName) + "!"
-                + ". Request code: " + requestCode
-                + ". If approved, send back the approval code for this goose request.";
+                + " Request code: " + requestCode
+                + ". If approved, send back the approval code for this Goose request.";
         Intent intent = new Intent(Intent.ACTION_SENDTO);
         intent.setData(Uri.parse("smsto:" + Uri.encode(phone)));
         intent.putExtra("sms_body", message);
@@ -675,10 +815,21 @@ public class MonitoringService extends Service {
     }
 
     private void hideOverlay(boolean preserveFormState) {
+        hideOverlay(preserveFormState, false);
+    }
+
+    private void hideOverlay(boolean preserveFormState, boolean preserveSticky) {
         unlockCelebrationRunning = false;
         String removedPackageName = overlayPackageName;
+        if (removedPackageName != null) {
+            debugLog("hiding overlay for " + removedPackageName
+                    + ", preserveSticky=" + preserveSticky);
+        }
         if (overlayView == null) {
             overlayPackageName = null;
+            if (!preserveSticky) {
+                clearStickyBlockedPackage();
+            }
             if (!preserveFormState && removedPackageName != null) {
                 overlayFormStates.remove(removedPackageName);
             }
@@ -692,7 +843,10 @@ public class MonitoringService extends Service {
         }
         overlayView = null;
         overlayPackageName = null;
-        keepOverlayUntilMs = 0L;
+        overlayWindowObscured = false;
+        if (!preserveSticky) {
+            clearStickyBlockedPackage();
+        }
         if (!preserveFormState && removedPackageName != null) {
             overlayFormStates.remove(removedPackageName);
         }
@@ -704,6 +858,12 @@ public class MonitoringService extends Service {
         overlayFormStates.clear();
         stopForeground(true);
         stopSelf();
+    }
+
+    private void debugLog(String message) {
+        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            Log.d(TAG, message);
+        }
     }
 
     private Notification buildNotification() {

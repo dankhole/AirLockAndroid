@@ -18,7 +18,7 @@ MonitoringService
 
 Overlay
   blocks interaction with the selected foreground app
-  can open SMS compose for an accountability code tied to requested minutes
+  can open SMS compose for a Keyholder request tied to requested minutes
   preserves in-progress requested minutes and approval-code entry while temporarily hidden
   accepts the code and grants the minutes associated with that code
   can send the user back home
@@ -32,7 +32,7 @@ The settings surface. It owns:
 
 - Permission shortcuts.
 - Monitoring on/off state.
-- Accountability phone number.
+- Keyholder phone number.
 - Master override PIN setup.
 - Navigation to app limit setup.
 
@@ -96,7 +96,7 @@ Accessibility can become useful later for blocking specific in-app surfaces like
 
 The MVP uses `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. That opens the user's messaging app and avoids direct SMS permissions.
 
-Known weakness: the request code and requested minutes are visible in the compose screen. The local approval code is derived from the request code, and the approved duration is stored against that pending approval code. A stronger production version should generate and deliver the approval code server-side, or use a companion-accountability app.
+Known weakness: the request code and requested minutes are visible in the compose screen. The local approval code is derived from the request code, and the approved duration is stored against that pending approval code. A stronger production version should generate and deliver the approval code server-side, or use a Keyholder companion app.
 
 ## Safety Rules
 

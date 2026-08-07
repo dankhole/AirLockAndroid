@@ -46,23 +46,36 @@ Expected result: app limits persist.
 Expected result: selected app is blocked after its daily budget is exhausted.
 
 1. Set daily limit to `1`.
-2. Set an accountability phone number and master PIN.
+2. Set a Keyholder phone number and master PIN.
 3. Start goose duty with the master PIN.
 4. Open the test app.
 5. Wait at least 65 seconds.
 6. Confirm the overlay appears.
 
+### Recents And App Switching
+
+Expected result: a blocked app never becomes interactive after a gesture or app switch; its overlay returns within one monitoring poll.
+
+1. Open an over-limit app and confirm the blocking overlay is visible.
+2. Partially swipe up toward recents, then cancel the gesture back into the blocked app.
+3. Confirm the overlay is visible again in well under one second and the app behind it cannot be tapped.
+4. Open recents fully and confirm AirLock does not cover the recents screen or prevent selecting another app.
+5. Switch to a different app, then return to the blocked app.
+6. Confirm the overlay is rebuilt and still contains any unfinished request minutes or approval code.
+7. Go Home, confirm the launcher remains usable, relaunch the blocked app, and confirm the overlay returns.
+8. Repeat while the number keyboard is open and confirm the overlay still covers the entire app after returning.
+
 ### Extra-Time Code
 
 Expected result: valid approval code removes the overlay for the minutes requested when the request code was generated.
 
-1. Enter an accountability phone number.
+1. Enter a Keyholder phone number.
 2. Trigger the blocking overlay.
 3. Enter requested extra minutes, such as `1`.
-4. Tap `Text the Goose!`.
-5. Confirm the SMS compose screen says `A goose is asking for X minutes of extra time`, then note the generated request code and requested minutes.
+4. Tap `Text the Keyholder!`.
+5. Confirm the SMS compose screen says `The Goose is asking for X minutes of extra time`, identifies the app, and includes the numeric request code.
 6. Return to the overlay and confirm the requested minutes field is still populated and editable.
-7. Change the requested minutes and tap `Text the Goose!` again.
+7. Change the requested minutes and tap `Text the Keyholder!` again.
 8. Confirm either valid approval code grants the minutes requested when that specific code was generated.
 9. Enter a partial approval code, leave the overlay, return, and confirm the approval code entry is still populated.
 10. Enter an incorrect approval code and confirm it is rejected.
@@ -99,7 +112,7 @@ Expected result: goose duty resumes after reboot when enabled.
 - Timezone change.
 - Multi-window mode.
 - No SMS app installed.
-- Empty accountability number.
+- Empty Keyholder number.
 - Blocking overlay while keyboard is visible.
 
 ## Device Matrix
