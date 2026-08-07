@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: July 20, 2026
+Last updated: August 7, 2026
 
 ## Runtime Flow
 
@@ -19,6 +19,7 @@ MonitoringService
 Overlay
   blocks interaction with the selected foreground app
   can open SMS compose for an accountability code tied to requested minutes
+  preserves in-progress requested minutes and approval-code entry while temporarily hidden
   accepts the code and grants the minutes associated with that code
   can send the user back home
 ```
@@ -63,9 +64,9 @@ Small helper around `SharedPreferences`. Current keys:
 - `master_pin_salt`
 - `usage_<yyyyMMdd>_<packageName>`
 - `unlock_until_<packageName>`
-- `approval_code_<packageName>`
-- `approval_code_expiry_<packageName>`
-- `approval_code_minutes_<packageName>`
+- `approval_codes_<packageName>`
+- `approval_code_expiry_<packageName>_<approvalCode>`
+- `approval_code_minutes_<packageName>_<approvalCode>`
 
 This is acceptable for MVP. Move to Room only after usage history, analytics, or migrations become meaningful.
 
@@ -95,7 +96,7 @@ Accessibility can become useful later for blocking specific in-app surfaces like
 
 The MVP uses `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. That opens the user's messaging app and avoids direct SMS permissions.
 
-Known weakness: the request code and requested minutes are visible in the compose screen, and the current test conversion is deterministic. A stronger production version should generate and deliver the approval code server-side, or use a companion-accountability app.
+Known weakness: the request code and requested minutes are visible in the compose screen. The local approval code is derived from the request code, app, and requested minutes so the approved duration is bound to the generated request. A stronger production version should generate and deliver the approval code server-side, or use a companion-accountability app.
 
 ## Safety Rules
 

@@ -1,6 +1,6 @@
 # AirLock Android
 
-AirLock Android is a native Android MVP for adding AirLock-style friction to distracting phone apps. Users choose apps, set a daily usage budget, and get a blocking wall after the limit is reached. Extra time requires an approval code requested through a preset accountability phone number.
+AirLock Android is a goose-themed native Android MVP for adding AirLock-style friction to distracting phone apps. Users choose apps, set a daily usage budget, and get a blocking wall after the limit is reached. Extra time requires an approval code requested through a preset accountability phone number.
 
 This repo builds locally with the Gradle wrapper after Android SDK setup.
 
@@ -12,9 +12,9 @@ This repo builds locally with the Gradle wrapper after Android SDK setup.
 - Local master override PIN for changing monitoring state and active app limits.
 - Foreground monitoring service.
 - Usage Access based foreground-app detection.
-- Overlay blocking screen after the selected app exceeds its limit.
+- Goose-themed overlay blocking screen after the selected app exceeds its limit.
 - SMS compose intent for sending a numeric request code tied to requested extra minutes.
-- Approval code entry grants the minutes approved when the request code was generated.
+- Approval code entry grants the minutes approved when the request code was generated and plays a goose animation.
 - Boot receiver restarts monitoring if monitoring was enabled.
 
 ## Why This Shape
@@ -47,19 +47,19 @@ With command-line tooling:
 
 ## First Device Test
 
-1. Install and open AirLock Android.
-2. Tap `Grant Usage Access` and enable AirLock Android.
+1. Install and open AirLock Goose.
+2. Tap `Grant Usage Access` and enable AirLock Goose.
 3. Tap `Grant Display Over Other Apps` and allow overlays.
 4. Enter:
    - Accountability phone number: a test number you control
    - Master override PIN: at least four digits
-5. Tap `Set App Limits`, choose one non-critical app, continue, and set daily limit to `1`.
-6. Tap `Start Monitoring` and enter the master PIN.
+5. Tap `Set Goose Limits!`, choose one non-critical app, continue, and set daily limit to `1`.
+6. Tap `Start Goose Duty!` and enter the master PIN.
 7. Open the selected app and keep it foregrounded for over one minute.
-8. Confirm the AirLock overlay appears.
-9. Enter requested extra minutes and tap `Text Request Code`.
-10. Convert the request code with the temporary test rule, return to the blocked app, and enter the approval code.
-11. Confirm the overlay disappears for the requested duration.
+8. Confirm the goose overlay appears.
+9. Enter requested extra minutes and tap `Text the Goose!`.
+10. Return to the blocked app and enter the approval code for that request.
+11. Confirm the goose animation plays and the overlay disappears for the requested duration.
 
 ## Project Map
 
@@ -97,7 +97,7 @@ docs/TEST_PLAN.md
 
 ## Current Limitations
 
-- The SMS step opens the user's SMS app with the request code and requested minutes. That avoids restricted SMS permissions, but the current deterministic test conversion is not production-grade accountability.
+- The SMS step opens the user's SMS app with the request code and requested minutes. The local approval code is derived from the request code, app, and requested minutes, which binds the granted time to the generated request. This still is not production-grade accountability without a backend or companion app.
 - Overlay blocking is friction, not hard security. A determined user can revoke special permissions, force-stop, or uninstall the app.
 - The foreground app detector uses polling and UsageStats; OEM battery management can affect reliability.
 - No settings-change delay, unlock caps, audit trail, or backend SMS provider yet.

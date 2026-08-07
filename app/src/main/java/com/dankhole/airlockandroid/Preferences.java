@@ -23,6 +23,7 @@ final class Preferences {
     static final String KEY_MASTER_PIN_HASH = "master_pin_hash";
     static final String KEY_MASTER_PIN_SALT = "master_pin_salt";
 
+    private static final String APPROVAL_CODES_PREFIX = "approval_codes_";
     private static final String APPROVAL_CODE_PREFIX = "approval_code_";
     private static final String APPROVAL_CODE_EXPIRY_PREFIX = "approval_code_expiry_";
     private static final String APPROVAL_CODE_MINUTES_PREFIX = "approval_code_minutes_";
@@ -169,31 +170,66 @@ final class Preferences {
     static String createRequestCode(Context context, String packageName, int requestedMinutes) {
         SharedPreferences preferences = prefs(context);
         long now = System.currentTimeMillis();
-        String codeKey = APPROVAL_CODE_PREFIX + packageName;
-        String expiryKey = APPROVAL_CODE_EXPIRY_PREFIX + packageName;
-        String minutesKey = APPROVAL_CODE_MINUTES_PREFIX + packageName;
+        cleanExpiredApprovalCodes(preferences, packageName, now);
+        int safeMinutes = Math.max(1, requestedMinutes);
+        String requestCode;
+        String approvalCode;
+        Set<String> approvalCodes = pendingApprovalCodes(preferences, packageName);
+        do {
+            requestCode = String.format(Locale.US, "%06d", RANDOM.nextInt(1_000_000));
+            approvalCode = approvalCodeForRequest(packageName, requestCode, safeMinutes);
+        } while (approvalCodes.contains(approvalCode));
 
-        String requestCode = String.format(Locale.US, "%06d", RANDOM.nextInt(1_000_000));
+        approvalCodes.add(approvalCode);
         preferences.edit()
-                .putString(codeKey, approvalCodeForRequest(requestCode))
-                .putLong(expiryKey, now + CODE_TTL_MS)
-                .putInt(minutesKey, Math.max(1, requestedMinutes))
+                .putStringSet(pendingApprovalCodesKey(packageName), approvalCodes)
+                .putLong(approvalExpiryKey(packageName, approvalCode), now + CODE_TTL_MS)
+                .putInt(approvalMinutesKey(packageName, approvalCode), safeMinutes)
                 .apply();
         return requestCode;
     }
 
     static int consumeApprovalCodeMinutesIfValid(Context context, String packageName, String enteredCode) {
         SharedPreferences preferences = prefs(context);
+        long now = System.currentTimeMillis();
+        cleanExpiredApprovalCodes(preferences, packageName, now);
+
+        String normalized = normalizeCode(enteredCode);
+        Set<String> approvalCodes = pendingApprovalCodes(preferences, packageName);
+        if (approvalCodes.contains(normalized)) {
+            long expiry = preferences.getLong(approvalExpiryKey(packageName, normalized), 0L);
+            int minutes = preferences.getInt(approvalMinutesKey(packageName, normalized), -1);
+            if (expiry > now && minutes > 0) {
+                approvalCodes.remove(normalized);
+                preferences.edit()
+                        .putStringSet(pendingApprovalCodesKey(packageName), approvalCodes)
+                        .remove(approvalExpiryKey(packageName, normalized))
+                        .remove(approvalMinutesKey(packageName, normalized))
+                        .apply();
+                return minutes;
+            }
+        }
+
+        int legacyMinutes = consumeLegacyApprovalCodeIfValid(preferences, packageName, normalized, now);
+        if (legacyMinutes > 0) {
+            return legacyMinutes;
+        }
+        return -1;
+    }
+
+    private static int consumeLegacyApprovalCodeIfValid(
+            SharedPreferences preferences,
+            String packageName,
+            String enteredCode,
+            long now
+    ) {
         String codeKey = APPROVAL_CODE_PREFIX + packageName;
         String expiryKey = APPROVAL_CODE_EXPIRY_PREFIX + packageName;
         String minutesKey = APPROVAL_CODE_MINUTES_PREFIX + packageName;
         String expected = preferences.getString(codeKey, "");
         long expiry = preferences.getLong(expiryKey, 0L);
         int minutes = preferences.getInt(minutesKey, -1);
-        boolean valid = expected.equals(enteredCode)
-                && expiry > System.currentTimeMillis()
-                && minutes > 0;
-        if (valid) {
+        if (expected.equals(enteredCode) && expiry > now && minutes > 0) {
             preferences.edit()
                     .remove(codeKey)
                     .remove(expiryKey)
@@ -204,21 +240,84 @@ final class Preferences {
         return -1;
     }
 
-    static String approvalCodeForRequest(String requestCode) {
-        StringBuilder builder = new StringBuilder(requestCode.length());
-        for (int i = 0; i < requestCode.length(); i++) {
-            char character = requestCode.charAt(i);
-            if (!Character.isDigit(character)) {
-                continue;
+    private static void cleanExpiredApprovalCodes(
+            SharedPreferences preferences,
+            String packageName,
+            long now
+    ) {
+        Set<String> approvalCodes = pendingApprovalCodes(preferences, packageName);
+        if (approvalCodes.isEmpty()) {
+            return;
+        }
+
+        SharedPreferences.Editor editor = preferences.edit();
+        boolean changed = false;
+        Set<String> activeCodes = new HashSet<>(approvalCodes);
+        for (String approvalCode : approvalCodes) {
+            if (preferences.getLong(approvalExpiryKey(packageName, approvalCode), 0L) <= now) {
+                activeCodes.remove(approvalCode);
+                editor.remove(approvalExpiryKey(packageName, approvalCode));
+                editor.remove(approvalMinutesKey(packageName, approvalCode));
+                changed = true;
             }
-            int shifted = ((character - '0') + 5) % 10;
-            builder.append(shifted);
+        }
+        if (changed) {
+            editor.putStringSet(pendingApprovalCodesKey(packageName), activeCodes).apply();
+        }
+    }
+
+    private static Set<String> pendingApprovalCodes(SharedPreferences preferences, String packageName) {
+        Set<String> stored = preferences.getStringSet(
+                pendingApprovalCodesKey(packageName),
+                Collections.emptySet()
+        );
+        return new HashSet<>(stored);
+    }
+
+    static String approvalCodeForRequest(String packageName, String requestCode, int requestedMinutes) {
+        String input = packageName + ":" + normalizeCode(requestCode) + ":" + Math.max(1, requestedMinutes);
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            long value = 0L;
+            for (int i = 0; i < 8; i++) {
+                value = (value << 8) | (bytes[i] & 0xffL);
+            }
+            long positive = value & Long.MAX_VALUE;
+            return String.format(Locale.US, "%06d", positive % 1_000_000L);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    private static String normalizeCode(String code) {
+        if (code == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(code.length());
+        for (int i = 0; i < code.length(); i++) {
+            char character = code.charAt(i);
+            if (Character.isDigit(character)) {
+                builder.append(character);
+            }
         }
         return builder.toString();
     }
 
     private static String usageKey(String packageName) {
         return USAGE_PREFIX + today() + "_" + packageName;
+    }
+
+    private static String pendingApprovalCodesKey(String packageName) {
+        return APPROVAL_CODES_PREFIX + packageName;
+    }
+
+    private static String approvalExpiryKey(String packageName, String approvalCode) {
+        return APPROVAL_CODE_EXPIRY_PREFIX + packageName + "_" + approvalCode;
+    }
+
+    private static String approvalMinutesKey(String packageName, String approvalCode) {
+        return APPROVAL_CODE_MINUTES_PREFIX + packageName + "_" + approvalCode;
     }
 
     private static String limitKey(String packageName) {

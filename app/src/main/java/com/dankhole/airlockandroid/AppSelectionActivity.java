@@ -98,24 +98,25 @@ public class AppSelectionActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
 
-        root.addView(UiStyle.screenTitle(this, "App Limits"), UiStyle.fullWidth(this, 4));
+        root.addView(UiStyle.screenTitle(this, "Goose Limits"), UiStyle.fullWidth(this, 4));
+        root.addView(new GooseMascotView(this), UiStyle.gooseBannerParams(this));
         root.addView(UiStyle.bodyText(
                 this,
-                "Usage Access is required before app limits can be selected."
+                "Usage Access is required before the goose can choose guarded apps!"
         ), UiStyle.fullWidth(this, 18));
 
         LinearLayout card = UiStyle.card(this);
         TextView required = UiStyle.statusText(this);
-        required.setText("REQUIRED BEFORE MOVING FORWARD: Usage Access is off\n"
-                + "Open Usage Access, choose AirLock Android, and enable usage access before returning to this wizard.");
+        required.setText("REQUIRED BEFORE WADDLING FORWARD: Usage Access is off!\n"
+                + "Open Usage Access, choose AirLock Goose, and enable usage access before returning to the goose wizard!");
         UiStyle.setStatus(required, UiStyle.STATUS_REQUIRED);
         card.addView(required, UiStyle.fullWidth(this, 12));
 
-        Button settingsButton = UiStyle.primaryButton(this, "Open Usage Access Settings");
+        Button settingsButton = UiStyle.primaryButton(this, "Open Usage Access Settings!");
         settingsButton.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)));
         card.addView(settingsButton, UiStyle.buttonParams(this));
 
-        Button backButton = UiStyle.secondaryButton(this, "Back to Settings");
+        Button backButton = UiStyle.secondaryButton(this, "Back to Goose Settings!");
         backButton.setOnClickListener(v -> finish());
         card.addView(backButton, UiStyle.buttonParams(this));
 
@@ -135,19 +136,20 @@ public class AppSelectionActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
 
-        root.addView(UiStyle.screenTitle(this, "App Limits"), UiStyle.fullWidth(this, 4));
+        root.addView(UiStyle.screenTitle(this, "Goose Limits"), UiStyle.fullWidth(this, 4));
+        root.addView(new GooseMascotView(this), UiStyle.gooseBannerParams(this));
         root.addView(UiStyle.bodyText(
                 this,
-                "Monitoring is active, so app limits are locked behind the master PIN."
+                "Goose duty is active, so guarded apps are locked behind the master PIN!"
         ), UiStyle.fullWidth(this, 18));
 
         LinearLayout card = UiStyle.card(this);
         TextView required = UiStyle.statusText(this);
-        required.setText("LOCKED: Return to AirLock and use Change App Limits. The master PIN is required while monitoring is on.");
+        required.setText("LOCKED: Return to AirLock Goose and use Change Goose List! The master PIN is required while goose duty is on.");
         UiStyle.setStatus(required, UiStyle.STATUS_REQUIRED);
         card.addView(required, UiStyle.fullWidth(this, 12));
 
-        Button backButton = UiStyle.primaryButton(this, "Back to AirLock");
+        Button backButton = UiStyle.primaryButton(this, "Back to AirLock Goose!");
         backButton.setOnClickListener(v -> finish());
         card.addView(backButton, UiStyle.buttonParams(this));
 
@@ -179,11 +181,12 @@ public class AppSelectionActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
 
-        root.addView(UiStyle.screenTitle(this, "App Limits"), UiStyle.fullWidth(this, 4));
-        root.addView(wizardHeader("Step 1 of 2", "Choose apps"), UiStyle.fullWidth(this, 12));
+        root.addView(UiStyle.screenTitle(this, "Goose Limits"), UiStyle.fullWidth(this, 4));
+        root.addView(new GooseMascotView(this), UiStyle.gooseBannerParams(this));
+        root.addView(wizardHeader("Step 1 of 2", "Pick apps!"), UiStyle.fullWidth(this, 12));
         root.addView(UiStyle.bodyText(
                 this,
-                "Select one app or a group of apps, then continue to set their daily limit."
+                "Pick one app or a flock of apps, then set when the goose should step in!"
         ), UiStyle.fullWidth(this, 16));
 
         selectionSummary = UiStyle.statusText(this);
@@ -196,10 +199,10 @@ public class AppSelectionActivity extends Activity {
         }
         root.addView(listCard, UiStyle.fullWidth(this, 14));
 
-        Button nextButton = UiStyle.primaryButton(this, "Continue to Daily Limit");
+        Button nextButton = UiStyle.primaryButton(this, "Continue to Goose Timer!");
         nextButton.setOnClickListener(v -> {
             if (batchPackages.isEmpty()) {
-                Toast.makeText(this, "Select at least one app before continuing", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Pick at least one app for the goose!", Toast.LENGTH_SHORT).show();
                 refreshSelectionSummary();
                 return;
             }
@@ -207,15 +210,15 @@ public class AppSelectionActivity extends Activity {
         });
         root.addView(nextButton, UiStyle.buttonParams(this));
 
-        Button removeButton = UiStyle.secondaryButton(this, "Remove Limit from Selected");
+        Button removeButton = UiStyle.secondaryButton(this, "Remove Goose Limit from Selected!");
         removeButton.setOnClickListener(v -> {
             if (batchPackages.isEmpty()) {
-                Toast.makeText(this, "Select at least one app first", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Pick at least one app first!", Toast.LENGTH_SHORT).show();
                 refreshSelectionSummary();
                 return;
             }
             Preferences.removeLimitsForPackages(this, batchPackages);
-            Toast.makeText(this, "Limits removed", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Goose limits removed!", Toast.LENGTH_SHORT).show();
             showSelectionStep();
         });
         root.addView(removeButton, UiStyle.buttonParams(this));
@@ -256,13 +259,13 @@ public class AppSelectionActivity extends Activity {
         textColumn.addView(label);
 
         TextView detail = UiStyle.helperText(this, limited
-                ? "Daily limit: " + Preferences.dailyLimitMinutes(this, app.packageName) + " min"
-                : "No limit set");
+                ? "Daily goose limit: " + Preferences.dailyLimitMinutes(this, app.packageName) + " min"
+                : "No goose limit yet");
         detail.setTextColor(limited ? UiStyle.COLOR_PRIMARY : UiStyle.COLOR_TEXT_MUTED);
         detail.setPadding(0, UiStyle.dp(this, 2), 0, 0);
         textColumn.addView(detail);
 
-        TextView selectedBadge = UiStyle.badge(this, "Selected", UiStyle.STATUS_READY);
+        TextView selectedBadge = UiStyle.badge(this, "Goose picked!", UiStyle.STATUS_READY);
         selectedBadge.setVisibility(View.GONE);
         textColumn.addView(selectedBadge, compactBadgeParams());
 
@@ -306,12 +309,13 @@ public class AppSelectionActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
 
-        root.addView(UiStyle.screenTitle(this, "Daily Limit"), UiStyle.fullWidth(this, 4));
-        root.addView(wizardHeader("Step 2 of 2", "Set minutes"), UiStyle.fullWidth(this, 12));
+        root.addView(UiStyle.screenTitle(this, "Goose Timer"), UiStyle.fullWidth(this, 4));
+        root.addView(new GooseMascotView(this), UiStyle.gooseBannerParams(this));
+        root.addView(wizardHeader("Step 2 of 2", "Set minutes!"), UiStyle.fullWidth(this, 12));
         root.addView(UiStyle.bodyText(this, selectedAppsSummary()), UiStyle.fullWidth(this, 16));
 
         LinearLayout panel = UiStyle.card(this);
-        panel.addView(UiStyle.fieldLabel(this, "Daily limit in minutes"), UiStyle.fullWidth(this, 6));
+        panel.addView(UiStyle.fieldLabel(this, "Daily goose limit in minutes"), UiStyle.fullWidth(this, 6));
 
         EditText limitInput = UiStyle.inputField(this, "Minutes");
         limitInput.setInputType(InputType.TYPE_CLASS_PHONE);
@@ -332,28 +336,28 @@ public class AppSelectionActivity extends Activity {
         panel.addView(limitInput, UiStyle.fullWidth(this, 8));
 
         TextView validationText = UiStyle.statusText(this);
-        validationText.setText("Enter a whole number greater than 0. This limit applies to every selected app.");
+        validationText.setText("Enter a whole number greater than 0! The goose applies it to every picked app.");
         UiStyle.setStatus(validationText, UiStyle.STATUS_NEUTRAL);
         panel.addView(validationText);
         root.addView(panel, UiStyle.fullWidth(this, 14));
 
-        Button saveButton = UiStyle.primaryButton(this, "Save Daily Limit");
+        Button saveButton = UiStyle.primaryButton(this, "Save Goose Limit!");
         saveButton.setOnClickListener(v -> {
             int minutes = parsePositiveInt(limitInput);
             if (minutes <= 0) {
                 UiStyle.styleInput(limitInput, true);
-                validationText.setText("REQUIRED: Enter a daily limit greater than 0 minutes before saving.");
+                validationText.setText("REQUIRED: Give the goose a daily limit greater than 0 minutes!");
                 UiStyle.setStatus(validationText, UiStyle.STATUS_REQUIRED);
                 limitInput.setError("Enter a number greater than 0");
                 return;
             }
             Preferences.saveLimitForPackages(this, batchPackages, minutes);
-            Toast.makeText(this, "App limits saved", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Goose limits saved!", Toast.LENGTH_SHORT).show();
             finish();
         });
         root.addView(saveButton, UiStyle.buttonParams(this));
 
-        Button backButton = UiStyle.secondaryButton(this, "Back to App Selection");
+        Button backButton = UiStyle.secondaryButton(this, "Back to Goose List!");
         backButton.setOnClickListener(v -> {
             showingLimitStep = false;
             setContentView(selectionContent(false));
@@ -405,9 +409,9 @@ public class AppSelectionActivity extends Activity {
 
     private String selectedAppsSummary() {
         if (batchPackages.size() == 1) {
-            return "1 app selected. Save a daily limit for this app.";
+            return "1 app picked! Save a goose limit for this app.";
         }
-        return batchPackages.size() + " apps selected. Save one daily limit for this group.";
+        return batchPackages.size() + " apps picked! Save one goose limit for this flock.";
     }
 
     private List<AppEntry> loadLaunchableApps() {
@@ -440,8 +444,8 @@ public class AppSelectionActivity extends Activity {
         }
         boolean hasSelection = !batchPackages.isEmpty();
         selectionSummary.setText(hasSelection
-                ? "READY: " + batchPackages.size() + " selected. Continue to set the daily limit."
-                : "REQUIRED: Select at least one app before continuing.");
+                ? "READY: " + batchPackages.size() + " picked! Continue to set the goose timer."
+                : "REQUIRED: Pick at least one app before the goose can continue!");
         UiStyle.setStatus(selectionSummary, hasSelection ? UiStyle.STATUS_READY : UiStyle.STATUS_REQUIRED);
     }
 

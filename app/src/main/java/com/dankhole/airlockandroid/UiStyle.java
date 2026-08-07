@@ -326,6 +326,20 @@ final class UiStyle {
         ));
     }
 
+    static LinearLayout usageRow(Context context, boolean overLimit) {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(context, 12), dp(context, 12), dp(context, 12), dp(context, 12));
+        row.setBackground(rounded(
+                context,
+                overLimit ? COLOR_DANGER_SOFT : COLOR_SURFACE_ALT,
+                8,
+                overLimit ? COLOR_DANGER : COLOR_OUTLINE,
+                overLimit ? 2 : 1
+        ));
+        return row;
+    }
+
     static LinearLayout.LayoutParams fullWidth(Context context) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -347,6 +361,15 @@ final class UiStyle {
     static LinearLayout.LayoutParams buttonParams(Context context) {
         LinearLayout.LayoutParams params = fullWidth(context, 10);
         params.setMargins(0, dp(context, 6), 0, dp(context, 10));
+        return params;
+    }
+
+    static LinearLayout.LayoutParams gooseBannerParams(Context context) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(context, 88)
+        );
+        params.setMargins(0, dp(context, 4), 0, dp(context, 18));
         return params;
     }
 

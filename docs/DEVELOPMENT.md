@@ -1,6 +1,6 @@
 # Development Guide
 
-Last updated: July 20, 2026
+Last updated: August 7, 2026
 
 ## Status
 
@@ -60,12 +60,25 @@ users get text, color, and shape cues together. Screens that can touch the
 status bar, navigation bar, or camera cutout should apply
 `applySystemInsetsPadding(...)` to their top-level content container.
 
+## Goose Visual Theme
+
+Goose-themed visuals are plain Java `View` classes with Canvas drawing, not
+image dependencies. Use `GooseMascotView` with `UiStyle.gooseBannerParams(...)`
+near the top of setup/wizard screens. `GooseCelebrationView` is reserved for
+the successful extra-time unlock animation so that moment feels distinct.
+
 ## Icon Assets
 
 The launcher and monitoring notification use Google's Material Symbols
 `lock_clock` icon as an Android vector drawable. Material Symbols are licensed
 under Apache License 2.0 and can be found in the Google Material icons
 repository: <https://github.com/google/material-design-icons>.
+
+## Usage Tracking
+
+The main screen's "Today's usage" section only renders apps that already have
+AirLock limits. Usage is stored locally in `Preferences` and reconciled from
+Android UsageStats when Usage Access is available.
 
 ## Permission Notes
 

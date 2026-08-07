@@ -21,7 +21,9 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -35,7 +37,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.util.Calendar;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -56,6 +58,8 @@ public class MonitoringService extends Service {
     private String lastForegroundPackage;
     private long lastTickElapsedMs;
     private long keepOverlayUntilMs;
+    private boolean unlockCelebrationRunning;
+    private final Map<String, OverlayFormState> overlayFormStates = new HashMap<>();
 
     private final Runnable pollRunnable = new Runnable() {
         @Override
@@ -107,7 +111,7 @@ public class MonitoringService extends Service {
     @Override
     public void onDestroy() {
         handler.removeCallbacks(pollRunnable);
-        hideOverlay();
+        hideOverlay(false);
         super.onDestroy();
     }
 
@@ -142,12 +146,16 @@ public class MonitoringService extends Service {
             stopMonitoring();
             return;
         }
+        if (unlockCelebrationRunning) {
+            keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
+            return;
+        }
 
         long now = System.currentTimeMillis();
         long elapsedNow = SystemClock.elapsedRealtime();
         String foregroundPackage = findForegroundPackage(now);
         Set<String> selectedPackages = Preferences.selectedPackages(this);
-        reconcileDailyUsageFromSystemStats(selectedPackages, now);
+        UsageTracker.reconcileTodayFromSystemStats(this, selectedPackages);
 
         if (foregroundPackage != null
                 && selectedPackages.contains(foregroundPackage)
@@ -162,7 +170,7 @@ public class MonitoringService extends Service {
             if (shouldKeepExistingOverlay(now, foregroundPackage)) {
                 return;
             }
-            hideOverlay();
+            hideOverlay(true);
             return;
         }
 
@@ -171,7 +179,7 @@ public class MonitoringService extends Service {
         if (shouldBlock) {
             showOverlay(foregroundPackage);
         } else {
-            hideOverlay();
+            hideOverlay(false);
         }
     }
 
@@ -243,49 +251,12 @@ public class MonitoringService extends Service {
         return mostRecent == null ? lastForegroundPackage : mostRecent.getPackageName();
     }
 
-    private void reconcileDailyUsageFromSystemStats(Set<String> selectedPackages, long now) {
-        if (selectedPackages.isEmpty()) {
-            return;
-        }
-        UsageStatsManager usageStatsManager = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
-        if (usageStatsManager == null) {
-            return;
-        }
-
-        Map<String, UsageStats> stats;
-        try {
-            stats = usageStatsManager.queryAndAggregateUsageStats(startOfTodayMs(now), now);
-        } catch (SecurityException ignored) {
-            return;
-        }
-        if (stats == null || stats.isEmpty()) {
-            return;
-        }
-
-        for (String packageName : selectedPackages) {
-            UsageStats stat = stats.get(packageName);
-            if (stat != null) {
-                Preferences.reconcileUsageTodayMs(this, packageName, stat.getTotalTimeInForeground());
-            }
-        }
-    }
-
-    private long startOfTodayMs(long now) {
-        Calendar calendar = Calendar.getInstance();
-        calendar.setTimeInMillis(now);
-        calendar.set(Calendar.HOUR_OF_DAY, 0);
-        calendar.set(Calendar.MINUTE, 0);
-        calendar.set(Calendar.SECOND, 0);
-        calendar.set(Calendar.MILLISECOND, 0);
-        return calendar.getTimeInMillis();
-    }
-
     private void showOverlay(String packageName) {
         if (overlayView != null && packageName.equals(overlayPackageName)) {
             keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
             return;
         }
-        hideOverlay();
+        hideOverlay(true);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             return;
@@ -314,7 +285,10 @@ public class MonitoringService extends Service {
 
         try {
             windowManager.addView(overlayView, params);
-            EditText firstInput = overlayView.findViewWithTag("minutes_input");
+            OverlayFormState formState = overlayFormState(packageName);
+            EditText firstInput = overlayView.findViewWithTag(
+                    formState.lastRequestedMinutes > 0 ? "code_input" : "minutes_input"
+            );
             if (firstInput != null) {
                 showKeyboard(firstInput);
             }
@@ -346,32 +320,50 @@ public class MonitoringService extends Service {
         String appLabel = appLabel(packageName);
         long usedMinutes = Preferences.getUsageTodayMs(this, packageName) / 60_000L;
         int limitMinutes = Preferences.dailyLimitMinutes(this, packageName);
+        OverlayFormState formState = overlayFormState(packageName);
 
-        card.addView(UiStyle.overlayTitle(this, "Time limit reached"), UiStyle.fullWidth(this, 8));
+        card.addView(UiStyle.overlayTitle(this, "The goose says time's up!"), UiStyle.fullWidth(this, 8));
 
         TextView detail = UiStyle.overlayBody(
                 this,
-                appLabel + "\nUsed " + usedMinutes + " of " + limitMinutes + " minutes today."
+                appLabel + "\nThe goose counted " + usedMinutes + " of "
+                        + limitMinutes + " minutes today!"
         );
         detail.setGravity(Gravity.CENTER);
         card.addView(detail, UiStyle.fullWidth(this, 18));
 
         TextView requestStatus = UiStyle.statusText(this);
-        requestStatus.setText("Extra time requires an approval code from the accountability number.");
-        UiStyle.setStatus(requestStatus, UiStyle.STATUS_WARNING);
+        if (formState.lastRequestedMinutes > 0) {
+            requestStatus.setText(requestSentMessage(formState.lastRequestedMinutes));
+            UiStyle.setStatus(requestStatus, UiStyle.STATUS_READY);
+        } else {
+            requestStatus.setText("Need more time? The goose needs an approval code first!");
+            UiStyle.setStatus(requestStatus, UiStyle.STATUS_WARNING);
+        }
         card.addView(requestStatus, UiStyle.fullWidth(this, 14));
 
-        card.addView(UiStyle.overlayStepLabel(this, "1. Request minutes"), UiStyle.fullWidth(this, 6));
+        TextView errorText = UiStyle.statusText(this);
+
+        card.addView(UiStyle.overlayStepLabel(this, "1. Ask for minutes!"), UiStyle.fullWidth(this, 6));
         EditText minutesInput = new EditText(this);
         minutesInput.setTag("minutes_input");
         minutesInput.setHint("Extra minutes");
         minutesInput.setInputType(InputType.TYPE_CLASS_PHONE);
         minutesInput.setSingleLine(true);
         minutesInput.setImeOptions(EditorInfo.IME_ACTION_NEXT);
-        minutesInput.setText("5");
+        minutesInput.setText(formState.requestedMinutesText);
         minutesInput.setSelectAllOnFocus(true);
         minutesInput.setGravity(Gravity.CENTER);
-        UiStyle.styleOverlayInput(minutesInput, false);
+        UiStyle.styleOverlayInput(minutesInput, formState.minutesInputError);
+        minutesInput.addTextChangedListener(new SimpleTextWatcher() {
+            @Override
+            public void afterTextChanged(Editable editable) {
+                formState.requestedMinutesText = editable.toString();
+                formState.minutesInputError = false;
+                UiStyle.styleOverlayInput(minutesInput, false);
+                hideOverlayError(errorText, formState);
+            }
+        });
         minutesInput.setOnClickListener(v -> {
             showKeyboard(minutesInput);
             scrollToInput(scrollView, minutesInput);
@@ -384,19 +376,29 @@ public class MonitoringService extends Service {
         });
         card.addView(minutesInput, UiStyle.fullWidth(this, 12));
 
-        card.addView(UiStyle.overlayStepLabel(this, "2. Text request code"), UiStyle.fullWidth(this, 6));
-        Button textCodeButton = UiStyle.primaryButton(this, "Text Request Code");
+        card.addView(UiStyle.overlayStepLabel(this, "2. Text the goose!"), UiStyle.fullWidth(this, 6));
+        Button textCodeButton = UiStyle.primaryButton(this, "Text the Goose!");
         card.addView(textCodeButton, UiStyle.buttonParams(this));
 
-        card.addView(UiStyle.overlayStepLabel(this, "3. Enter approval code"), UiStyle.fullWidth(this, 6));
+        card.addView(UiStyle.overlayStepLabel(this, "3. Enter approval code!"), UiStyle.fullWidth(this, 6));
         EditText codeInput = new EditText(this);
         codeInput.setTag("code_input");
         codeInput.setHint("Approval code");
         codeInput.setInputType(InputType.TYPE_CLASS_PHONE);
         codeInput.setSingleLine(true);
         codeInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        codeInput.setText(formState.approvalCodeText);
         codeInput.setGravity(Gravity.CENTER);
-        UiStyle.styleOverlayInput(codeInput, false);
+        UiStyle.styleOverlayInput(codeInput, formState.codeInputError);
+        codeInput.addTextChangedListener(new SimpleTextWatcher() {
+            @Override
+            public void afterTextChanged(Editable editable) {
+                formState.approvalCodeText = editable.toString();
+                formState.codeInputError = false;
+                UiStyle.styleOverlayInput(codeInput, false);
+                hideOverlayError(errorText, formState);
+            }
+        });
         codeInput.setOnClickListener(v -> {
             showKeyboard(codeInput);
             scrollToInput(scrollView, codeInput);
@@ -409,31 +411,45 @@ public class MonitoringService extends Service {
         });
         card.addView(codeInput, UiStyle.fullWidth(this, 12));
 
-        TextView errorText = UiStyle.statusText(this);
-        errorText.setVisibility(View.GONE);
+        if (formState.errorMessage.isEmpty()) {
+            errorText.setVisibility(View.GONE);
+        } else {
+            errorText.setText(formState.errorMessage);
+            UiStyle.setStatus(errorText, UiStyle.STATUS_REQUIRED);
+            errorText.setVisibility(View.VISIBLE);
+        }
         card.addView(errorText, UiStyle.fullWidth(this, 12));
 
-        card.addView(UiStyle.overlayStepLabel(this, "4. Unlock"), UiStyle.fullWidth(this, 6));
-        Button unlockButton = UiStyle.primaryButton(this, "Unlock Extra Time");
+        card.addView(UiStyle.overlayStepLabel(this, "4. Let the goose loose!"), UiStyle.fullWidth(this, 6));
+        Button unlockButton = UiStyle.primaryButton(this, "Loose the Goose!");
         card.addView(unlockButton, UiStyle.buttonParams(this));
 
-        Button leaveButton = UiStyle.overlaySecondaryButton(this, "Leave App");
+        Button leaveButton = UiStyle.overlaySecondaryButton(this, "Leave App!");
         card.addView(leaveButton, UiStyle.buttonParams(this));
 
         textCodeButton.setOnClickListener(v -> {
             int requestedMinutes = parsePositiveInt(minutesInput);
             keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
             if (requestedMinutes <= 0) {
+                formState.minutesInputError = true;
                 UiStyle.styleOverlayInput(minutesInput, true);
-                showOverlayError(errorText, "Enter requested minutes greater than 0 before requesting a code.");
+                showOverlayError(
+                        errorText,
+                        formState,
+                        "Tell the goose how many minutes to ask for!"
+                );
                 return;
             }
             UiStyle.styleOverlayInput(minutesInput, false);
-            hideOverlayError(errorText);
             if (composeCodeSms(packageName, requestedMinutes)) {
-                requestStatus.setText("Request code sent for " + requestedMinutes
-                        + " minutes. Enter the approval code after it is sent back.");
+                formState.requestedMinutesText = String.valueOf(requestedMinutes);
+                formState.lastRequestedMinutes = requestedMinutes;
+                formState.minutesInputError = false;
+                formState.errorMessage = "";
+                minutesInput.setText(formState.requestedMinutesText);
+                requestStatus.setText(requestSentMessage(requestedMinutes));
                 UiStyle.setStatus(requestStatus, UiStyle.STATUS_READY);
+                hideOverlayError(errorText, formState);
                 showKeyboard(codeInput);
             }
         });
@@ -442,18 +458,27 @@ public class MonitoringService extends Service {
             String entered = codeInput.getText().toString().trim();
             keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
             if (entered.isEmpty()) {
+                formState.codeInputError = true;
                 UiStyle.styleOverlayInput(codeInput, true);
-                showOverlayError(errorText, "Enter the approval code before unlocking. The app remains blocked.");
+                showOverlayError(
+                        errorText,
+                        formState,
+                        "Enter the approval code first! The goose is still guarding this app!"
+                );
                 return;
             }
             int approvedMinutes = Preferences.consumeApprovalCodeMinutesIfValid(this, packageName, entered);
             if (approvedMinutes > 0) {
                 Preferences.grantExtraTime(this, packageName, approvedMinutes);
-                hideOverlay();
-                Toast.makeText(this, approvedMinutes + " extra minutes granted", Toast.LENGTH_SHORT).show();
+                showUnlockCelebration(card, approvedMinutes);
             } else {
+                formState.codeInputError = true;
                 UiStyle.styleOverlayInput(codeInput, true);
-                showOverlayError(errorText, "Invalid or expired approval code. Request a new code if needed.");
+                showOverlayError(
+                        errorText,
+                        formState,
+                        "That code did not honk! Request a new one if needed!"
+                );
             }
         });
 
@@ -462,19 +487,68 @@ public class MonitoringService extends Service {
             home.addCategory(Intent.CATEGORY_HOME);
             home.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(home);
-            hideOverlay();
+            hideOverlay(true);
         });
 
         return scrollView;
     }
 
-    private void showOverlayError(TextView errorText, String message) {
-        errorText.setText("REQUIRED: " + message);
+    private void showUnlockCelebration(LinearLayout card, int approvedMinutes) {
+        unlockCelebrationRunning = true;
+        keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
+        card.removeAllViews();
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        GooseCelebrationView gooseView = new GooseCelebrationView(this);
+        card.addView(gooseView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                UiStyle.dp(this, 190)
+        ));
+
+        TextView title = UiStyle.overlayTitle(this, "The goose is loose!");
+        card.addView(title, UiStyle.fullWidth(this, 8));
+
+        TextView body = UiStyle.overlayBody(
+                this,
+                approvedMinutes + " minutes of extra time! Honk!"
+        );
+        body.setGravity(Gravity.CENTER);
+        card.addView(body, UiStyle.fullWidth(this, 0));
+
+        gooseView.start(() -> {
+            unlockCelebrationRunning = false;
+            hideOverlay(false);
+            Toast.makeText(
+                    this,
+                    "The goose is loose for " + approvedMinutes + " minutes!",
+                    Toast.LENGTH_LONG
+            ).show();
+        });
+    }
+
+    private OverlayFormState overlayFormState(String packageName) {
+        OverlayFormState state = overlayFormStates.get(packageName);
+        if (state == null) {
+            state = new OverlayFormState();
+            overlayFormStates.put(packageName, state);
+        }
+        return state;
+    }
+
+    private String requestSentMessage(int requestedMinutes) {
+        return "Goose request sent for " + requestedMinutes
+                + " minutes! Each approval code unlocks the amount that goose asked for!";
+    }
+
+    private void showOverlayError(TextView errorText, OverlayFormState formState, String message) {
+        formState.errorMessage = "REQUIRED: " + message;
+        errorText.setText(formState.errorMessage);
         UiStyle.setStatus(errorText, UiStyle.STATUS_REQUIRED);
         errorText.setVisibility(View.VISIBLE);
     }
 
-    private void hideOverlayError(TextView errorText) {
+    private void hideOverlayError(TextView errorText, OverlayFormState formState) {
+        formState.errorMessage = "";
         errorText.setText("");
         errorText.setVisibility(View.GONE);
     }
@@ -535,15 +609,15 @@ public class MonitoringService extends Service {
                 .getString(Preferences.KEY_ACCOUNTABILITY_NUMBER, "")
                 .trim();
         if (phone.isEmpty()) {
-            Toast.makeText(this, "Add an accountability number in settings", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Add an accountability number first!", Toast.LENGTH_LONG).show();
             return false;
         }
 
         String requestCode = Preferences.createRequestCode(this, packageName, requestedMinutes);
-        String message = "AirLock Android extra-time request for " + appLabel(packageName)
-                + ". Requested minutes: " + requestedMinutes
+        String message = "A goose is asking for " + requestedMinutes
+                + " minutes of extra time in " + appLabel(packageName) + "!"
                 + ". Request code: " + requestCode
-                + ". Convert with the temporary test rule and send back the approval code only if this is OK.";
+                + ". If approved, send back the approval code for this goose request!";
         Intent intent = new Intent(Intent.ACTION_SENDTO);
         intent.setData(Uri.parse("smsto:" + Uri.encode(phone)));
         intent.putExtra("sms_body", message);
@@ -552,14 +626,23 @@ public class MonitoringService extends Service {
             startActivity(intent);
             return true;
         } catch (RuntimeException ignored) {
-            Toast.makeText(this, "No SMS app available", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "No SMS app found!", Toast.LENGTH_SHORT).show();
             return false;
         }
     }
 
     private void hideOverlay() {
+        hideOverlay(true);
+    }
+
+    private void hideOverlay(boolean preserveFormState) {
+        unlockCelebrationRunning = false;
+        String removedPackageName = overlayPackageName;
         if (overlayView == null) {
             overlayPackageName = null;
+            if (!preserveFormState && removedPackageName != null) {
+                overlayFormStates.remove(removedPackageName);
+            }
             return;
         }
         try {
@@ -570,11 +653,15 @@ public class MonitoringService extends Service {
         overlayView = null;
         overlayPackageName = null;
         keepOverlayUntilMs = 0L;
+        if (!preserveFormState && removedPackageName != null) {
+            overlayFormStates.remove(removedPackageName);
+        }
     }
 
     private void stopMonitoring() {
         Preferences.prefs(this).edit().putBoolean(Preferences.KEY_ENABLED, false).apply();
-        hideOverlay();
+        hideOverlay(false);
+        overlayFormStates.clear();
         stopForeground(true);
         stopSelf();
     }
@@ -583,7 +670,7 @@ public class MonitoringService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
-                    "AirLock monitoring",
+                    "AirLock goose watch",
                     NotificationManager.IMPORTANCE_LOW
             );
             NotificationManager manager = getSystemService(NotificationManager.class);
@@ -602,8 +689,8 @@ public class MonitoringService extends Service {
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
         return builder
-                .setContentTitle("AirLock is monitoring")
-                .setContentText("Selected app limits are active.")
+                .setContentTitle("The goose is on duty!")
+                .setContentText("Guarding selected app limits!")
                 .setSmallIcon(R.drawable.ic_stat_lock_clock)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
@@ -620,5 +707,24 @@ public class MonitoringService extends Service {
         } catch (PackageManager.NameNotFoundException ignored) {
             return packageName;
         }
+    }
+
+    private abstract static class SimpleTextWatcher implements TextWatcher {
+        @Override
+        public void beforeTextChanged(CharSequence text, int start, int count, int after) {
+        }
+
+        @Override
+        public void onTextChanged(CharSequence text, int start, int before, int count) {
+        }
+    }
+
+    private static final class OverlayFormState {
+        String requestedMinutesText = "5";
+        String approvalCodeText = "";
+        String errorMessage = "";
+        boolean minutesInputError;
+        boolean codeInputError;
+        int lastRequestedMinutes = -1;
     }
 }
