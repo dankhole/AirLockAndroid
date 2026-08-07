@@ -61,6 +61,7 @@ public class MonitoringService extends Service {
     private static final long RECOVERY_FAST_WINDOW_MS = 3_000L;
     private static final long RECOVERY_WARM_WINDOW_MS = 15_000L;
     private static final long USAGE_EVENT_OVERLAP_MS = 500L;
+    private static final long RECOVERY_USAGE_EVENT_OVERLAP_MS = 3_000L;
     private static final long USAGE_RECONCILE_INTERVAL_MS = 60_000L;
     private static final long USAGE_PERSIST_INTERVAL_MS = 30_000L;
     private static final long EMERGENCY_PAUSE_CHECK_INTERVAL_MS = 60_000L;
@@ -236,8 +237,12 @@ public class MonitoringService extends Service {
         }
 
         long now = System.currentTimeMillis();
+        long elapsedNow = SystemClock.elapsedRealtime();
         long previousQueryEndMs = lastUsageQueryEndMs;
         lastUsageQueryEndMs = now;
+        long usageEventOverlapMs = isTransientRecoveryActive(elapsedNow)
+                ? RECOVERY_USAGE_EVENT_OVERLAP_MS
+                : USAGE_EVENT_OVERLAP_MS;
         String previousForegroundPackage = lastForegroundPackage;
         String blockedPackage = overlayPackageName != null
                 ? overlayPackageName
@@ -252,6 +257,7 @@ public class MonitoringService extends Service {
                 result = queryForegroundPackage(
                         now,
                         previousQueryEndMs,
+                        usageEventOverlapMs,
                         previousForegroundPackage,
                         blockedPackage,
                         transientPackages
@@ -289,6 +295,14 @@ public class MonitoringService extends Service {
         long now = System.currentTimeMillis();
         long elapsedNow = SystemClock.elapsedRealtime();
         String foregroundPackage = queryResult.packageName;
+        boolean foregroundIsTransient = isTransientSystemSurface(foregroundPackage);
+        boolean previousForegroundWasTransient =
+                isTransientSystemSurface(previousForegroundPackage);
+        if (foregroundIsTransient && !previousForegroundWasTransient) {
+            beginTransientRecovery();
+        } else if (!foregroundIsTransient) {
+            endTransientRecovery();
+        }
         if (queryResult.overlayInterrupted) {
             overlayNeedsRefresh = true;
         }
@@ -357,6 +371,7 @@ public class MonitoringService extends Service {
     private ForegroundQueryResult queryForegroundPackage(
             long now,
             long previousQueryEndMs,
+            long usageEventOverlapMs,
             String previousForegroundPackage,
             String blockedPackage,
             Set<String> transientPackages
@@ -370,7 +385,7 @@ public class MonitoringService extends Service {
         try {
             long queryStartMs = Math.max(
                     now - 10_000L,
-                    previousQueryEndMs - USAGE_EVENT_OVERLAP_MS
+                    previousQueryEndMs - usageEventOverlapMs
             );
             events = usageStatsManager.queryEvents(queryStartMs, now);
         } catch (SecurityException ignored) {
@@ -390,8 +405,8 @@ public class MonitoringService extends Service {
             }
 
             if (event.getTimeStamp() > previousQueryEndMs
-                    && isLifecycleEvent(type)
-                    && isOverlayInterruptionPackage(
+                    && isOverlayInterruptionEvent(
+                            type,
                             eventPackageName,
                             blockedPackage,
                             transientPackages
@@ -615,7 +630,23 @@ public class MonitoringService extends Service {
     private void beginTransientRecovery() {
         if (transientRecoveryStartedElapsedMs == 0L) {
             transientRecoveryStartedElapsedMs = SystemClock.elapsedRealtime();
+            debugLog("transient foreground recovery started");
         }
+    }
+
+    private void endTransientRecovery() {
+        transientRecoveryStartedElapsedMs = 0L;
+    }
+
+    private boolean isTransientRecoveryActive(long elapsedNow) {
+        if (transientRecoveryStartedElapsedMs == 0L) {
+            return false;
+        }
+        long recoveryElapsedMs = elapsedNow - transientRecoveryStartedElapsedMs;
+        if (recoveryElapsedMs < RECOVERY_FAST_WINDOW_MS) {
+            return true;
+        }
+        return isWaitingForBlockedAppReturn() && recoveryElapsedMs < RECOVERY_WARM_WINDOW_MS;
     }
 
     private boolean pauseForEmergencyDayPassIfActive() {
@@ -655,23 +686,24 @@ public class MonitoringService extends Service {
     }
 
     private long nextPollDelayMs() {
-        boolean waitingForBlockedAppReturn = stickyBlockedPackageName != null
-                && overlayView == null
-                && System.currentTimeMillis() <= keepOverlayUntilMs;
-        if (!waitingForBlockedAppReturn) {
-            transientRecoveryStartedElapsedMs = 0L;
+        if (transientRecoveryStartedElapsedMs == 0L) {
             return POLL_INTERVAL_MS;
         }
 
-        beginTransientRecovery();
         long recoveryElapsedMs = SystemClock.elapsedRealtime() - transientRecoveryStartedElapsedMs;
         if (recoveryElapsedMs < RECOVERY_FAST_WINDOW_MS) {
             return RECOVERY_FAST_POLL_INTERVAL_MS;
         }
-        if (recoveryElapsedMs < RECOVERY_WARM_WINDOW_MS) {
+        if (isWaitingForBlockedAppReturn() && recoveryElapsedMs < RECOVERY_WARM_WINDOW_MS) {
             return RECOVERY_WARM_POLL_INTERVAL_MS;
         }
         return POLL_INTERVAL_MS;
+    }
+
+    private boolean isWaitingForBlockedAppReturn() {
+        return stickyBlockedPackageName != null
+                && overlayView == null
+                && System.currentTimeMillis() <= keepOverlayUntilMs;
     }
 
     private void showOverlay(String packageName) {
@@ -1116,14 +1148,20 @@ public class MonitoringService extends Service {
                 || type == UsageEvents.Event.ACTIVITY_STOPPED));
     }
 
-    private boolean isOverlayInterruptionPackage(
+    private boolean isOverlayInterruptionEvent(
+            int type,
             String packageName,
             String blockedPackage,
             Set<String> transientPackages
     ) {
-        return blockedPackage != null
-                && (blockedPackage.equals(packageName)
-                || isTransientSystemSurface(packageName, transientPackages));
+        if (blockedPackage == null) {
+            return false;
+        }
+        if (blockedPackage.equals(packageName)) {
+            return isLifecycleEvent(type);
+        }
+        return isForegroundEvent(type)
+                && isTransientSystemSurface(packageName, transientPackages);
     }
 
     private boolean samePackage(String left, String right) {
@@ -1185,13 +1223,12 @@ public class MonitoringService extends Service {
     private void rememberBlockedPackage(String packageName) {
         stickyBlockedPackageName = packageName;
         keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
-        transientRecoveryStartedElapsedMs = 0L;
+        endTransientRecovery();
     }
 
     private void clearStickyBlockedPackage() {
         stickyBlockedPackageName = null;
         keepOverlayUntilMs = 0L;
-        transientRecoveryStartedElapsedMs = 0L;
         overlayNeedsRefresh = false;
         overlayWindowObscured = false;
     }

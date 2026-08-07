@@ -55,7 +55,7 @@ A foreground service with a persistent notification. It is the runtime core of t
 - Generates numeric request codes and validates short-lived approval codes.
 - Accepts hashed one-time emergency codes and suppresses blocking during an active 24-hour pause.
 
-Normal foreground detection uses a one-second cadence. Overlay recovery polls at 200 ms for three seconds, 500 ms through 15 seconds, and then returns to one second. Neither UsageStats query path runs on the main thread. Battery impact still needs physical-device testing.
+Normal foreground detection uses a one-second cadence and a 500 ms UsageEvents overlap. A newly observed launcher or system surface starts a bounded gesture-recovery window that polls at 200 ms and uses a three-second overlap for up to three seconds. Recovery for an already-blocked app can continue at 500 ms through 15 seconds before returning to the normal cadence. Recovery ends immediately when a real foreground app settles. Neither UsageStats query path runs on the main thread. Battery impact still needs physical-device testing.
 
 During an emergency day pass, the service keeps the enabled state and foreground notification but skips foreground and full-day UsageStats queries. It checks the pause deadline once per minute, survives reboot through `BootReceiver`, and resumes normal validation and polling automatically.
 

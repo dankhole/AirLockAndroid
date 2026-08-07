@@ -59,14 +59,15 @@ Expected result: selected app is blocked after its daily budget is exhausted.
 
 Expected result: a blocked app never becomes interactive after a gesture or app switch; its overlay returns within one monitoring poll.
 
-1. Open an over-limit app and confirm the blocking overlay is visible.
-2. Partially swipe up toward recents, then cancel the gesture back into the blocked app.
-3. Confirm the overlay is visible again in well under one second and the app behind it cannot be tapped.
-4. Open recents fully and confirm AirLock does not cover the recents screen or prevent selecting another app.
-5. Switch to a different app, then return to the blocked app.
-6. Confirm the overlay is rebuilt and still contains any unfinished request minutes or approval code.
-7. Go Home, confirm the launcher remains usable, relaunch the blocked app, and confirm the overlay returns.
-8. Repeat while the number keyboard is open and confirm the overlay still covers the entire app after returning.
+1. Put an over-limit app in recents, open an unblocked app, and use the bottom-edge horizontal gesture to quick-switch into the over-limit app.
+2. Confirm the blocking overlay appears in well under one second and the app behind it cannot be tapped.
+3. Partially swipe up toward recents, then cancel the gesture back into the blocked app.
+4. Confirm the overlay is visible again in well under one second and the app behind it cannot be tapped.
+5. Open recents fully and confirm AirLock does not cover the recents screen or prevent selecting another app.
+6. Switch to a different app, then return to the blocked app.
+7. Confirm the overlay is rebuilt and still contains any unfinished request minutes or approval code.
+8. Go Home, confirm the launcher remains usable, relaunch the blocked app, and confirm the overlay returns.
+9. Repeat while the number keyboard is open and confirm the overlay still covers the entire app after returning.
 
 ### Extra-Time Code
 
