@@ -15,6 +15,7 @@ This repo builds locally with the Gradle wrapper after Android SDK setup.
 - Goose-themed overlay blocking screen after the selected app exceeds its limit.
 - SMS compose intent for sending a numeric request code tied to requested extra minutes.
 - Approval code entry grants the minutes approved when the request code was generated and plays a goose animation.
+- Master-PIN-protected generation of five hashed, one-time emergency codes; each pauses all blocking for 24 hours.
 - Boot receiver restarts monitoring if monitoring was enabled.
 
 ## Why This Shape
@@ -27,7 +28,7 @@ The MVP avoids direct `SEND_SMS`, `READ_SMS`, broad `QUERY_ALL_PACKAGES`, and Ac
 
 - Android Studio, or Android SDK plus Gradle.
 - JDK 17.
-- Android SDK platform 35.
+- Android SDK platform 36.
 - A physical Android device is strongly preferred because Usage Access, overlays, and foreground services are hard to validate accurately on emulators.
 
 ## Build
@@ -60,6 +61,8 @@ With command-line tooling:
 9. Enter requested extra minutes and tap `Text the Keyholder!`.
 10. Return to the blocked app and enter the approval code for that request.
 11. Confirm the goose animation plays and the overlay disappears for the requested duration.
+
+For emergency-code testing, use the master PIN to generate a replacement set, save or share the five plaintext codes, then hide them. Each 8-digit code can be used once to pause all goose blocking for 24 hours; only salted hashes remain on the device.
 
 ## Project Map
 
@@ -102,9 +105,10 @@ docs/TEST_PLAN.md
 
 - The SMS step opens the user's SMS app with the request code and requested minutes for the Keyholder. The local approval code is derived from the request code, and the requested minutes are stored against that pending approval code. This still is not production-grade accountability without a backend or companion app.
 - Overlay blocking is friction, not hard security. A determined user can revoke special permissions, force-stop, or uninstall the app.
-- The foreground app detector uses polling and UsageStats; OEM battery management can affect reliability.
+- The foreground app detector polls recent UsageEvents on a background thread. Full usage reconciliation runs separately once per minute, and OEM battery management can still affect reliability.
 - No settings-change delay, unlock caps, audit trail, or backend SMS provider yet.
-- No release signing, CI, store listing, or Play policy submission package yet.
+- Emergency day passes use the device clock and are intentional recovery access, not tamper-proof enforcement.
+- Release signing is configured locally, but there is no CI, store listing, or Play policy submission package yet.
 
 ## Documentation
 

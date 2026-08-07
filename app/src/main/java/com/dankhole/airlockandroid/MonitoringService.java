@@ -19,8 +19,10 @@ import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.Process;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.Editable;
@@ -54,11 +56,21 @@ public class MonitoringService extends Service {
     private static final String TAG = "AirLockMonitor";
     private static final int NOTIFICATION_ID = 42;
     private static final long POLL_INTERVAL_MS = 1000L;
-    private static final long TRANSIENT_POLL_INTERVAL_MS = 200L;
-    private static final long USAGE_RECONCILE_INTERVAL_MS = 1000L;
+    private static final long RECOVERY_FAST_POLL_INTERVAL_MS = 200L;
+    private static final long RECOVERY_WARM_POLL_INTERVAL_MS = 500L;
+    private static final long RECOVERY_FAST_WINDOW_MS = 3_000L;
+    private static final long RECOVERY_WARM_WINDOW_MS = 15_000L;
+    private static final long USAGE_EVENT_OVERLAP_MS = 500L;
+    private static final long USAGE_RECONCILE_INTERVAL_MS = 60_000L;
+    private static final long USAGE_PERSIST_INTERVAL_MS = 30_000L;
+    private static final long EMERGENCY_PAUSE_CHECK_INTERVAL_MS = 60_000L;
     private static final long OVERLAY_STICKY_MS = 5 * 60 * 1000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private HandlerThread foregroundThread;
+    private Handler foregroundHandler;
+    private HandlerThread reconciliationThread;
+    private Handler reconciliationHandler;
     private WindowManager windowManager;
     private View overlayView;
     private String overlayPackageName;
@@ -67,20 +79,34 @@ public class MonitoringService extends Service {
     private Set<String> homePackageNames;
     private String lastForegroundPackage;
     private long lastTickElapsedMs;
-    private long lastUsageReconcileElapsedMs;
     private long lastUsageQueryEndMs;
+    private long lastUsagePersistElapsedMs;
     private long keepOverlayUntilMs;
     private long leaveAppGraceUntilElapsedMs;
+    private long transientRecoveryStartedElapsedMs;
     private boolean unlockCelebrationRunning;
     private boolean overlayNeedsRefresh;
     private boolean overlayWindowObscured;
+    private boolean foregroundQueryInFlight;
+    private boolean reconciliationInFlight;
+    private boolean emergencyPauseNotificationShown;
+    private boolean stopping;
+    private String cachedUsageDay;
+    private final Map<String, Long> usageTotalsMs = new HashMap<>();
+    private final Set<String> dirtyUsagePackages = new HashSet<>();
     private final Map<String, OverlayFormState> overlayFormStates = new HashMap<>();
 
     private final Runnable pollRunnable = new Runnable() {
         @Override
         public void run() {
-            poll();
-            handler.postDelayed(this, nextPollDelayMs());
+            requestForegroundPoll();
+        }
+    };
+
+    private final Runnable reconciliationRunnable = new Runnable() {
+        @Override
+        public void run() {
+            requestUsageReconciliation();
         }
     };
 
@@ -88,10 +114,25 @@ public class MonitoringService extends Service {
     public void onCreate() {
         super.onCreate();
         windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        foregroundThread = new HandlerThread(
+                "AirLockForeground",
+                Process.THREAD_PRIORITY_BACKGROUND
+        );
+        foregroundThread.start();
+        foregroundHandler = new Handler(foregroundThread.getLooper());
+        reconciliationThread = new HandlerThread(
+                "AirLockReconciliation",
+                Process.THREAD_PRIORITY_BACKGROUND
+        );
+        reconciliationThread.start();
+        reconciliationHandler = new Handler(reconciliationThread.getLooper());
+        emergencyPauseNotificationShown = Preferences.isEmergencyPauseActive(this);
         startForeground(NOTIFICATION_ID, buildNotification());
         lastTickElapsedMs = SystemClock.elapsedRealtime();
+        lastUsagePersistElapsedMs = lastTickElapsedMs;
         lastUsageQueryEndMs = System.currentTimeMillis();
         handler.post(pollRunnable);
+        handler.post(reconciliationRunnable);
     }
 
     @Override
@@ -99,6 +140,11 @@ public class MonitoringService extends Service {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             stopMonitoring();
             return START_NOT_STICKY;
+        }
+        if (Preferences.prefs(this).getBoolean(Preferences.KEY_ENABLED, false)
+                && Preferences.isEmergencyPauseActive(this)) {
+            updateForegroundNotification();
+            return START_STICKY;
         }
         if (!AndroidPermissions.hasUsageAccess(this)) {
             stopMonitoring();
@@ -126,8 +172,23 @@ public class MonitoringService extends Service {
 
     @Override
     public void onDestroy() {
+        stopping = true;
         handler.removeCallbacks(pollRunnable);
+        handler.removeCallbacks(reconciliationRunnable);
+        flushUsageTotals(true);
         hideOverlay(false);
+        if (foregroundHandler != null) {
+            foregroundHandler.removeCallbacksAndMessages(null);
+        }
+        if (reconciliationHandler != null) {
+            reconciliationHandler.removeCallbacksAndMessages(null);
+        }
+        if (foregroundThread != null) {
+            foregroundThread.quitSafely();
+        }
+        if (reconciliationThread != null) {
+            reconciliationThread.quitSafely();
+        }
         super.onDestroy();
     }
 
@@ -136,10 +197,16 @@ public class MonitoringService extends Service {
         return null;
     }
 
-    private void poll() {
+    private void requestForegroundPoll() {
+        if (stopping || foregroundQueryInFlight) {
+            return;
+        }
         SharedPreferences preferences = Preferences.prefs(this);
         if (!preferences.getBoolean(Preferences.KEY_ENABLED, false)) {
             stopMonitoring();
+            return;
+        }
+        if (!unlockCelebrationRunning && pauseForEmergencyDayPassIfActive()) {
             return;
         }
         if (!AndroidPermissions.hasUsageAccess(this)) {
@@ -164,89 +231,156 @@ public class MonitoringService extends Service {
         }
         if (unlockCelebrationRunning) {
             keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
+            scheduleNextForegroundPoll();
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        long previousQueryEndMs = lastUsageQueryEndMs;
+        lastUsageQueryEndMs = now;
+        String previousForegroundPackage = lastForegroundPackage;
+        String blockedPackage = overlayPackageName != null
+                ? overlayPackageName
+                : stickyBlockedPackageName;
+        Set<String> selectedPackages = Preferences.selectedPackages(this);
+        Set<String> transientPackages = transientSystemPackages();
+
+        foregroundQueryInFlight = true;
+        boolean posted = foregroundHandler != null && foregroundHandler.post(() -> {
+            ForegroundQueryResult result;
+            try {
+                result = queryForegroundPackage(
+                        now,
+                        previousQueryEndMs,
+                        previousForegroundPackage,
+                        blockedPackage,
+                        transientPackages
+                );
+            } catch (RuntimeException exception) {
+                debugLog("foreground query failed: " + exception.getClass().getSimpleName());
+                result = new ForegroundQueryResult(previousForegroundPackage, false);
+            }
+            ForegroundQueryResult completedResult = result;
+            handler.post(() -> completeForegroundPoll(
+                    previousForegroundPackage,
+                    selectedPackages,
+                    completedResult
+            ));
+        });
+        if (!posted) {
+            foregroundQueryInFlight = false;
+            scheduleNextForegroundPoll();
+        }
+    }
+
+    private void completeForegroundPoll(
+            String previousForegroundPackage,
+            Set<String> selectedPackages,
+            ForegroundQueryResult queryResult
+    ) {
+        foregroundQueryInFlight = false;
+        if (stopping) {
+            return;
+        }
+        if (!unlockCelebrationRunning && pauseForEmergencyDayPassIfActive()) {
             return;
         }
 
         long now = System.currentTimeMillis();
         long elapsedNow = SystemClock.elapsedRealtime();
-        String previousForegroundPackage = lastForegroundPackage;
-        String foregroundPackage = findForegroundPackage(now);
+        String foregroundPackage = queryResult.packageName;
+        if (queryResult.overlayInterrupted) {
+            overlayNeedsRefresh = true;
+        }
         if (!samePackage(previousForegroundPackage, foregroundPackage)) {
             debugLog("foreground " + previousForegroundPackage + " -> " + foregroundPackage
                     + ", overlay=" + overlayPackageName
                     + ", sticky=" + stickyBlockedPackageName);
         }
-        Set<String> selectedPackages = Preferences.selectedPackages(this);
-        if (elapsedNow - lastUsageReconcileElapsedMs >= USAGE_RECONCILE_INTERVAL_MS) {
-            UsageTracker.reconcileTodayFromSystemStats(this, selectedPackages);
-            lastUsageReconcileElapsedMs = elapsedNow;
-        }
+
+        ensureUsageCache(selectedPackages);
 
         if (foregroundPackage != null
                 && selectedPackages.contains(foregroundPackage)
                 && foregroundPackage.equals(lastForegroundPackage)) {
-            Preferences.addUsageTodayMs(this, foregroundPackage, elapsedNow - lastTickElapsedMs);
+            addUsageToCache(foregroundPackage, elapsedNow - lastTickElapsedMs);
         }
 
         lastForegroundPackage = foregroundPackage;
         lastTickElapsedMs = elapsedNow;
 
-        boolean foregroundSelected = foregroundPackage != null && selectedPackages.contains(foregroundPackage);
-        if (!foregroundSelected) {
-            String stickyPackage = stickyBlockedPackageForTransient(
-                    now,
-                    foregroundPackage,
-                    selectedPackages
-            );
-            if (stickyPackage != null) {
-                overlayNeedsRefresh = true;
-                hideOverlay(true, true);
+        try {
+            boolean foregroundSelected = foregroundPackage != null
+                    && selectedPackages.contains(foregroundPackage);
+            if (!foregroundSelected) {
+                String stickyPackage = stickyBlockedPackageForTransient(
+                        now,
+                        foregroundPackage,
+                        selectedPackages
+                );
+                if (stickyPackage != null) {
+                    beginTransientRecovery();
+                    overlayNeedsRefresh = true;
+                    hideOverlay(true, true);
+                    return;
+                }
+                hideOverlay(true);
                 return;
             }
-            hideOverlay(true);
-            return;
-        }
 
-        if (elapsedNow < leaveAppGraceUntilElapsedMs) {
-            hideOverlay(true);
-            return;
-        }
-        leaveAppGraceUntilElapsedMs = 0L;
+            if (elapsedNow < leaveAppGraceUntilElapsedMs) {
+                hideOverlay(true);
+                return;
+            }
+            leaveAppGraceUntilElapsedMs = 0L;
 
-        boolean shouldBlock = Preferences.isOverLimit(this, foregroundPackage)
-                && !Preferences.isTemporarilyUnlocked(this, foregroundPackage);
-        if (shouldBlock) {
-            if (!samePackage(previousForegroundPackage, foregroundPackage)
-                    && foregroundPackage.equals(stickyBlockedPackageName)) {
-                overlayNeedsRefresh = true;
+            boolean shouldBlock = isOverLimit(foregroundPackage)
+                    && !Preferences.isTemporarilyUnlocked(this, foregroundPackage);
+            if (shouldBlock) {
+                if (!samePackage(previousForegroundPackage, foregroundPackage)
+                        && foregroundPackage.equals(stickyBlockedPackageName)) {
+                    overlayNeedsRefresh = true;
+                }
+                showOverlay(foregroundPackage);
+            } else {
+                if (foregroundPackage.equals(stickyBlockedPackageName)) {
+                    clearStickyBlockedPackage();
+                }
+                hideOverlay(false);
             }
-            showOverlay(foregroundPackage);
-        } else {
-            if (foregroundPackage.equals(stickyBlockedPackageName)) {
-                clearStickyBlockedPackage();
-            }
-            hideOverlay(false);
+        } finally {
+            flushUsageTotals(false);
+            scheduleNextForegroundPoll();
         }
     }
 
-    private String findForegroundPackage(long now) {
-        long previousQueryEndMs = lastUsageQueryEndMs;
-        lastUsageQueryEndMs = now;
+    private ForegroundQueryResult queryForegroundPackage(
+            long now,
+            long previousQueryEndMs,
+            String previousForegroundPackage,
+            String blockedPackage,
+            Set<String> transientPackages
+    ) {
         UsageStatsManager usageStatsManager = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
         if (usageStatsManager == null) {
-            return lastForegroundPackage;
+            return new ForegroundQueryResult(previousForegroundPackage, false);
         }
 
         UsageEvents events;
         try {
-            events = usageStatsManager.queryEvents(now - 10_000L, now);
+            long queryStartMs = Math.max(
+                    now - 10_000L,
+                    previousQueryEndMs - USAGE_EVENT_OVERLAP_MS
+            );
+            events = usageStatsManager.queryEvents(queryStartMs, now);
         } catch (SecurityException ignored) {
-            return lastForegroundPackage;
+            return new ForegroundQueryResult(previousForegroundPackage, false);
         }
 
         UsageEvents.Event event = new UsageEvents.Event();
-        String candidate = lastForegroundPackage;
+        String candidate = previousForegroundPackage;
         boolean sawForegroundEvent = false;
+        boolean overlayInterrupted = false;
         while (events != null && events.hasNextEvent()) {
             events.getNextEvent(event);
             int type = event.getEventType();
@@ -257,8 +391,12 @@ public class MonitoringService extends Service {
 
             if (event.getTimeStamp() > previousQueryEndMs
                     && isLifecycleEvent(type)
-                    && isOverlayInterruptionPackage(eventPackageName)) {
-                overlayNeedsRefresh = true;
+                    && isOverlayInterruptionPackage(
+                            eventPackageName,
+                            blockedPackage,
+                            transientPackages
+                    )) {
+                overlayInterrupted = true;
                 debugLog("overlay interruption event=" + type + " package=" + eventPackageName);
             }
 
@@ -269,20 +407,20 @@ public class MonitoringService extends Service {
                 candidate = eventPackageName;
             } else if (isBackgroundEvent(type)
                     && eventPackageName.equals(candidate)
-                    && isTransientSystemSurface(eventPackageName)
-                    && stickyBlockedPackageName != null) {
+                    && isTransientSystemSurface(eventPackageName, transientPackages)
+                    && blockedPackage != null) {
                 // Returning to the same task from recents often pauses/stops the launcher
                 // without sending another resumed event for the underlying app.
-                candidate = stickyBlockedPackageName;
+                candidate = blockedPackage;
                 debugLog("transient surface exited; restoring candidate=" + candidate);
             }
         }
 
         if (candidate != null) {
-            return candidate;
+            return new ForegroundQueryResult(candidate, overlayInterrupted);
         }
         if (sawForegroundEvent) {
-            return null;
+            return new ForegroundQueryResult(null, overlayInterrupted);
         }
 
         List<UsageStats> stats;
@@ -293,10 +431,10 @@ public class MonitoringService extends Service {
                     now
             );
         } catch (SecurityException ignored) {
-            return lastForegroundPackage;
+            return new ForegroundQueryResult(previousForegroundPackage, overlayInterrupted);
         }
         if (stats == null || stats.isEmpty()) {
-            return lastForegroundPackage;
+            return new ForegroundQueryResult(previousForegroundPackage, overlayInterrupted);
         }
 
         UsageStats mostRecent = null;
@@ -305,14 +443,235 @@ public class MonitoringService extends Service {
                 mostRecent = stat;
             }
         }
-        return mostRecent == null ? lastForegroundPackage : mostRecent.getPackageName();
+        return new ForegroundQueryResult(
+                mostRecent == null ? previousForegroundPackage : mostRecent.getPackageName(),
+                overlayInterrupted
+        );
+    }
+
+    private void requestUsageReconciliation() {
+        if (stopping || reconciliationInFlight) {
+            return;
+        }
+        SharedPreferences preferences = Preferences.prefs(this);
+        if (!preferences.getBoolean(Preferences.KEY_ENABLED, false)
+                || !AndroidPermissions.hasUsageAccess(this)) {
+            scheduleNextUsageReconciliation();
+            return;
+        }
+        if (Preferences.isEmergencyPauseActive(this)) {
+            scheduleNextUsageReconciliation();
+            return;
+        }
+
+        Set<String> selectedPackages = Preferences.selectedPackages(this);
+        if (selectedPackages.isEmpty()) {
+            scheduleNextUsageReconciliation();
+            return;
+        }
+
+        Context appContext = getApplicationContext();
+        reconciliationInFlight = true;
+        boolean posted = reconciliationHandler != null && reconciliationHandler.post(() -> {
+            String observedDay = Preferences.currentUsageDay();
+            Map<String, Long> observedUsage;
+            try {
+                Preferences.pruneOldUsageIfNeeded(appContext);
+                observedUsage = UsageTracker.queryTodayFromSystemStats(
+                        appContext,
+                        selectedPackages
+                );
+                Preferences.saveUsageForDayMs(appContext, observedDay, observedUsage);
+            } catch (RuntimeException exception) {
+                debugLog("usage reconciliation failed: " + exception.getClass().getSimpleName());
+                observedUsage = new HashMap<>();
+            }
+            Map<String, Long> completedUsage = observedUsage;
+            handler.post(() -> completeUsageReconciliation(
+                    observedDay,
+                    selectedPackages,
+                    completedUsage
+            ));
+        });
+        if (!posted) {
+            reconciliationInFlight = false;
+            scheduleNextUsageReconciliation();
+        }
+    }
+
+    private void completeUsageReconciliation(
+            String observedDay,
+            Set<String> selectedPackages,
+            Map<String, Long> observedUsage
+    ) {
+        reconciliationInFlight = false;
+        if (stopping) {
+            return;
+        }
+        ensureUsageCache(selectedPackages);
+        if (observedDay.equals(cachedUsageDay)) {
+            mergeObservedUsage(observedUsage);
+        }
+        scheduleNextUsageReconciliation();
+    }
+
+    private void scheduleNextUsageReconciliation() {
+        if (stopping) {
+            return;
+        }
+        handler.removeCallbacks(reconciliationRunnable);
+        handler.postDelayed(reconciliationRunnable, USAGE_RECONCILE_INTERVAL_MS);
+    }
+
+    private void ensureUsageCache(Set<String> selectedPackages) {
+        String currentDay = Preferences.currentUsageDay();
+        if (cachedUsageDay == null) {
+            cachedUsageDay = currentDay;
+        } else if (!cachedUsageDay.equals(currentDay)) {
+            flushUsageTotals(true);
+            cachedUsageDay = currentDay;
+            usageTotalsMs.clear();
+            dirtyUsagePackages.clear();
+            lastUsagePersistElapsedMs = SystemClock.elapsedRealtime();
+        }
+
+        for (String packageName : selectedPackages) {
+            if (!usageTotalsMs.containsKey(packageName)) {
+                usageTotalsMs.put(
+                        packageName,
+                        Preferences.getUsageForDayMs(this, cachedUsageDay, packageName)
+                );
+            }
+        }
+    }
+
+    private void addUsageToCache(String packageName, long deltaMs) {
+        if (deltaMs <= 0L || deltaMs > 10_000L) {
+            return;
+        }
+        long current = usageTotalsMs.containsKey(packageName)
+                ? usageTotalsMs.get(packageName)
+                : Preferences.getUsageForDayMs(this, cachedUsageDay, packageName);
+        usageTotalsMs.put(packageName, current + deltaMs);
+        dirtyUsagePackages.add(packageName);
+    }
+
+    private void mergeObservedUsage(Map<String, Long> observedUsage) {
+        for (Map.Entry<String, Long> entry : observedUsage.entrySet()) {
+            String packageName = entry.getKey();
+            long observedMs = entry.getValue() == null ? 0L : entry.getValue();
+            long currentMs = usageTotalsMs.containsKey(packageName)
+                    ? usageTotalsMs.get(packageName)
+                    : 0L;
+            if (observedMs >= currentMs) {
+                usageTotalsMs.put(packageName, observedMs);
+                dirtyUsagePackages.remove(packageName);
+            }
+        }
+    }
+
+    private long usageTodayMs(String packageName) {
+        Long cached = usageTotalsMs.get(packageName);
+        return cached == null ? Preferences.getUsageTodayMs(this, packageName) : cached;
+    }
+
+    private boolean isOverLimit(String packageName) {
+        long limitMs = Preferences.dailyLimitMinutes(this, packageName) * 60_000L;
+        return usageTodayMs(packageName) >= limitMs;
+    }
+
+    private void flushUsageTotals(boolean force) {
+        if (cachedUsageDay == null || dirtyUsagePackages.isEmpty()) {
+            return;
+        }
+        long elapsedNow = SystemClock.elapsedRealtime();
+        if (!force && elapsedNow - lastUsagePersistElapsedMs < USAGE_PERSIST_INTERVAL_MS) {
+            return;
+        }
+
+        Map<String, Long> dirtyTotals = new HashMap<>();
+        for (String packageName : dirtyUsagePackages) {
+            Long usageMs = usageTotalsMs.get(packageName);
+            if (usageMs != null) {
+                dirtyTotals.put(packageName, usageMs);
+            }
+        }
+        Preferences.saveUsageForDayMs(this, cachedUsageDay, dirtyTotals);
+        dirtyUsagePackages.clear();
+        lastUsagePersistElapsedMs = elapsedNow;
+    }
+
+    private Set<String> transientSystemPackages() {
+        Set<String> packageNames = new HashSet<>(homePackageNames());
+        String resolvedHomePackage = homePackageName();
+        if (!resolvedHomePackage.isEmpty()) {
+            packageNames.add(resolvedHomePackage);
+        }
+        packageNames.add("android");
+        packageNames.add("com.android.systemui");
+        return packageNames;
+    }
+
+    private void beginTransientRecovery() {
+        if (transientRecoveryStartedElapsedMs == 0L) {
+            transientRecoveryStartedElapsedMs = SystemClock.elapsedRealtime();
+        }
+    }
+
+    private boolean pauseForEmergencyDayPassIfActive() {
+        long pauseUntilMs = Preferences.emergencyPauseUntilMs(this);
+        long remainingMs = pauseUntilMs - System.currentTimeMillis();
+        if (remainingMs <= 0L) {
+            if (emergencyPauseNotificationShown) {
+                emergencyPauseNotificationShown = false;
+                updateForegroundNotification();
+            }
+            return false;
+        }
+
+        if (!emergencyPauseNotificationShown) {
+            emergencyPauseNotificationShown = true;
+            updateForegroundNotification();
+        }
+        flushUsageTotals(true);
+        hideOverlay(false);
+        lastForegroundPackage = null;
+        lastTickElapsedMs = SystemClock.elapsedRealtime();
+        transientRecoveryStartedElapsedMs = 0L;
+        handler.removeCallbacks(pollRunnable);
+        handler.postDelayed(
+                pollRunnable,
+                Math.max(200L, Math.min(EMERGENCY_PAUSE_CHECK_INTERVAL_MS, remainingMs))
+        );
+        return true;
+    }
+
+    private void scheduleNextForegroundPoll() {
+        if (stopping) {
+            return;
+        }
+        handler.removeCallbacks(pollRunnable);
+        handler.postDelayed(pollRunnable, nextPollDelayMs());
     }
 
     private long nextPollDelayMs() {
         boolean waitingForBlockedAppReturn = stickyBlockedPackageName != null
                 && overlayView == null
                 && System.currentTimeMillis() <= keepOverlayUntilMs;
-        return waitingForBlockedAppReturn ? TRANSIENT_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
+        if (!waitingForBlockedAppReturn) {
+            transientRecoveryStartedElapsedMs = 0L;
+            return POLL_INTERVAL_MS;
+        }
+
+        beginTransientRecovery();
+        long recoveryElapsedMs = SystemClock.elapsedRealtime() - transientRecoveryStartedElapsedMs;
+        if (recoveryElapsedMs < RECOVERY_FAST_WINDOW_MS) {
+            return RECOVERY_FAST_POLL_INTERVAL_MS;
+        }
+        if (recoveryElapsedMs < RECOVERY_WARM_WINDOW_MS) {
+            return RECOVERY_WARM_POLL_INTERVAL_MS;
+        }
+        return POLL_INTERVAL_MS;
     }
 
     private void showOverlay(String packageName) {
@@ -409,7 +768,7 @@ public class MonitoringService extends Service {
         root.addView(card, UiStyle.fullWidth(this, 0));
 
         String appLabel = appLabel(packageName);
-        long usedMinutes = Preferences.getUsageTodayMs(this, packageName) / 60_000L;
+        long usedMinutes = usageTodayMs(packageName) / 60_000L;
         int limitMinutes = Preferences.dailyLimitMinutes(this, packageName);
         OverlayFormState formState = overlayFormState(packageName);
 
@@ -516,6 +875,13 @@ public class MonitoringService extends Service {
         });
         card.addView(codeInput, UiStyle.fullWidth(this, 12));
 
+        TextView emergencyCodeHint = UiStyle.helperText(
+                this,
+                "Have a one-time 8-digit emergency code? Enter it here to pause all goose blocking for 24 hours."
+        );
+        emergencyCodeHint.setGravity(Gravity.CENTER);
+        card.addView(emergencyCodeHint, UiStyle.fullWidth(this, 10));
+
         if (formState.errorMessage.isEmpty()) {
             errorText.setVisibility(View.GONE);
         } else {
@@ -570,6 +936,12 @@ public class MonitoringService extends Service {
                         formState,
                         "Enter the approval code first! The goose is still guarding this app!"
                 );
+                return;
+            }
+            if (Preferences.consumeEmergencyCode(this, entered)) {
+                formState.approvalCodeText = "";
+                formState.errorMessage = "";
+                showEmergencyPauseCelebration(card);
                 return;
             }
             int approvedMinutes = Preferences.consumeApprovalCodeMinutesIfValid(this, packageName, entered);
@@ -632,6 +1004,43 @@ public class MonitoringService extends Service {
         });
     }
 
+    private void showEmergencyPauseCelebration(LinearLayout card) {
+        unlockCelebrationRunning = true;
+        clearStickyBlockedPackage();
+        emergencyPauseNotificationShown = true;
+        updateForegroundNotification();
+        card.removeAllViews();
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        GooseCelebrationView gooseView = new GooseCelebrationView(this);
+        card.addView(gooseView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                UiStyle.dp(this, 190)
+        ));
+
+        TextView title = UiStyle.overlayTitle(this, "The goose is taking the day off!");
+        card.addView(title, UiStyle.fullWidth(this, 8));
+
+        TextView body = UiStyle.overlayBody(
+                this,
+                "All goose blocking is paused for 24 hours. Duty resumes automatically!"
+        );
+        body.setGravity(Gravity.CENTER);
+        card.addView(body, UiStyle.fullWidth(this, 0));
+
+        gooseView.start(() -> {
+            unlockCelebrationRunning = false;
+            hideOverlay(false);
+            Toast.makeText(
+                    this,
+                    "Emergency day pass active. Goose duty resumes in 24 hours!",
+                    Toast.LENGTH_LONG
+            ).show();
+            handler.removeCallbacks(pollRunnable);
+            handler.post(pollRunnable);
+        });
+    }
+
     private OverlayFormState overlayFormState(String packageName) {
         OverlayFormState state = overlayFormStates.get(packageName);
         if (state == null) {
@@ -683,7 +1092,7 @@ public class MonitoringService extends Service {
                 || now > keepOverlayUntilMs
                 || !selectedPackages.contains(packageName)
                 || !isTransientSystemSurface(foregroundPackage)
-                || !Preferences.isOverLimit(this, packageName)
+                || !isOverLimit(packageName)
                 || Preferences.isTemporarilyUnlocked(this, packageName)) {
             return null;
         }
@@ -707,12 +1116,14 @@ public class MonitoringService extends Service {
                 || type == UsageEvents.Event.ACTIVITY_STOPPED));
     }
 
-    private boolean isOverlayInterruptionPackage(String packageName) {
-        String blockedPackage = overlayPackageName != null
-                ? overlayPackageName
-                : stickyBlockedPackageName;
+    private boolean isOverlayInterruptionPackage(
+            String packageName,
+            String blockedPackage,
+            Set<String> transientPackages
+    ) {
         return blockedPackage != null
-                && (blockedPackage.equals(packageName) || isTransientSystemSurface(packageName));
+                && (blockedPackage.equals(packageName)
+                || isTransientSystemSurface(packageName, transientPackages));
     }
 
     private boolean samePackage(String left, String right) {
@@ -727,6 +1138,13 @@ public class MonitoringService extends Service {
             return true;
         }
         return packageName.equals(homePackageName()) || homePackageNames().contains(packageName);
+    }
+
+    private boolean isTransientSystemSurface(
+            String packageName,
+            Set<String> transientPackages
+    ) {
+        return packageName == null || transientPackages.contains(packageName);
     }
 
     private String homePackageName() {
@@ -767,11 +1185,13 @@ public class MonitoringService extends Service {
     private void rememberBlockedPackage(String packageName) {
         stickyBlockedPackageName = packageName;
         keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
+        transientRecoveryStartedElapsedMs = 0L;
     }
 
     private void clearStickyBlockedPackage() {
         stickyBlockedPackageName = null;
         keepOverlayUntilMs = 0L;
+        transientRecoveryStartedElapsedMs = 0L;
         overlayNeedsRefresh = false;
         overlayWindowObscured = false;
     }
@@ -853,6 +1273,10 @@ public class MonitoringService extends Service {
     }
 
     private void stopMonitoring() {
+        stopping = true;
+        handler.removeCallbacks(pollRunnable);
+        handler.removeCallbacks(reconciliationRunnable);
+        flushUsageTotals(true);
         Preferences.prefs(this).edit().putBoolean(Preferences.KEY_ENABLED, false).apply();
         hideOverlay(false);
         overlayFormStates.clear();
@@ -863,6 +1287,13 @@ public class MonitoringService extends Service {
     private void debugLog(String message) {
         if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             Log.d(TAG, message);
+        }
+    }
+
+    private void updateForegroundNotification() {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            manager.notify(NOTIFICATION_ID, buildNotification());
         }
     }
 
@@ -888,9 +1319,14 @@ public class MonitoringService extends Service {
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
+        boolean emergencyPaused = Preferences.isEmergencyPauseActive(this);
         return builder
-                .setContentTitle("The goose is on duty!")
-                .setContentText("Guarding selected app limits!")
+                .setContentTitle(emergencyPaused
+                        ? "The goose is taking the day off!"
+                        : "The goose is on duty!")
+                .setContentText(emergencyPaused
+                        ? "Emergency pause active. Goose duty resumes automatically!"
+                        : "Guarding selected app limits!")
                 .setSmallIcon(R.drawable.ic_stat_lock_clock)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
@@ -916,6 +1352,16 @@ public class MonitoringService extends Service {
 
         @Override
         public void onTextChanged(CharSequence text, int start, int before, int count) {
+        }
+    }
+
+    private static final class ForegroundQueryResult {
+        final String packageName;
+        final boolean overlayInterrupted;
+
+        ForegroundQueryResult(String packageName, boolean overlayInterrupted) {
+            this.packageName = packageName;
+            this.overlayInterrupted = overlayInterrupted;
         }
     }
 

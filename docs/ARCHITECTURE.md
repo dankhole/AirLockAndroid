@@ -11,9 +11,11 @@ MainActivity
 
 MonitoringService
   starts as a foreground service
-  polls UsageStatsManager every second
+  polls recent UsageEvents on a background worker
+  reconciles full-day UsageStats once per minute on a separate worker
   tracks the active foreground package
-  increments today's usage counter for apps with configured limits
+  keeps today's selected-app usage in memory
+  persists dirty usage totals in one batch every 30 seconds
   shows overlay when usage >= that app's daily limit and no extra-time unlock is active
 
 Overlay
@@ -21,6 +23,7 @@ Overlay
   can open SMS compose for a Keyholder request tied to requested minutes
   preserves in-progress requested minutes and approval-code entry while temporarily hidden
   accepts the code and grants the minutes associated with that code
+  accepts a pre-generated emergency code and starts a global 24-hour pause
   can send the user back home
 ```
 
@@ -45,12 +48,16 @@ Queries launchable apps through an `ACTION_MAIN` / `CATEGORY_LAUNCHER` intent. T
 A foreground service with a persistent notification. It is the runtime core of the MVP:
 
 - Reads selected packages and limits from `SharedPreferences`.
-- Infers the current foreground package from `UsageStatsManager`.
-- Adds elapsed milliseconds to the current day/package counter.
+- Infers the current foreground package from recent UsageEvents on a dedicated background thread.
+- Runs full-day UsageStats reconciliation once per minute on a separate background thread.
+- Adds elapsed milliseconds to an in-memory day/package counter and bulk-persists dirty totals every 30 seconds.
 - Displays a `TYPE_APPLICATION_OVERLAY` view when a selected app is over limit.
 - Generates numeric request codes and validates short-lived approval codes.
+- Accepts hashed one-time emergency codes and suppresses blocking during an active 24-hour pause.
 
-The service deliberately uses a simple one-second poll because it is easier to reason about than a more complex scheduler. Battery impact needs device testing.
+Normal foreground detection uses a one-second cadence. Overlay recovery polls at 200 ms for three seconds, 500 ms through 15 seconds, and then returns to one second. Neither UsageStats query path runs on the main thread. Battery impact still needs physical-device testing.
+
+During an emergency day pass, the service keeps the enabled state and foreground notification but skips foreground and full-day UsageStats queries. It checks the pause deadline once per minute, survives reboot through `BootReceiver`, and resumes normal validation and polling automatically.
 
 ### `Preferences`
 
@@ -62,13 +69,18 @@ Small helper around `SharedPreferences`. Current keys:
 - `accountability_number`
 - `master_pin_hash`
 - `master_pin_salt`
+- `emergency_code_salt`
+- `emergency_code_hashes`
+- `emergency_pause_until`
 - `usage_<yyyyMMdd>_<packageName>`
 - `unlock_until_<packageName>`
 - `approval_codes_<packageName>`
 - `approval_code_expiry_<packageName>_<approvalCode>`
 - `approval_code_minutes_<packageName>_<approvalCode>`
 
-This is acceptable for MVP. Move to Room only after usage history, analytics, or migrations become meaningful.
+Usage keys older than seven days are pruned once per day. This remains acceptable for the MVP; move to Room only after usage history, analytics, or migrations become meaningful.
+
+Emergency-code plaintext is returned only to the generation screen for immediate display or sharing. Only salted hashes are persisted. Replacing a set changes the salt and hashes, revoking all old codes; consuming a code removes its hash before activating the pause.
 
 ### `BootReceiver`
 

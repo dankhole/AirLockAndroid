@@ -8,8 +8,8 @@ AirLock Android is a native Android MVP for blocking selected apps after a daily
 
 - Plain Java Android app.
 - No AndroidX, Compose, Kotlin, or third-party dependencies yet.
-- Build files assume Android Gradle Plugin 8.7.3, compile SDK 35, min SDK 26, JDK 17.
-- The repo currently has no Gradle wrapper because local Gradle was unavailable when scaffolded.
+- Build files use Android Gradle Plugin 8.10.1, Gradle 8.11.1, compile/target SDK 36, min SDK 26, and Java 17 bytecode.
+- The Gradle wrapper is checked in and is the required command-line build path.
 
 ## Important Constraints
 

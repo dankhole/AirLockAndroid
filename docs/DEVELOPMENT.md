@@ -4,30 +4,27 @@ Last updated: August 7, 2026
 
 ## Status
 
-This is a ready-to-import Android scaffold, not a verified release. The code is intentionally minimal and should be compiled and device-tested before any product claims are made.
-
-Known local environment gap: this machine did not have `gradle`, Android Studio, or an Android SDK in the usual locations, so `assembleDebug` was not run.
+This is a compiling Android MVP, not a verified release. The debug build and lint run locally, but the manual test plan still needs physical-device coverage before any product claims are made.
 
 ## Local Setup
 
 1. Install Android Studio.
-2. Install Android SDK Platform 35.
-3. Use JDK 17.
+2. Install Android SDK Platform 36 and Android SDK Build-Tools 35 or newer.
+3. Use JDK 17 or 21.
 4. Open `/Users/d.cole/Desktop/Projects/AirLockAndroid`.
 5. Let Gradle sync.
 6. Run `app` on a physical Android device.
 
-After Gradle is available, generate a wrapper:
-
-```sh
-gradle wrapper --gradle-version 8.10.2
-```
-
-Then prefer:
+Use the checked-in Gradle 8.11.1 wrapper:
 
 ```sh
 ./gradlew :app:assembleDebug
 ```
+
+The app compiles and targets Android 16 (`compileSdk 36`, `targetSdk 36`) using
+Android Gradle Plugin 8.10.1. Google Play requires new apps and app updates to
+target API 36 or higher starting August 31, 2026:
+<https://support.google.com/googleplay/android-developer/answer/11926878>.
 
 ## Coding Conventions
 
@@ -79,8 +76,10 @@ repository: <https://github.com/google/material-design-icons>.
 ## Usage Tracking
 
 The main screen's "Today's goose count" section only renders apps that already have
-AirLock limits. Usage is stored locally in `Preferences` and reconciled from
-Android UsageStats when Usage Access is available.
+AirLock limits. Foreground detection and full-day reconciliation run on separate
+background workers. The service keeps current usage in memory, persists dirty
+totals in one batch every 30 seconds, reconciles against Android UsageStats once
+per minute, and retains seven days of usage keys.
 
 ## Permission Notes
 
@@ -130,9 +129,8 @@ Start and stop from the app UI first. Only use `adb` to inspect state until the 
 
 Do not treat this as releasable until these are done:
 
-- Add Gradle wrapper.
 - Add CI build.
-- Add release signing notes outside git.
+- Keep release signing credentials outside git and maintain a secure keystore backup.
 - Add privacy policy review.
 - Add in-app permission disclosures.
 - Add safety exclusions for critical apps.

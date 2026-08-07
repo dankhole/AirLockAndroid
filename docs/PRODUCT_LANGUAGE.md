@@ -19,6 +19,18 @@ The person receiving the request is not the Goose. That person is the Keyholder.
 
 The Keyholder may also know or set the master PIN, but the product must not imply that every Keyholder necessarily does. The master PIN and approval-code flow are related protections with separate jobs.
 
+## Emergency Day Pass
+
+Emergency codes are pre-authorized recovery access for cases where the user genuinely needs the phone and the Keyholder is unavailable. They are separate from ordinary extra-time approval codes and from the master PIN.
+
+- The master PIN is required to generate or replace the set.
+- A set contains five random 8-digit codes.
+- Replacing the set revokes every unused code from the previous set.
+- Each code works once and pauses all Goose blocking for 24 hours.
+- Goose duty resumes automatically after the pause.
+- The UI must call these `emergency codes` or an `emergency day pass`, never a user-created override PIN.
+- Do not imply that the Keyholder is making a live approval decision when one is used; approval happened when the codes were generated and entrusted to the user.
+
 ## Required Vocabulary
 
 - Product name: `AirLock Goose`

@@ -12,8 +12,10 @@ import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Process;
 import android.provider.Settings;
 import android.text.Editable;
+import android.text.InputFilter;
 import android.text.TextWatcher;
 import android.text.method.PasswordTransformationMethod;
 import android.view.MotionEvent;
@@ -32,6 +34,7 @@ import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class MainActivity extends Activity {
@@ -40,6 +43,8 @@ public class MainActivity extends Activity {
     private TextView overlayAccessRequiredText;
     private TextView accountabilityRequiredText;
     private TextView masterPinRequiredText;
+    private TextView emergencyStatusText;
+    private TextView generatedEmergencyCodesText;
     private TextView appLimitsRequiredText;
     private TextView monitoringStateText;
     private TextView selectedText;
@@ -51,11 +56,20 @@ public class MainActivity extends Activity {
     private EditText currentPinInput;
     private EditText newPinInput;
     private EditText confirmPinInput;
+    private EditText emergencyCodeInput;
     private Button selectAppsButton;
     private Button startButton;
     private Button stopButton;
     private Button saveMasterPinButton;
+    private Button useEmergencyCodeButton;
+    private Button generateEmergencyCodesButton;
+    private Button shareEmergencyCodesButton;
+    private Button hideEmergencyCodesButton;
+    private final List<String> visibleEmergencyCodes = new ArrayList<>();
     private boolean suppressSwitchChange;
+    private boolean usageRefreshInFlight;
+    private boolean activityResumed;
+    private boolean activityDestroyed;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,8 +81,23 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        activityResumed = true;
         refresh();
+        requestUsageRefresh();
         ensureEnabledServiceRunning();
+    }
+
+    @Override
+    protected void onPause() {
+        activityResumed = false;
+        hideEmergencyCodes();
+        super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        activityDestroyed = true;
+        super.onDestroy();
     }
 
     @Override
@@ -108,6 +137,7 @@ public class MainActivity extends Activity {
         root.addView(buildPermissionsCard(), UiStyle.fullWidth(this, 14));
         root.addView(buildAccountabilityCard(preferences), UiStyle.fullWidth(this, 14));
         root.addView(buildMasterPinCard(), UiStyle.fullWidth(this, 14));
+        root.addView(buildEmergencyAccessCard(), UiStyle.fullWidth(this, 14));
         root.addView(buildAppLimitsCard(), UiStyle.fullWidth(this, 14));
         root.addView(buildUsageCard(), UiStyle.fullWidth(this, 14));
         root.addView(buildMonitoringControlsCard(preferences), UiStyle.fullWidth(this, 4));
@@ -196,6 +226,55 @@ public class MainActivity extends Activity {
 
         masterPinRequiredText = UiStyle.statusText(this);
         card.addView(masterPinRequiredText);
+        return card;
+    }
+
+    private LinearLayout buildEmergencyAccessCard() {
+        LinearLayout card = sectionCard(
+                "Emergency day pass",
+                "A one-time emergency code pauses all goose blocking for 24 hours, then duty resumes automatically."
+        );
+
+        emergencyStatusText = UiStyle.statusText(this);
+        card.addView(emergencyStatusText, UiStyle.fullWidth(this, 12));
+
+        card.addView(UiStyle.fieldLabel(this, "Use an emergency code"), UiStyle.fullWidth(this, 6));
+        emergencyCodeInput = pinInput("8-digit emergency code");
+        emergencyCodeInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(8)});
+        card.addView(emergencyCodeInput, UiStyle.fullWidth(this, 10));
+
+        useEmergencyCodeButton = UiStyle.dangerButton(this, "Use 24-Hour Emergency Code");
+        useEmergencyCodeButton.setOnClickListener(v -> useEmergencyCode());
+        card.addView(useEmergencyCodeButton, UiStyle.buttonParams(this));
+
+        card.addView(UiStyle.fieldLabel(this, "Keyholder setup"), UiStyle.fullWidth(this, 6));
+        TextView setupDetail = UiStyle.helperText(
+                this,
+                "The master PIN is required to create five replacement codes. Creating a new set revokes every unused old code."
+        );
+        card.addView(setupDetail, UiStyle.fullWidth(this, 10));
+
+        generateEmergencyCodesButton = UiStyle.secondaryButton(this, "Generate 5 New Codes");
+        generateEmergencyCodesButton.setOnClickListener(v -> promptForMasterPin(
+                "Generate Emergency Codes!",
+                this::confirmEmergencyCodeReplacement,
+                null
+        ));
+        card.addView(generateEmergencyCodesButton, UiStyle.buttonParams(this));
+
+        generatedEmergencyCodesText = UiStyle.statusText(this);
+        generatedEmergencyCodesText.setVisibility(View.GONE);
+        card.addView(generatedEmergencyCodesText, UiStyle.fullWidth(this, 10));
+
+        shareEmergencyCodesButton = UiStyle.primaryButton(this, "Share Codes");
+        shareEmergencyCodesButton.setOnClickListener(v -> shareEmergencyCodes());
+        shareEmergencyCodesButton.setVisibility(View.GONE);
+        card.addView(shareEmergencyCodesButton, UiStyle.buttonParams(this));
+
+        hideEmergencyCodesButton = UiStyle.secondaryButton(this, "Hide Codes");
+        hideEmergencyCodesButton.setOnClickListener(v -> hideEmergencyCodes());
+        hideEmergencyCodesButton.setVisibility(View.GONE);
+        card.addView(hideEmergencyCodesButton, UiStyle.buttonParams(this));
         return card;
     }
 
@@ -405,6 +484,111 @@ public class MainActivity extends Activity {
         refresh();
     }
 
+    private void confirmEmergencyCodeReplacement() {
+        new AlertDialog.Builder(this)
+                .setTitle("Replace emergency codes?")
+                .setMessage("This creates five new one-time codes and immediately revokes every unused old code.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Replace Codes", (dialog, which) -> generateEmergencyCodes())
+                .show();
+    }
+
+    private void generateEmergencyCodes() {
+        visibleEmergencyCodes.clear();
+        visibleEmergencyCodes.addAll(Preferences.replaceEmergencyCodes(this));
+        if (visibleEmergencyCodes.isEmpty()) {
+            Toast.makeText(this, "The emergency codes could not be saved. Try again!", Toast.LENGTH_LONG).show();
+            refresh();
+            return;
+        }
+
+        StringBuilder display = new StringBuilder(
+                "SAVE THESE NOW: AirLock stores only their hashes. Each code works once.\n\n"
+        );
+        for (int index = 0; index < visibleEmergencyCodes.size(); index++) {
+            display.append(index + 1)
+                    .append(". ")
+                    .append(visibleEmergencyCodes.get(index));
+            if (index < visibleEmergencyCodes.size() - 1) {
+                display.append('\n');
+            }
+        }
+        generatedEmergencyCodesText.setText(display.toString());
+        UiStyle.setStatus(generatedEmergencyCodesText, UiStyle.STATUS_WARNING);
+        generatedEmergencyCodesText.setVisibility(View.VISIBLE);
+        shareEmergencyCodesButton.setVisibility(View.VISIBLE);
+        hideEmergencyCodesButton.setVisibility(View.VISIBLE);
+        Toast.makeText(this, "Five new emergency codes created. Old codes were revoked!", Toast.LENGTH_LONG).show();
+        refresh();
+    }
+
+    private void shareEmergencyCodes() {
+        if (visibleEmergencyCodes.isEmpty()) {
+            return;
+        }
+        StringBuilder message = new StringBuilder(
+                "AirLock Goose emergency codes. Each code works once and pauses all goose blocking for 24 hours:\n"
+        );
+        for (String code : visibleEmergencyCodes) {
+            message.append("\n").append(code);
+        }
+        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+        shareIntent.setType("text/plain");
+        shareIntent.putExtra(Intent.EXTRA_TEXT, message.toString());
+        try {
+            startActivity(Intent.createChooser(shareIntent, "Share emergency codes"));
+        } catch (RuntimeException ignored) {
+            Toast.makeText(this, "No app is available to share the codes!", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void hideEmergencyCodes() {
+        visibleEmergencyCodes.clear();
+        generatedEmergencyCodesText.setText("");
+        generatedEmergencyCodesText.setVisibility(View.GONE);
+        shareEmergencyCodesButton.setVisibility(View.GONE);
+        hideEmergencyCodesButton.setVisibility(View.GONE);
+    }
+
+    private void useEmergencyCode() {
+        boolean enabled = Preferences.prefs(this).getBoolean(Preferences.KEY_ENABLED, false);
+        if (!enabled) {
+            emergencyCodeInput.setError("Goose duty is already off");
+            Toast.makeText(this, "Goose duty must be on before using an emergency code!", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (Preferences.isEmergencyPauseActive(this)) {
+            Toast.makeText(this, "An emergency day pass is already active!", Toast.LENGTH_LONG).show();
+            refresh();
+            return;
+        }
+
+        String code = emergencyCodeInput.getText().toString().trim();
+        if (code.length() != 8) {
+            emergencyCodeInput.setError("Enter all 8 digits");
+            return;
+        }
+        if (!Preferences.consumeEmergencyCode(this, code)) {
+            emergencyCodeInput.setError("Invalid or already used code");
+            Toast.makeText(this, "That emergency code is invalid or already used!", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        emergencyCodeInput.setText("");
+        clearInputFocus(emergencyCodeInput);
+        hideEmergencyCodes();
+        startMonitoringService();
+        Toast.makeText(this, "Emergency day pass active. Goose duty resumes in 24 hours!", Toast.LENGTH_LONG).show();
+        refresh();
+    }
+
+    private String formatEmergencyPauseEnd(long pauseUntilMs) {
+        java.util.Date pauseEnd = new java.util.Date(pauseUntilMs);
+        return android.text.format.DateFormat.getMediumDateFormat(this).format(pauseEnd)
+                + " at "
+                + android.text.format.DateFormat.getTimeFormat(this).format(pauseEnd);
+    }
+
     private TextWatcher autoSaveWatcher() {
         return new TextWatcher() {
             @Override
@@ -465,26 +649,36 @@ public class MainActivity extends Activity {
         boolean hasAccountabilityNumber = hasAccountabilityNumber();
         boolean hasMasterPin = Preferences.hasMasterPin(this);
         Set<String> selectedPackages = Preferences.selectedPackages(this);
-        if (usage) {
-            UsageTracker.reconcileTodayFromSystemStats(this, selectedPackages);
-        }
         boolean hasLimitedApps = !selectedPackages.isEmpty();
         boolean readyToMonitor = usage && overlay && hasAccountabilityNumber && hasMasterPin && hasLimitedApps;
         boolean enabled = Preferences.prefs(this).getBoolean(Preferences.KEY_ENABLED, false);
+        long emergencyPauseUntilMs = Preferences.emergencyPauseUntilMs(this);
+        boolean emergencyPauseStored = emergencyPauseUntilMs > System.currentTimeMillis();
         int selectedCount = selectedPackages.size();
-        if (!readyToMonitor && enabled) {
+        if (!readyToMonitor && enabled && !emergencyPauseStored) {
             enabled = false;
             Preferences.prefs(this).edit().putBoolean(Preferences.KEY_ENABLED, false).apply();
         }
+        boolean emergencyPaused = enabled && emergencyPauseStored;
 
-        statusText.setText(enabled
+        statusText.setText(emergencyPaused
+                ? "PAUSED: Emergency day pass active!"
+                : enabled
                 ? "ON: The goose is actively guarding selected app limits!"
                 : readyToMonitor
                 ? "READY: The goose is ready, but duty is off!"
                 : "SETUP REQUIRED: Finish the goose checklist before duty can start!");
-        UiStyle.setStatus(statusText, enabled || readyToMonitor ? UiStyle.STATUS_READY : UiStyle.STATUS_REQUIRED);
+        UiStyle.setStatus(
+                statusText,
+                emergencyPaused
+                        ? UiStyle.STATUS_WARNING
+                        : enabled || readyToMonitor ? UiStyle.STATUS_READY : UiStyle.STATUS_REQUIRED
+        );
 
-        monitoringStateText.setText(enabled
+        monitoringStateText.setText(emergencyPaused
+                ? "All goose blocking is paused until " + formatEmergencyPauseEnd(emergencyPauseUntilMs)
+                + ". Duty resumes automatically!"
+                : enabled
                 ? "Selected apps will meet the goose once today's limit is reached!"
                 : readyToMonitor
                 ? "Use Goose duty controls below when it is time to honk!"
@@ -537,6 +731,27 @@ public class MainActivity extends Activity {
                         : "Set a PIN of at least 4 digits before goose duty can start!"
         );
 
+        int emergencyCodesRemaining = Preferences.emergencyCodesRemaining(this);
+        emergencyStatusText.setText(emergencyPaused
+                ? "ACTIVE: All goose blocking is paused until "
+                + formatEmergencyPauseEnd(emergencyPauseUntilMs)
+                + ".\nUnused emergency codes remaining: " + emergencyCodesRemaining
+                : emergencyCodesRemaining > 0
+                ? emergencyCodesRemaining
+                + " unused emergency code"
+                + (emergencyCodesRemaining == 1 ? " remains." : "s remain.")
+                + " Each pauses all blocking for 24 hours."
+                : "No emergency codes are ready. The Keyholder can generate five with the master PIN.");
+        UiStyle.setStatus(
+                emergencyStatusText,
+                emergencyPaused
+                        ? UiStyle.STATUS_WARNING
+                        : emergencyCodesRemaining > 0 ? UiStyle.STATUS_READY : UiStyle.STATUS_NEUTRAL
+        );
+        emergencyCodeInput.setEnabled(enabled && !emergencyPaused && emergencyCodesRemaining > 0);
+        useEmergencyCodeButton.setEnabled(enabled && !emergencyPaused && emergencyCodesRemaining > 0);
+        generateEmergencyCodesButton.setEnabled(hasMasterPin);
+
         selectedText.setText(selectedCount == 1
                 ? "Goose guarded apps: 1 app"
                 : "Goose guarded apps: " + selectedCount + " apps");
@@ -555,18 +770,65 @@ public class MainActivity extends Activity {
                 : "Open Usage Access Before Goose Limits!");
         refreshUsageList(selectedPackages, usage);
 
-        enabledSwitch.setText(enabled ? "Goose duty is ON!" : "Goose duty is OFF!");
+        enabledSwitch.setText(emergencyPaused
+                ? "Goose duty is PAUSED!"
+                : enabled ? "Goose duty is ON!" : "Goose duty is OFF!");
         enabledSwitch.setEnabled(readyToMonitor || enabled);
         setMonitoringSwitchChecked(enabled);
 
-        controlsBlockedText.setText(readyToMonitor
+        controlsBlockedText.setText(emergencyPaused
+                ? "PAUSED: Goose duty resumes automatically after the emergency day pass!"
+                : readyToMonitor
                 ? "READY: Goose duty can start with the master PIN!"
                 : "LOCKED: " + firstMissingRequirement(usage, overlay, hasAccountabilityNumber, hasMasterPin, hasLimitedApps));
-        UiStyle.setStatus(controlsBlockedText, readyToMonitor ? UiStyle.STATUS_READY : UiStyle.STATUS_REQUIRED);
+        UiStyle.setStatus(
+                controlsBlockedText,
+                emergencyPaused
+                        ? UiStyle.STATUS_WARNING
+                        : readyToMonitor ? UiStyle.STATUS_READY : UiStyle.STATUS_REQUIRED
+        );
 
-        startButton.setText(enabled ? "Goose On Duty!" : "Start Goose Duty!");
+        startButton.setText(emergencyPaused
+                ? "Emergency Pause Active!"
+                : enabled ? "Goose On Duty!" : "Start Goose Duty!");
         startButton.setEnabled(readyToMonitor && !enabled);
         stopButton.setEnabled(enabled);
+    }
+
+    private void requestUsageRefresh() {
+        if (activityDestroyed
+                || usageRefreshInFlight
+                || !AndroidPermissions.hasUsageAccess(this)) {
+            return;
+        }
+
+        Context appContext = getApplicationContext();
+        Set<String> selectedPackages = Preferences.selectedPackages(this);
+        usageRefreshInFlight = true;
+        Thread usageRefreshThread = new Thread(() -> {
+            try {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+                Preferences.pruneOldUsageIfNeeded(appContext);
+                Map<String, Long> observedUsage = UsageTracker.queryTodayFromSystemStats(
+                        appContext,
+                        selectedPackages
+                );
+                Preferences.reconcileUsageTodayMs(appContext, observedUsage);
+            } catch (RuntimeException ignored) {
+                // The next resume or service reconciliation will retry.
+            }
+            runOnUiThread(() -> {
+                usageRefreshInFlight = false;
+                if (!activityDestroyed && activityResumed) {
+                    refresh();
+                }
+            });
+        }, "AirLockSettingsUsage");
+        try {
+            usageRefreshThread.start();
+        } catch (RuntimeException ignored) {
+            usageRefreshInFlight = false;
+        }
     }
 
     private void setRequirement(TextView textView, boolean met, String title, String detail) {
@@ -837,7 +1099,7 @@ public class MainActivity extends Activity {
 
     private void ensureEnabledServiceRunning() {
         if (Preferences.prefs(this).getBoolean(Preferences.KEY_ENABLED, false)
-                && monitoringPrerequisitesMet()) {
+                && (monitoringPrerequisitesMet() || Preferences.isEmergencyPauseActive(this))) {
             startMonitoringService();
         }
     }

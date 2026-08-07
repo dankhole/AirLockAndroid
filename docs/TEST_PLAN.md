@@ -9,7 +9,10 @@ Run after Android tooling is available:
 ```sh
 ./gradlew :app:assembleDebug
 ./gradlew :app:lintDebug
+adb shell dumpsys package com.dankhole.airlockandroid
 ```
+
+Confirm the installed package reports `targetSdk=36`.
 
 Checks that were run before Android tooling was available:
 
@@ -93,6 +96,23 @@ Expected result: blocking stops when goose duty is disabled.
 5. Open the selected app.
 6. Confirm no overlay appears.
 
+### Emergency Day Pass
+
+Expected result: the Keyholder can prepare one-time recovery codes, and one valid code pauses every guarded app for exactly 24 hours without permanently disabling goose duty.
+
+1. With goose duty on, open AirLock Goose and tap `Generate 5 New Codes`.
+2. Enter an incorrect master PIN and confirm no codes are generated.
+3. Enter the correct master PIN, confirm replacement, and verify five distinct 8-digit numeric codes appear.
+4. Share or record the codes, tap `Hide Codes`, reopen AirLock Goose, and confirm plaintext codes cannot be displayed again.
+5. Enter an invalid 8-digit emergency code and confirm it is rejected without reducing the remaining-code count.
+6. Enter one generated code and confirm the app reports an emergency pause with the exact automatic-resume date and time.
+7. Open multiple over-limit guarded apps and confirm no blocking overlay appears during the pause.
+8. Re-enter the consumed code after the pause has ended or test data has been reset and confirm it is rejected.
+9. Use a second valid code from the blocking overlay and confirm the overlay closes after the emergency-day-pass animation.
+10. Reboot during an active pause and confirm the paused notification returns and guarded apps remain unblocked.
+11. Generate a replacement set and confirm every unused code from the old set is rejected.
+12. Advance a test pause to expiration, without changing the enabled flag, and confirm normal polling resumes and an over-limit app is blocked again.
+
 ### Boot Persistence
 
 Expected result: goose duty resumes after reboot when enabled.
@@ -102,6 +122,18 @@ Expected result: goose duty resumes after reboot when enabled.
 3. Unlock device.
 4. Confirm AirLock Goose's monitoring notification appears with `The goose is on duty!`.
 5. Open a selected over-limit app and confirm blocking still works.
+
+### Monitoring Performance And Battery
+
+Expected result: foreground detection stays responsive without continuous main-thread work or per-second preference writes.
+
+1. Start goose duty, background AirLock Goose, and use the device normally for at least 30 minutes.
+2. Confirm the service remains active and no crashes, ANRs, or repeated overlay rebuild loops appear in Logcat.
+3. Confirm UsageStats work runs on the `AirLockForeground` and `AirLockReconciliation` worker threads rather than the main thread.
+4. Confirm the usage preferences file changes on the 30-second batch boundary, not on every one-second foreground poll.
+5. Leave a blocked app through recents for more than 15 seconds, return, and confirm the overlay still returns within the normal one-second poll.
+6. Run an 8-24 hour physical-device battery comparison with goose duty on and off, recording CPU time, wakeups, and battery drain.
+7. Repeat the long battery run on at least one Pixel and one current Samsung device.
 
 ## Regression Areas
 

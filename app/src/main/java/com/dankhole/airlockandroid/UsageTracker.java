@@ -5,6 +5,8 @@ import android.app.usage.UsageStatsManager;
 import android.content.Context;
 
 import java.util.Calendar;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -12,14 +14,17 @@ final class UsageTracker {
     private UsageTracker() {
     }
 
-    static void reconcileTodayFromSystemStats(Context context, Set<String> trackedPackages) {
+    static Map<String, Long> queryTodayFromSystemStats(
+            Context context,
+            Set<String> trackedPackages
+    ) {
         if (trackedPackages.isEmpty() || !AndroidPermissions.hasUsageAccess(context)) {
-            return;
+            return Collections.emptyMap();
         }
         UsageStatsManager usageStatsManager =
                 (UsageStatsManager) context.getSystemService(Context.USAGE_STATS_SERVICE);
         if (usageStatsManager == null) {
-            return;
+            return Collections.emptyMap();
         }
 
         long now = System.currentTimeMillis();
@@ -27,18 +32,20 @@ final class UsageTracker {
         try {
             stats = usageStatsManager.queryAndAggregateUsageStats(startOfTodayMs(now), now);
         } catch (SecurityException ignored) {
-            return;
+            return Collections.emptyMap();
         }
         if (stats == null || stats.isEmpty()) {
-            return;
+            return Collections.emptyMap();
         }
 
+        Map<String, Long> observedUsageByPackage = new HashMap<>();
         for (String packageName : trackedPackages) {
             UsageStats stat = stats.get(packageName);
             if (stat != null) {
-                Preferences.reconcileUsageTodayMs(context, packageName, stat.getTotalTimeInForeground());
+                observedUsageByPackage.put(packageName, stat.getTotalTimeInForeground());
             }
         }
+        return observedUsageByPackage;
     }
 
     private static long startOfTodayMs(long now) {

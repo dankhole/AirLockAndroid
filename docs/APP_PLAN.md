@@ -44,6 +44,7 @@ The MVP should prove the core loop with the least Android-policy risk:
 10. When the daily limit is exceeded, an overlay appears.
 11. The overlay asks how many extra minutes the Goose should request and can compose a text message to the Keyholder.
 12. Entering the valid approval code grants the minutes bound to that generated request code.
+13. The master PIN can create five one-time emergency codes for pre-authorized 24-hour recovery access.
 
 ## Recommended Architecture
 
@@ -65,6 +66,7 @@ The MVP should prove the core loop with the least Android-policy risk:
 - Per-day usage counters keyed by date and package name.
 - Temporary unlock expiration timestamps keyed by package name.
 - Short-lived one-time approval codes keyed by package name and code, with requested minutes stored per code.
+- Salted hashes for five one-time emergency codes and the active 24-hour pause deadline.
 
 No data should leave the device in the MVP except text the user explicitly sends through their chosen SMS app.
 
@@ -76,10 +78,12 @@ Use `UsageStatsManager` and `UsageEvents` to infer the active foreground app. An
 
 MVP behavior:
 
-- Poll every second from a foreground service.
-- Query recent usage events.
+- Poll recent usage events every second on a dedicated background worker.
+- Use a short adaptive 200/500 ms recovery burst after recents interrupts a blocking overlay, then return to the one-second cadence.
+- Reconcile full-day UsageStats separately once per minute on another background worker.
 - Treat `MOVE_TO_FOREGROUND` and `ACTIVITY_RESUMED` as foreground signals.
 - Accrue elapsed time only when the same selected package remains active.
+- Persist in-memory usage totals in a single batch every 30 seconds and prune usage keys older than seven days.
 
 ### Blocking UI
 
