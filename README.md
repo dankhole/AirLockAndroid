@@ -116,6 +116,7 @@ docs/TEST_PLAN.md
 - [Architecture](docs/ARCHITECTURE.md)
 - [Development Guide](docs/DEVELOPMENT.md)
 - [Test Plan](docs/TEST_PLAN.md)
+- [Release Guide](docs/RELEASE.md)
 - [Privacy Notes](PRIVACY.md)
 
 ## License
