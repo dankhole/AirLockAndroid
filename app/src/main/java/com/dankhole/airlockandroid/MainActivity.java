@@ -14,14 +14,12 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.Editable;
-import android.text.InputType;
 import android.text.TextWatcher;
 import android.text.method.PasswordTransformationMethod;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.EditText;
@@ -166,7 +164,7 @@ public class MainActivity extends Activity {
 
         card.addView(UiStyle.fieldLabel(this, "Accountability phone number"), UiStyle.fullWidth(this, 6));
         phoneInput = UiStyle.inputField(this, "Phone number");
-        phoneInput.setInputType(InputType.TYPE_CLASS_PHONE);
+        KeyboardHelper.prepareNumericInput(phoneInput);
         phoneInput.setText(preferences.getString(Preferences.KEY_ACCOUNTABILITY_NUMBER, ""));
         configureEditableInput(phoneInput);
         card.addView(phoneInput, UiStyle.fullWidth(this, 10));
@@ -307,7 +305,7 @@ public class MainActivity extends Activity {
 
     private EditText pinInput(String hint) {
         EditText input = UiStyle.inputField(this, hint);
-        input.setInputType(InputType.TYPE_CLASS_PHONE);
+        KeyboardHelper.prepareNumericInput(input);
         input.setTransformationMethod(PasswordTransformationMethod.getInstance());
         configureEditableInput(input);
         return input;
@@ -318,6 +316,13 @@ public class MainActivity extends Activity {
         input.setImeOptions(EditorInfo.IME_ACTION_DONE);
         input.setSelectAllOnFocus(true);
         UiStyle.styleInput(input, false);
+        input.setOnTouchListener((v, event) -> {
+            boolean handled = KeyboardHelper.showOnTouch(this, input, event);
+            if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                scrollInputIntoView(input);
+            }
+            return handled;
+        });
         input.setOnClickListener(v -> {
             showKeyboard(input);
             scrollInputIntoView(input);
@@ -344,13 +349,17 @@ public class MainActivity extends Activity {
         }
         Preferences.prefs(this).edit()
                 .putBoolean(Preferences.KEY_ENABLED, enabledSwitch.isChecked())
-                .putString(Preferences.KEY_ACCOUNTABILITY_NUMBER, phoneInput.getText().toString().trim())
+                .putString(Preferences.KEY_ACCOUNTABILITY_NUMBER, currentPhoneDigits())
                 .apply();
     }
 
     private void saveValidSettings() {
-        SharedPreferences.Editor editor = Preferences.prefs(this).edit()
-                .putString(Preferences.KEY_ACCOUNTABILITY_NUMBER, phoneInput.getText().toString().trim());
+        SharedPreferences.Editor editor = Preferences.prefs(this).edit();
+        if (phoneNumberValid()) {
+            editor.putString(Preferences.KEY_ACCOUNTABILITY_NUMBER, currentPhoneDigits());
+        } else {
+            editor.remove(Preferences.KEY_ACCOUNTABILITY_NUMBER);
+        }
 
         if (!monitoringPrerequisitesMet()) {
             editor.putBoolean(Preferences.KEY_ENABLED, false);
@@ -415,7 +424,7 @@ public class MainActivity extends Activity {
     }
 
     private boolean hasAccountabilityNumber() {
-        return !phoneInput.getText().toString().trim().isEmpty();
+        return phoneNumberValid();
     }
 
     private boolean monitoringPrerequisitesMet() {
@@ -427,7 +436,15 @@ public class MainActivity extends Activity {
     }
 
     private boolean settingsValuesValid() {
-        return hasAccountabilityNumber();
+        return phoneNumberValid();
+    }
+
+    private boolean phoneNumberValid() {
+        return currentPhoneDigits().length() == 10;
+    }
+
+    private String currentPhoneDigits() {
+        return Preferences.normalizedPhoneNumber(phoneInput.getText().toString());
     }
 
     private boolean isValidPin(String pin) {
@@ -493,7 +510,7 @@ public class MainActivity extends Activity {
                 ? enabled
                 ? "Locked while goose duty is on. Stop duty with the master PIN before changing it!"
                 : "Goose request texts will go to this number!"
-                : "Enter the phone number that should receive goose request codes!";
+                : "Enter the 10-digit phone number that should receive goose request codes!";
         setRequirement(
                 accountabilityRequiredText,
                 hasAccountabilityNumber,
@@ -502,6 +519,8 @@ public class MainActivity extends Activity {
         );
         phoneInput.setEnabled(!enabled);
         UiStyle.styleInput(phoneInput, !hasAccountabilityNumber);
+        String phoneDigits = currentPhoneDigits();
+        phoneInput.setError(hasAccountabilityNumber || phoneDigits.isEmpty() ? null : "Enter 10 digits");
 
         currentPinInput.setVisibility(hasMasterPin ? View.VISIBLE : View.GONE);
         confirmPinInput.setVisibility(View.VISIBLE);
@@ -798,10 +817,11 @@ public class MainActivity extends Activity {
         input.setSingleLine(true);
         input.setSelectAllOnFocus(true);
         input.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        input.setInputType(InputType.TYPE_CLASS_PHONE);
+        KeyboardHelper.prepareNumericInput(input);
         input.setTransformationMethod(PasswordTransformationMethod.getInstance());
         input.setTextColor(UiStyle.COLOR_TEXT_PRIMARY);
         input.setHintTextColor(UiStyle.COLOR_TEXT_MUTED);
+        input.setOnTouchListener((v, event) -> KeyboardHelper.showOnTouch(this, input, event));
         input.setOnClickListener(v -> showKeyboard(input));
         return input;
     }
@@ -867,14 +887,7 @@ public class MainActivity extends Activity {
     }
 
     private void showKeyboard(EditText input) {
-        input.post(() -> {
-            input.requestFocus();
-            InputMethodManager inputMethodManager =
-                    (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (inputMethodManager != null) {
-                inputMethodManager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
-            }
-        });
+        KeyboardHelper.show(this, input);
     }
 
     private void scrollInputIntoView(EditText input) {
@@ -904,8 +917,6 @@ public class MainActivity extends Activity {
     }
 
     private void hideKeyboard(View view) {
-        InputMethodManager inputMethodManager =
-                (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-        inputMethodManager.hideSoftInputFromWindow(view.getWindowToken(), 0);
+        KeyboardHelper.hide(this, view);
     }
 }

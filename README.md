@@ -97,7 +97,7 @@ docs/TEST_PLAN.md
 
 ## Current Limitations
 
-- The SMS step opens the user's SMS app with the request code and requested minutes. The local approval code is derived from the request code, app, and requested minutes, which binds the granted time to the generated request. This still is not production-grade accountability without a backend or companion app.
+- The SMS step opens the user's SMS app with the request code and requested minutes. The local approval code is derived from the request code, and the requested minutes are stored against that pending approval code. This still is not production-grade accountability without a backend or companion app.
 - Overlay blocking is friction, not hard security. A determined user can revoke special permissions, force-stop, or uninstall the app.
 - The foreground app detector uses polling and UsageStats; OEM battery management can affect reliability.
 - No settings-change delay, unlock caps, audit trail, or backend SMS provider yet.

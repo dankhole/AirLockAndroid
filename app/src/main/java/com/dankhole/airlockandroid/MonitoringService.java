@@ -12,6 +12,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.net.Uri;
@@ -22,14 +23,13 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.Editable;
-import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -55,6 +55,7 @@ public class MonitoringService extends Service {
     private WindowManager windowManager;
     private View overlayView;
     private String overlayPackageName;
+    private String homePackageName;
     private String lastForegroundPackage;
     private long lastTickElapsedMs;
     private long keepOverlayUntilMs;
@@ -280,7 +281,8 @@ public class MonitoringService extends Service {
             params.layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         }
-        params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
+        params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
         params.gravity = Gravity.CENTER;
 
         try {
@@ -348,7 +350,7 @@ public class MonitoringService extends Service {
         EditText minutesInput = new EditText(this);
         minutesInput.setTag("minutes_input");
         minutesInput.setHint("Extra minutes");
-        minutesInput.setInputType(InputType.TYPE_CLASS_PHONE);
+        KeyboardHelper.prepareNumericInput(minutesInput);
         minutesInput.setSingleLine(true);
         minutesInput.setImeOptions(EditorInfo.IME_ACTION_NEXT);
         minutesInput.setText(formState.requestedMinutesText);
@@ -363,6 +365,13 @@ public class MonitoringService extends Service {
                 UiStyle.styleOverlayInput(minutesInput, false);
                 hideOverlayError(errorText, formState);
             }
+        });
+        minutesInput.setOnTouchListener((v, event) -> {
+            boolean handled = KeyboardHelper.showOnTouch(this, minutesInput, event);
+            if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                scrollToInput(scrollView, minutesInput);
+            }
+            return handled;
         });
         minutesInput.setOnClickListener(v -> {
             showKeyboard(minutesInput);
@@ -384,7 +393,7 @@ public class MonitoringService extends Service {
         EditText codeInput = new EditText(this);
         codeInput.setTag("code_input");
         codeInput.setHint("Approval code");
-        codeInput.setInputType(InputType.TYPE_CLASS_PHONE);
+        KeyboardHelper.prepareNumericInput(codeInput);
         codeInput.setSingleLine(true);
         codeInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
         codeInput.setText(formState.approvalCodeText);
@@ -398,6 +407,13 @@ public class MonitoringService extends Service {
                 UiStyle.styleOverlayInput(codeInput, false);
                 hideOverlayError(errorText, formState);
             }
+        });
+        codeInput.setOnTouchListener((v, event) -> {
+            boolean handled = KeyboardHelper.showOnTouch(this, codeInput, event);
+            if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                scrollToInput(scrollView, codeInput);
+            }
+            return handled;
         });
         codeInput.setOnClickListener(v -> {
             showKeyboard(codeInput);
@@ -564,14 +580,7 @@ public class MonitoringService extends Service {
     }
 
     private void showKeyboard(EditText input) {
-        input.post(() -> {
-            input.requestFocus();
-            InputMethodManager inputMethodManager =
-                    (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (inputMethodManager != null) {
-                inputMethodManager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
-            }
-        });
+        KeyboardHelper.show(this, input);
     }
 
     private boolean shouldKeepExistingOverlay(long now, String foregroundPackage) {
@@ -579,20 +588,52 @@ public class MonitoringService extends Service {
             return false;
         }
         if (foregroundPackage != null
-                && foregroundPackage.equals(getPackageName())) {
+                && foregroundPackage.equals(overlayPackageName)) {
+            return Preferences.isOverLimit(this, overlayPackageName)
+                    && !Preferences.isTemporarilyUnlocked(this, overlayPackageName);
+        }
+        if (foregroundPackage != null && foregroundPackage.equals(getPackageName())) {
             return Preferences.isOverLimit(this, overlayPackageName)
                     && !Preferences.isTemporarilyUnlocked(this, overlayPackageName);
         }
         if (now > keepOverlayUntilMs) {
             return false;
         }
+        if (isTransientSystemSurface(foregroundPackage)) {
+            return Preferences.isOverLimit(this, overlayPackageName)
+                    && !Preferences.isTemporarilyUnlocked(this, overlayPackageName);
+        }
         if (foregroundPackage != null
-                && !foregroundPackage.equals(getPackageName())
                 && !foregroundPackage.equals(overlayPackageName)) {
             return false;
         }
         return Preferences.isOverLimit(this, overlayPackageName)
                 && !Preferences.isTemporarilyUnlocked(this, overlayPackageName);
+    }
+
+    private boolean isTransientSystemSurface(String packageName) {
+        if (packageName == null) {
+            return true;
+        }
+        if ("com.android.systemui".equals(packageName)) {
+            return true;
+        }
+        return packageName.equals(homePackageName());
+    }
+
+    private String homePackageName() {
+        if (homePackageName != null) {
+            return homePackageName;
+        }
+        Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+        homeIntent.addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo resolveInfo = getPackageManager().resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY);
+        if (resolveInfo != null && resolveInfo.activityInfo != null) {
+            homePackageName = resolveInfo.activityInfo.packageName;
+        } else {
+            homePackageName = "";
+        }
+        return homePackageName;
     }
 
     private int parsePositiveInt(EditText input) {
@@ -605,11 +646,9 @@ public class MonitoringService extends Service {
     }
 
     private boolean composeCodeSms(String packageName, int requestedMinutes) {
-        String phone = Preferences.prefs(this)
-                .getString(Preferences.KEY_ACCOUNTABILITY_NUMBER, "")
-                .trim();
-        if (phone.isEmpty()) {
-            Toast.makeText(this, "Add an accountability number first!", Toast.LENGTH_LONG).show();
+        String phone = Preferences.accountabilityPhoneNumber(this);
+        if (phone.length() != 10) {
+            Toast.makeText(this, "Add a 10-digit accountability number first!", Toast.LENGTH_LONG).show();
             return false;
         }
 
@@ -617,7 +656,7 @@ public class MonitoringService extends Service {
         String message = "A goose is asking for " + requestedMinutes
                 + " minutes of extra time in " + appLabel(packageName) + "!"
                 + ". Request code: " + requestCode
-                + ". If approved, send back the approval code for this goose request!";
+                + ". If approved, send back the approval code for this goose request.";
         Intent intent = new Intent(Intent.ACTION_SENDTO);
         intent.setData(Uri.parse("smsto:" + Uri.encode(phone)));
         intent.putExtra("sms_body", message);
@@ -646,6 +685,7 @@ public class MonitoringService extends Service {
             return;
         }
         try {
+            KeyboardHelper.hide(this, overlayView);
             windowManager.removeView(overlayView);
         } catch (RuntimeException ignored) {
             // The view may already be detached if Android revoked overlay permission.

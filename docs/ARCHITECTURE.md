@@ -96,7 +96,7 @@ Accessibility can become useful later for blocking specific in-app surfaces like
 
 The MVP uses `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. That opens the user's messaging app and avoids direct SMS permissions.
 
-Known weakness: the request code and requested minutes are visible in the compose screen. The local approval code is derived from the request code, app, and requested minutes so the approved duration is bound to the generated request. A stronger production version should generate and deliver the approval code server-side, or use a companion-accountability app.
+Known weakness: the request code and requested minutes are visible in the compose screen. The local approval code is derived from the request code, and the approved duration is stored against that pending approval code. A stronger production version should generate and deliver the approval code server-side, or use a companion-accountability app.
 
 ## Safety Rules
 

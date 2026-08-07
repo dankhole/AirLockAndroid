@@ -95,10 +95,25 @@ final class Preferences {
     }
 
     static boolean hasAccountabilityNumber(Context context) {
-        return !prefs(context)
-                .getString(KEY_ACCOUNTABILITY_NUMBER, "")
-                .trim()
-                .isEmpty();
+        return accountabilityPhoneNumber(context).length() == 10;
+    }
+
+    static String accountabilityPhoneNumber(Context context) {
+        return normalizedPhoneNumber(prefs(context).getString(KEY_ACCOUNTABILITY_NUMBER, ""));
+    }
+
+    static String normalizedPhoneNumber(String value) {
+        if (value == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char character = value.charAt(i);
+            if (Character.isDigit(character)) {
+                builder.append(character);
+            }
+        }
+        return builder.toString();
     }
 
     static boolean hasMasterPin(Context context) {
@@ -177,7 +192,7 @@ final class Preferences {
         Set<String> approvalCodes = pendingApprovalCodes(preferences, packageName);
         do {
             requestCode = String.format(Locale.US, "%06d", RANDOM.nextInt(1_000_000));
-            approvalCode = approvalCodeForRequest(packageName, requestCode, safeMinutes);
+            approvalCode = approvalCodeForRequest(requestCode);
         } while (approvalCodes.contains(approvalCode));
 
         approvalCodes.add(approvalCode);
@@ -274,20 +289,14 @@ final class Preferences {
         return new HashSet<>(stored);
     }
 
-    static String approvalCodeForRequest(String packageName, String requestCode, int requestedMinutes) {
-        String input = packageName + ":" + normalizeCode(requestCode) + ":" + Math.max(1, requestedMinutes);
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            long value = 0L;
-            for (int i = 0; i < 8; i++) {
-                value = (value << 8) | (bytes[i] & 0xffL);
-            }
-            long positive = value & Long.MAX_VALUE;
-            return String.format(Locale.US, "%06d", positive % 1_000_000L);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is unavailable", e);
+    static String approvalCodeForRequest(String requestCode) {
+        String normalized = normalizeCode(requestCode);
+        StringBuilder builder = new StringBuilder(normalized.length());
+        for (int i = 0; i < normalized.length(); i++) {
+            int digit = normalized.charAt(i) - '0';
+            builder.append((digit + 5) % 10);
         }
+        return builder.toString();
     }
 
     private static String normalizeCode(String code) {

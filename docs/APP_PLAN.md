@@ -93,7 +93,7 @@ Use a foreground service with a persistent notification. On Android 14+ foregrou
 
 Avoid `SEND_SMS` in the MVP. Google Play heavily restricts SMS and Call Log permissions. Use an `ACTION_SENDTO` intent with an `smsto:` URI to open the user's SMS app with a prefilled message.
 
-This has an accountability weakness: the request code and requested minutes are visible to the user before the message is sent. The local approval code is derived from the request code, app, and requested minutes so the approved duration is bound to the generated request, but a production-grade version should use one of these instead:
+This has an accountability weakness: the request code and requested minutes are visible to the user before the message is sent. The local approval code is derived from the request code, and the approved duration is stored against that pending approval code, but a production-grade version should use one of these instead:
 
 - Backend-generated code sent by Twilio or another SMS provider.
 - Companion app for accountability partners.

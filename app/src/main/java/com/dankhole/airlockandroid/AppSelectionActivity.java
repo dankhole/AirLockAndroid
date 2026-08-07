@@ -10,12 +10,11 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.text.InputType;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -318,11 +317,18 @@ public class AppSelectionActivity extends Activity {
         panel.addView(UiStyle.fieldLabel(this, "Daily goose limit in minutes"), UiStyle.fullWidth(this, 6));
 
         EditText limitInput = UiStyle.inputField(this, "Minutes");
-        limitInput.setInputType(InputType.TYPE_CLASS_PHONE);
+        KeyboardHelper.prepareNumericInput(limitInput);
         limitInput.setSingleLine(true);
         limitInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
         limitInput.setText("15");
         limitInput.setSelectAllOnFocus(true);
+        limitInput.setOnTouchListener((v, event) -> {
+            boolean handled = KeyboardHelper.showOnTouch(this, limitInput, event);
+            if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                scrollInputIntoView(scrollView, limitInput);
+            }
+            return handled;
+        });
         limitInput.setOnClickListener(v -> {
             showKeyboard(limitInput);
             scrollInputIntoView(scrollView, limitInput);
@@ -368,14 +374,7 @@ public class AppSelectionActivity extends Activity {
     }
 
     private void showKeyboard(EditText input) {
-        input.post(() -> {
-            input.requestFocus();
-            InputMethodManager inputMethodManager =
-                    (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (inputMethodManager != null) {
-                inputMethodManager.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
-            }
-        });
+        KeyboardHelper.show(this, input);
     }
 
     private void scrollInputIntoView(ScrollView scrollView, View input) {
