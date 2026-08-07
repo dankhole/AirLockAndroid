@@ -367,7 +367,7 @@ final class UiStyle {
     static LinearLayout.LayoutParams gooseBannerParams(Context context) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(context, 88)
+                dp(context, 112)
         );
         params.setMargins(0, dp(context, 4), 0, dp(context, 18));
         return params;

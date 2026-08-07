@@ -9,6 +9,9 @@ import android.graphics.RectF;
 import android.view.View;
 
 final class GooseMascotView extends View {
+    private static final int GOOSE_TOP_EXTENT_DP = 63;
+    private static final int GOOSE_BOTTOM_EXTENT_DP = 34;
+
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     GooseMascotView(Context context) {
@@ -25,7 +28,12 @@ final class GooseMascotView extends View {
         }
 
         drawPond(canvas, width, height);
-        drawGoose(canvas, width * 0.24f, height * 0.56f);
+        float gooseCenterY = Math.max(
+                height * 0.65f,
+                dp(GOOSE_TOP_EXTENT_DP) + dp(4)
+        );
+        gooseCenterY = Math.min(gooseCenterY, height - dp(GOOSE_BOTTOM_EXTENT_DP) - dp(4));
+        drawGoose(canvas, width * 0.24f, gooseCenterY);
         drawLabel(canvas, width, height);
     }
 
