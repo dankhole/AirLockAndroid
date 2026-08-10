@@ -6,16 +6,38 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
+import android.text.Layout;
+import android.text.StaticLayout;
+import android.text.TextPaint;
+import android.text.TextUtils;
 import android.view.View;
 
 final class GooseMascotView extends View {
     private static final int GOOSE_TOP_EXTENT_DP = 63;
     private static final int GOOSE_BOTTOM_EXTENT_DP = 34;
+    private static final int NARROW_WIDTH_DP = 360;
+    private static final int WIDE_HEIGHT_DP = 112;
+    private static final int NARROW_HEIGHT_DP = 128;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final TextPaint subtitlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    private final String title;
+    private final String subtitle;
 
     GooseMascotView(Context context) {
         super(context);
+        title = context.getString(R.string.mascot_title);
+        subtitle = context.getString(R.string.mascot_subtitle);
+        setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        int measuredWidth = resolveSize(UiStyle.dp(getContext(), 320), widthMeasureSpec);
+        int desiredHeight = measuredWidth < dp(NARROW_WIDTH_DP)
+                ? UiStyle.dp(getContext(), NARROW_HEIGHT_DP)
+                : UiStyle.dp(getContext(), WIDE_HEIGHT_DP);
+        setMeasuredDimension(measuredWidth, resolveSize(desiredHeight, heightMeasureSpec));
     }
 
     @Override
@@ -33,8 +55,10 @@ final class GooseMascotView extends View {
                 dp(GOOSE_TOP_EXTENT_DP) + dp(4)
         );
         gooseCenterY = Math.min(gooseCenterY, height - dp(GOOSE_BOTTOM_EXTENT_DP) - dp(4));
-        drawGoose(canvas, width * 0.24f, gooseCenterY);
-        drawLabel(canvas, width, height);
+        boolean narrow = width < dp(NARROW_WIDTH_DP);
+        float gooseCenterX = width * (narrow ? 0.22f : 0.24f);
+        drawGoose(canvas, gooseCenterX, gooseCenterY);
+        drawLabel(canvas, width, height, gooseCenterX, narrow);
     }
 
     private void drawPond(Canvas canvas, float width, float height) {
@@ -58,8 +82,10 @@ final class GooseMascotView extends View {
         );
 
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.argb(90, 91, 213, 145));
+        paint.setColor(UiStyle.COLOR_PRIMARY_BRIGHT);
+        paint.setAlpha(90);
         canvas.drawOval(new RectF(width * 0.08f, height * 0.68f, width * 0.48f, height * 0.83f), paint);
+        paint.setAlpha(255);
     }
 
     private void drawGoose(Canvas canvas, float centerX, float centerY) {
@@ -94,21 +120,53 @@ final class GooseMascotView extends View {
         canvas.drawLine(centerX + dp(12), centerY + dp(22), centerX + dp(18), centerY + dp(34), paint);
     }
 
-    private void drawLabel(Canvas canvas, float width, float height) {
+    private void drawLabel(
+            Canvas canvas,
+            float width,
+            float height,
+            float gooseCenterX,
+            boolean narrow
+    ) {
+        float labelX = narrow
+                ? Math.max(width * 0.45f, gooseCenterX + dp(70))
+                : width * 0.46f;
+        int labelWidth = Math.max(1, (int) (width - labelX - dp(12)));
+
         paint.setStyle(Paint.Style.FILL);
         paint.setTextAlign(Paint.Align.LEFT);
         paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        paint.setTextSize(dp(20));
+        paint.setTextSize(sp(narrow ? 18 : 20));
         paint.setColor(UiStyle.COLOR_TEXT_PRIMARY);
-        canvas.drawText("Goose mode!", width * 0.46f, height * 0.45f, paint);
+        canvas.drawText(title, labelX, height * (narrow ? 0.40f : 0.45f), paint);
 
-        paint.setTypeface(android.graphics.Typeface.DEFAULT);
-        paint.setTextSize(dp(13));
-        paint.setColor(UiStyle.COLOR_TEXT_SECONDARY);
-        canvas.drawText("Silly, stern, and watching the clock!", width * 0.46f, height * 0.68f, paint);
+        subtitlePaint.setTypeface(android.graphics.Typeface.DEFAULT);
+        subtitlePaint.setTextSize(sp(narrow ? 12 : 13));
+        subtitlePaint.setColor(UiStyle.COLOR_TEXT_SECONDARY);
+        StaticLayout subtitleLayout = StaticLayout.Builder.obtain(
+                        subtitle,
+                        0,
+                        subtitle.length(),
+                        subtitlePaint,
+                        labelWidth
+                )
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                .setIncludePad(false)
+                .setLineSpacing(0, 1.05f)
+                .setMaxLines(narrow ? 2 : 1)
+                .setEllipsize(TextUtils.TruncateAt.END)
+                .setEllipsizedWidth(labelWidth)
+                .build();
+        canvas.save();
+        canvas.translate(labelX, height * (narrow ? 0.54f : 0.56f));
+        subtitleLayout.draw(canvas);
+        canvas.restore();
     }
 
     private float dp(int value) {
         return UiStyle.dp(getContext(), value);
+    }
+
+    private float sp(int value) {
+        return value * getResources().getDisplayMetrics().scaledDensity;
     }
 }

@@ -1,5 +1,6 @@
 package com.dankhole.airlockandroid;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.text.InputType;
 import android.view.MotionEvent;
@@ -19,11 +20,34 @@ final class KeyboardHelper {
         input.setRawInputType(InputType.TYPE_CLASS_PHONE);
     }
 
-    static boolean showOnTouch(Context context, EditText input, MotionEvent event) {
-        if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+    static void prepareSecureNumericInput(EditText input) {
+        input.setFocusable(true);
+        input.setFocusableInTouchMode(true);
+        input.setCursorVisible(true);
+        int inputType = InputType.TYPE_CLASS_NUMBER
+                | InputType.TYPE_NUMBER_VARIATION_PASSWORD;
+        input.setInputType(inputType);
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    static void installKeyboardInteraction(
+            Context context,
+            EditText input,
+            Runnable afterInteraction
+    ) {
+        // Keep native EditText touch/cursor handling, and mirror the touch work
+        // in OnClick so accessibility performClick actions follow the same path.
+        input.setOnTouchListener((view, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                show(context, input);
+                runAfterInteraction(afterInteraction);
+            }
+            return false;
+        });
+        input.setOnClickListener(view -> {
             show(context, input);
-        }
-        return false;
+            runAfterInteraction(afterInteraction);
+        });
     }
 
     static void show(Context context, EditText input) {
@@ -53,6 +77,12 @@ final class KeyboardHelper {
                 (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
         if (inputMethodManager != null) {
             inputMethodManager.showSoftInput(input, flags);
+        }
+    }
+
+    private static void runAfterInteraction(Runnable afterInteraction) {
+        if (afterInteraction != null) {
+            afterInteraction.run();
         }
     }
 }

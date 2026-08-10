@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 final class Preferences {
     static final String FILE = "airlock_prefs";
@@ -27,6 +28,8 @@ final class Preferences {
     static final String KEY_ACCOUNTABILITY_NUMBER = "accountability_number";
     static final String KEY_MASTER_PIN_HASH = "master_pin_hash";
     static final String KEY_MASTER_PIN_SALT = "master_pin_salt";
+    static final String KEY_NOTIFICATION_PERMISSION_REQUESTED =
+            "notification_permission_requested";
 
     private static final String KEY_EMERGENCY_CODE_HASHES = "emergency_code_hashes";
     private static final String KEY_EMERGENCY_CODE_SALT = "emergency_code_salt";
@@ -40,9 +43,11 @@ final class Preferences {
     private static final String USAGE_PREFIX = "usage_";
     private static final String KEY_LAST_USAGE_PRUNE_DAY = "last_usage_prune_day";
     private static final int USAGE_RETENTION_DAYS = 7;
-    private static final int EMERGENCY_CODE_COUNT = 5;
+    static final int EMERGENCY_CODE_COUNT = 3;
     private static final int EMERGENCY_CODE_BOUND = 100_000_000;
     private static final int EMERGENCY_CODE_LENGTH = 8;
+    static final int APPROVAL_REDEMPTION_INVALID = -1;
+    static final int APPROVAL_REDEMPTION_SAVE_FAILED = -2;
     private static final long EMERGENCY_PAUSE_MS = 24 * 60 * 60 * 1000L;
     private static final long CODE_TTL_MS = 10 * 60 * 1000L;
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -54,14 +59,31 @@ final class Preferences {
         return context.getSharedPreferences(FILE, Context.MODE_PRIVATE);
     }
 
+    static boolean isMonitoringRequested(Context context) {
+        return prefs(context).getBoolean(KEY_ENABLED, false);
+    }
+
+    @SuppressLint("ApplySharedPref")
+    static boolean setMonitoringRequested(Context context, boolean requested) {
+        return prefs(context).edit().putBoolean(KEY_ENABLED, requested).commit();
+    }
+
     static Set<String> selectedPackages(Context context) {
         Set<String> stored = prefs(context).getStringSet(KEY_SELECTED_PACKAGES, Collections.emptySet());
-        return new HashSet<>(stored);
+        Set<String> selected = new HashSet<>(stored);
+        if (CriticalApps.removeCritical(context, selected)) {
+            prefs(context).edit()
+                    .putStringSet(KEY_SELECTED_PACKAGES, new HashSet<>(selected))
+                    .apply();
+        }
+        return selected;
     }
 
     static void saveSelectedPackages(Context context, Set<String> packageNames) {
+        Set<String> safePackages = new HashSet<>(packageNames);
+        CriticalApps.removeCritical(context, safePackages);
         prefs(context).edit()
-                .putStringSet(KEY_SELECTED_PACKAGES, new HashSet<>(packageNames))
+                .putStringSet(KEY_SELECTED_PACKAGES, safePackages)
                 .apply();
     }
 
@@ -78,16 +100,18 @@ final class Preferences {
     }
 
     static void saveLimitForPackages(Context context, Set<String> packageNames, int minutes) {
-        if (packageNames.isEmpty()) {
+        Set<String> safePackages = new HashSet<>(packageNames);
+        CriticalApps.removeCritical(context, safePackages);
+        if (safePackages.isEmpty()) {
             return;
         }
         Set<String> limitedPackages = selectedPackages(context);
-        limitedPackages.addAll(packageNames);
+        limitedPackages.addAll(safePackages);
 
         SharedPreferences.Editor editor = prefs(context).edit()
                 .putStringSet(KEY_SELECTED_PACKAGES, new HashSet<>(limitedPackages));
         int safeMinutes = Math.max(1, minutes);
-        for (String packageName : packageNames) {
+        for (String packageName : safePackages) {
             editor.putInt(limitKey(packageName), safeMinutes);
         }
         editor.apply();
@@ -158,10 +182,31 @@ final class Preferences {
 
     @SuppressLint("ApplySharedPref")
     static List<String> replaceEmergencyCodes(Context context) {
+        return replaceEmergencyCodes(
+                prefs(context),
+                () -> String.format(
+                        Locale.US,
+                        "%08d",
+                        RANDOM.nextInt(EMERGENCY_CODE_BOUND)
+                )
+        );
+    }
+
+    static List<String> replaceEmergencyCodes(
+            SharedPreferences preferences,
+            Supplier<String> codeSupplier
+    ) {
         String salt = randomHex(16);
         Set<String> codes = new HashSet<>();
-        while (codes.size() < EMERGENCY_CODE_COUNT) {
-            codes.add(String.format(Locale.US, "%08d", RANDOM.nextInt(EMERGENCY_CODE_BOUND)));
+        int attempts = 0;
+        while (codes.size() < EMERGENCY_CODE_COUNT && attempts++ < 1_000) {
+            String code = normalizeCode(codeSupplier.get());
+            if (code.length() == EMERGENCY_CODE_LENGTH) {
+                codes.add(code);
+            }
+        }
+        if (codes.size() != EMERGENCY_CODE_COUNT) {
+            return Collections.emptyList();
         }
 
         List<String> sortedCodes = new ArrayList<>(codes);
@@ -170,7 +215,7 @@ final class Preferences {
         for (String code : sortedCodes) {
             hashes.add(hashPin(salt, code));
         }
-        boolean saved = prefs(context).edit()
+        boolean saved = preferences.edit()
                 .putString(KEY_EMERGENCY_CODE_SALT, salt)
                 .putStringSet(KEY_EMERGENCY_CODE_HASHES, hashes)
                 .commit();
@@ -186,12 +231,24 @@ final class Preferences {
 
     @SuppressLint("ApplySharedPref")
     static boolean consumeEmergencyCode(Context context, String enteredCode) {
+        return consumeEmergencyCode(
+                prefs(context),
+                enteredCode,
+                System.currentTimeMillis()
+        );
+    }
+
+    static boolean consumeEmergencyCode(
+            SharedPreferences preferences,
+            String enteredCode,
+            long nowMs
+    ) {
         String normalized = normalizeCode(enteredCode);
-        if (normalized.length() != EMERGENCY_CODE_LENGTH || isEmergencyPauseActive(context)) {
+        if (normalized.length() != EMERGENCY_CODE_LENGTH
+                || preferences.getLong(KEY_EMERGENCY_PAUSE_UNTIL, 0L) > nowMs) {
             return false;
         }
 
-        SharedPreferences preferences = prefs(context);
         String salt = preferences.getString(KEY_EMERGENCY_CODE_SALT, "");
         Set<String> storedHashes = new HashSet<>(preferences.getStringSet(
                 KEY_EMERGENCY_CODE_HASHES,
@@ -217,9 +274,9 @@ final class Preferences {
         }
 
         storedHashes.remove(matchedHash);
-        return prefs(context).edit()
+        return preferences.edit()
                 .putStringSet(KEY_EMERGENCY_CODE_HASHES, storedHashes)
-                .putLong(KEY_EMERGENCY_PAUSE_UNTIL, System.currentTimeMillis() + EMERGENCY_PAUSE_MS)
+                .putLong(KEY_EMERGENCY_PAUSE_UNTIL, nowMs + EMERGENCY_PAUSE_MS)
                 .commit();
     }
 
@@ -242,7 +299,11 @@ final class Preferences {
         return prefs(context).getLong(usageKey(day, packageName), 0L);
     }
 
-    static void saveUsageForDayMs(Context context, String day, Map<String, Long> usageByPackage) {
+    static synchronized void saveUsageForDayMs(
+            Context context,
+            String day,
+            Map<String, Long> usageByPackage
+    ) {
         if (day == null || day.isEmpty() || usageByPackage.isEmpty()) {
             return;
         }
@@ -310,11 +371,7 @@ final class Preferences {
         return prefs(context).getLong(UNLOCK_PREFIX + packageName, 0L) > System.currentTimeMillis();
     }
 
-    static void grantExtraTime(Context context, String packageName, int minutes) {
-        long until = System.currentTimeMillis() + Math.max(1, minutes) * 60_000L;
-        prefs(context).edit().putLong(UNLOCK_PREFIX + packageName, until).apply();
-    }
-
+    @SuppressLint("ApplySharedPref")
     static String createRequestCode(Context context, String packageName, int requestedMinutes) {
         SharedPreferences preferences = prefs(context);
         long now = System.currentTimeMillis();
@@ -323,23 +380,49 @@ final class Preferences {
         String requestCode;
         String approvalCode;
         Set<String> approvalCodes = pendingApprovalCodes(preferences, packageName);
+        Set<String> originalApprovalCodes = new HashSet<>(approvalCodes);
         do {
             requestCode = String.format(Locale.US, "%06d", RANDOM.nextInt(1_000_000));
             approvalCode = approvalCodeForRequest(requestCode);
         } while (approvalCodes.contains(approvalCode));
 
         approvalCodes.add(approvalCode);
-        preferences.edit()
+        boolean saved = preferences.edit()
                 .putStringSet(pendingApprovalCodesKey(packageName), approvalCodes)
                 .putLong(approvalExpiryKey(packageName, approvalCode), now + CODE_TTL_MS)
                 .putInt(approvalMinutesKey(packageName, approvalCode), safeMinutes)
+                .commit();
+        if (saved) {
+            return requestCode;
+        }
+        preferences.edit()
+                .putStringSet(pendingApprovalCodesKey(packageName), originalApprovalCodes)
+                .remove(approvalExpiryKey(packageName, approvalCode))
+                .remove(approvalMinutesKey(packageName, approvalCode))
                 .apply();
-        return requestCode;
+        return "";
     }
 
-    static int consumeApprovalCodeMinutesIfValid(Context context, String packageName, String enteredCode) {
-        SharedPreferences preferences = prefs(context);
-        long now = System.currentTimeMillis();
+    @SuppressLint("ApplySharedPref")
+    static synchronized int redeemApprovalCodeAndGrantMinutes(
+            Context context,
+            String packageName,
+            String enteredCode
+    ) {
+        return redeemApprovalCodeAndGrantMinutes(
+                prefs(context),
+                packageName,
+                enteredCode,
+                System.currentTimeMillis()
+        );
+    }
+
+    static int redeemApprovalCodeAndGrantMinutes(
+            SharedPreferences preferences,
+            String packageName,
+            String enteredCode,
+            long now
+    ) {
         cleanExpiredApprovalCodes(preferences, packageName, now);
 
         String normalized = normalizeCode(enteredCode);
@@ -347,25 +430,45 @@ final class Preferences {
         if (approvalCodes.contains(normalized)) {
             long expiry = preferences.getLong(approvalExpiryKey(packageName, normalized), 0L);
             int minutes = preferences.getInt(approvalMinutesKey(packageName, normalized), -1);
-            if (expiry > now && minutes > 0) {
+            int approvedMinutes = ApprovalCodePolicy.approvedMinutes(
+                    true,
+                    expiry,
+                    minutes,
+                    now
+            );
+            if (approvedMinutes > 0) {
+                Set<String> originalApprovalCodes = new HashSet<>(approvalCodes);
+                long previousUnlockUntil = preferences.getLong(UNLOCK_PREFIX + packageName, 0L);
                 approvalCodes.remove(normalized);
-                preferences.edit()
+                boolean saved = preferences.edit()
                         .putStringSet(pendingApprovalCodesKey(packageName), approvalCodes)
                         .remove(approvalExpiryKey(packageName, normalized))
                         .remove(approvalMinutesKey(packageName, normalized))
-                        .apply();
-                return minutes;
+                        .putLong(
+                                UNLOCK_PREFIX + packageName,
+                                ApprovalCodePolicy.unlockUntilMs(now, approvedMinutes)
+                        )
+                        .commit();
+                if (saved) {
+                    return approvedMinutes;
+                }
+                restoreFailedApprovalRedemption(
+                        preferences,
+                        packageName,
+                        normalized,
+                        originalApprovalCodes,
+                        expiry,
+                        minutes,
+                        previousUnlockUntil
+                );
+                return APPROVAL_REDEMPTION_SAVE_FAILED;
             }
         }
 
-        int legacyMinutes = consumeLegacyApprovalCodeIfValid(preferences, packageName, normalized, now);
-        if (legacyMinutes > 0) {
-            return legacyMinutes;
-        }
-        return -1;
+        return redeemLegacyApprovalCode(preferences, packageName, normalized, now);
     }
 
-    private static int consumeLegacyApprovalCodeIfValid(
+    private static int redeemLegacyApprovalCode(
             SharedPreferences preferences,
             String packageName,
             String enteredCode,
@@ -377,15 +480,64 @@ final class Preferences {
         String expected = preferences.getString(codeKey, "");
         long expiry = preferences.getLong(expiryKey, 0L);
         int minutes = preferences.getInt(minutesKey, -1);
-        if (expected.equals(enteredCode) && expiry > now && minutes > 0) {
-            preferences.edit()
+        int approvedMinutes = ApprovalCodePolicy.approvedMinutes(
+                expected.equals(enteredCode),
+                expiry,
+                minutes,
+                now
+        );
+        if (approvedMinutes > 0) {
+            long previousUnlockUntil = preferences.getLong(UNLOCK_PREFIX + packageName, 0L);
+            boolean saved = preferences.edit()
                     .remove(codeKey)
                     .remove(expiryKey)
                     .remove(minutesKey)
-                    .apply();
-            return minutes;
+                    .putLong(
+                            UNLOCK_PREFIX + packageName,
+                            ApprovalCodePolicy.unlockUntilMs(now, approvedMinutes)
+                    )
+                    .commit();
+            if (saved) {
+                return approvedMinutes;
+            }
+            SharedPreferences.Editor restore = preferences.edit()
+                    .putString(codeKey, expected)
+                    .putLong(expiryKey, expiry)
+                    .putInt(minutesKey, minutes);
+            restoreUnlockDeadline(restore, UNLOCK_PREFIX + packageName, previousUnlockUntil);
+            restore.apply();
+            return APPROVAL_REDEMPTION_SAVE_FAILED;
         }
-        return -1;
+        return APPROVAL_REDEMPTION_INVALID;
+    }
+
+    private static void restoreFailedApprovalRedemption(
+            SharedPreferences preferences,
+            String packageName,
+            String approvalCode,
+            Set<String> originalApprovalCodes,
+            long expiry,
+            int minutes,
+            long previousUnlockUntil
+    ) {
+        SharedPreferences.Editor restore = preferences.edit()
+                .putStringSet(pendingApprovalCodesKey(packageName), originalApprovalCodes)
+                .putLong(approvalExpiryKey(packageName, approvalCode), expiry)
+                .putInt(approvalMinutesKey(packageName, approvalCode), minutes);
+        restoreUnlockDeadline(restore, UNLOCK_PREFIX + packageName, previousUnlockUntil);
+        restore.apply();
+    }
+
+    private static void restoreUnlockDeadline(
+            SharedPreferences.Editor editor,
+            String unlockKey,
+            long previousUnlockUntil
+    ) {
+        if (previousUnlockUntil > 0L) {
+            editor.putLong(unlockKey, previousUnlockUntil);
+        } else {
+            editor.remove(unlockKey);
+        }
     }
 
     private static void cleanExpiredApprovalCodes(
@@ -424,12 +576,7 @@ final class Preferences {
 
     static String approvalCodeForRequest(String requestCode) {
         String normalized = normalizeCode(requestCode);
-        StringBuilder builder = new StringBuilder(normalized.length());
-        for (int i = 0; i < normalized.length(); i++) {
-            int digit = normalized.charAt(i) - '0';
-            builder.append((digit + 5) % 10);
-        }
-        return builder.toString();
+        return ApprovalCodePolicy.approvalCodeForNormalizedRequest(normalized);
     }
 
     private static String normalizeCode(String code) {

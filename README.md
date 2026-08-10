@@ -15,7 +15,7 @@ This repo builds locally with the Gradle wrapper after Android SDK setup.
 - Goose-themed overlay blocking screen after the selected app exceeds its limit.
 - SMS compose intent for sending a numeric request code tied to requested extra minutes.
 - Approval code entry grants the minutes approved when the request code was generated and plays a goose animation.
-- Master-PIN-protected generation of five hashed, one-time emergency codes; each pauses all blocking for 24 hours.
+- Master-PIN-protected generation of three hashed, one-time emergency codes; each pauses all blocking for 24 hours.
 - Boot receiver restarts monitoring if monitoring was enabled.
 
 ## Why This Shape
@@ -49,20 +49,21 @@ With command-line tooling:
 ## First Device Test
 
 1. Install and open AirLock Goose.
-2. Tap `Grant Usage Access` and enable AirLock Goose.
-3. Tap `Grant Display Over Other Apps` and allow overlays.
-4. Enter:
+2. Complete the dedicated setup screen by granting Usage Access, Display Over
+   Other Apps, and goose notifications. The dashboard opens after all three are
+   ready.
+3. Enter:
    - Keyholder phone number: a test number you control
    - Master override PIN: at least four digits
-5. Tap `Set Goose Limits!`, choose one non-critical app, continue, and set daily limit to `1`.
-6. Tap `Start Goose Duty!` and enter the master PIN.
-7. Open the selected app and keep it foregrounded for over one minute.
-8. Confirm the goose overlay appears.
-9. Enter requested extra minutes and tap `Text the Keyholder!`.
-10. Return to the blocked app and enter the approval code for that request.
-11. Confirm the goose animation plays and the overlay disappears for the requested duration.
+4. Tap `Set Goose Limits!`, choose one non-critical app, continue, and set daily limit to `1`.
+5. Turn on Goose Duty and enter the master PIN.
+6. Open the selected app and keep it foregrounded for over one minute.
+7. Confirm the goose overlay appears.
+8. Enter requested extra minutes and tap `Text the Keyholder!`.
+9. Return to the blocked app and enter the approval code for that request.
+10. Confirm the goose animation plays and the overlay disappears for the requested duration.
 
-For emergency-code testing, use the master PIN to generate a replacement set, save or share the five plaintext codes, then hide them. Each 8-digit code can be used once to pause all goose blocking for 24 hours; only salted hashes remain on the device.
+For emergency-code testing, use the master PIN to generate a replacement set, save or share the three plaintext codes, then hide them. Each 8-digit code can be used once to pause all goose blocking for 24 hours; only salted hashes remain on the device.
 
 ## Project Map
 

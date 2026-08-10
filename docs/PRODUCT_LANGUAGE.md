@@ -24,7 +24,7 @@ The Keyholder may also know or set the master PIN, but the product must not impl
 Emergency codes are pre-authorized recovery access for cases where the user genuinely needs the phone and the Keyholder is unavailable. They are separate from ordinary extra-time approval codes and from the master PIN.
 
 - The master PIN is required to generate or replace the set.
-- A set contains five random 8-digit codes.
+- A set contains three random 8-digit codes.
 - Replacing the set revokes every unused code from the previous set.
 - Each code works once and pauses all Goose blocking for 24 hours.
 - Goose duty resumes automatically after the pause.

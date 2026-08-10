@@ -1,6 +1,6 @@
 # Privacy Notes
 
-Last updated: July 20, 2026
+Last updated: August 9, 2026
 
 AirLock Android is designed as a local-first app blocker.
 
@@ -13,6 +13,11 @@ AirLock Android is designed as a local-first app blocker.
 - Master PIN hash and salt.
 - Temporary unlock expiration timestamps.
 - Short-lived approval codes and their requested extra-minute duration.
+- Salted hashes of one-time emergency codes and the active emergency-pause deadline.
+- Local monitoring health and recovery timestamps.
+
+Android cloud backup and device-to-device transfer are disabled for AirLock's
+app-private data. Uninstalling or clearing app storage removes this local state.
 
 ## Data Shared
 

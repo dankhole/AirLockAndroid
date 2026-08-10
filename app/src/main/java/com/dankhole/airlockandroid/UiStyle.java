@@ -13,33 +13,41 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 final class UiStyle {
+    private static final int SCREEN_CONTENT_MAX_WIDTH_DP = 720;
+    private static final int OVERLAY_CONTENT_MAX_WIDTH_DP = 600;
     static final int COLOR_BACKGROUND = Color.rgb(18, 22, 27);
     static final int COLOR_SURFACE = Color.rgb(28, 34, 40);
     static final int COLOR_SURFACE_ALT = Color.rgb(35, 43, 49);
     static final int COLOR_OVERLAY_BACKGROUND = Color.rgb(10, 13, 16);
     static final int COLOR_OVERLAY_SURFACE = Color.rgb(28, 34, 40);
+    static final int COLOR_SYSTEM_BAR_CONTRAST = Color.rgb(117, 117, 117);
     static final int COLOR_TEXT_PRIMARY = Color.rgb(239, 244, 242);
     static final int COLOR_TEXT_SECONDARY = Color.rgb(201, 211, 207);
     static final int COLOR_TEXT_MUTED = Color.rgb(155, 168, 164);
     static final int COLOR_TEXT_INVERSE = Color.WHITE;
     static final int COLOR_TEXT_DISABLED = Color.rgb(112, 123, 120);
-    static final int COLOR_PRIMARY = Color.rgb(46, 163, 120);
-    static final int COLOR_PRIMARY_DARK = Color.rgb(36, 130, 96);
-    static final int COLOR_PRIMARY_SOFT = Color.rgb(32, 60, 51);
-    static final int COLOR_DANGER = Color.rgb(220, 82, 70);
-    static final int COLOR_DANGER_DARK = Color.rgb(177, 56, 47);
+    static final int COLOR_PRIMARY = Color.rgb(26, 128, 91);
+    static final int COLOR_PRIMARY_DEEP = Color.rgb(20, 105, 74);
+    static final int COLOR_PRIMARY_PRESSED = Color.rgb(14, 79, 55);
+    static final int COLOR_PRIMARY_SOFT = Color.rgb(29, 58, 48);
+    static final int COLOR_PRIMARY_BRIGHT = Color.rgb(91, 213, 166);
+    static final int COLOR_DANGER = Color.rgb(255, 132, 120);
+    static final int COLOR_DANGER_ACTION = Color.rgb(190, 61, 53);
+    static final int COLOR_DANGER_DARK = Color.rgb(154, 46, 40);
     static final int COLOR_DANGER_SOFT = Color.rgb(66, 36, 35);
     static final int COLOR_WARNING = Color.rgb(245, 190, 90);
     static final int COLOR_WARNING_SOFT = Color.rgb(64, 52, 30);
-    static final int COLOR_READY = Color.rgb(91, 213, 145);
-    static final int COLOR_READY_SOFT = Color.rgb(29, 58, 45);
+    static final int COLOR_READY = COLOR_PRIMARY_BRIGHT;
+    static final int COLOR_READY_SOFT = COLOR_PRIMARY_SOFT;
     static final int COLOR_OUTLINE = Color.rgb(65, 78, 75);
     static final int COLOR_OUTLINE_STRONG = Color.rgb(99, 120, 114);
     static final int COLOR_DISABLED_SURFACE = Color.rgb(49, 57, 55);
@@ -55,13 +63,31 @@ final class UiStyle {
     static void applyWindow(Activity activity) {
         activity.getWindow().setStatusBarColor(COLOR_BACKGROUND);
         activity.getWindow().setNavigationBarColor(COLOR_BACKGROUND);
-        activity.getWindow().getDecorView().setSystemUiVisibility(0);
+        applyDarkSystemBarAppearance(activity.getWindow().getDecorView());
+    }
+
+    static void applyDarkSystemBarAppearance(View view) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = view.getWindowInsetsController();
+            if (controller != null) {
+                controller.setSystemBarsAppearance(
+                        0,
+                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                                | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                );
+            }
+            return;
+        }
+        int flags = view.getSystemUiVisibility();
+        flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        view.setSystemUiVisibility(flags);
     }
 
     static ScrollView screenScroll(Context context) {
         ScrollView scrollView = new ScrollView(context);
         scrollView.setFillViewport(true);
-        scrollView.setClipToPadding(false);
+        scrollView.setClipToPadding(true);
         scrollView.setBackgroundColor(COLOR_BACKGROUND);
         return scrollView;
     }
@@ -71,6 +97,110 @@ final class UiStyle {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(COLOR_BACKGROUND);
         return root;
+    }
+
+    static void attachScreenContent(ScrollView scrollView, LinearLayout content) {
+        attachConstrainedContent(
+                scrollView,
+                content,
+                SCREEN_CONTENT_MAX_WIDTH_DP,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+    }
+
+    static void attachOverlayContent(ScrollView scrollView, LinearLayout content) {
+        attachConstrainedContent(
+                scrollView,
+                content,
+                OVERLAY_CONTENT_MAX_WIDTH_DP,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        );
+    }
+
+    static View constrainedScreen(Context context, View content) {
+        FrameLayout root = new FrameLayout(context);
+        root.setBackgroundColor(COLOR_BACKGROUND);
+        ConstrainedContentHost host = new ConstrainedContentHost(
+                context,
+                SCREEN_CONTENT_MAX_WIDTH_DP
+        );
+        host.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        host.addView(content, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        root.addView(host, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        applySystemInsetsPadding(root, 0, 0, 0, 0);
+        return root;
+    }
+
+    static void applyScreenInsetsPadding(
+            ScrollView scrollView,
+            View content,
+            int leftDp,
+            int topDp,
+            int rightDp,
+            int bottomDp
+    ) {
+        content.setPadding(
+                dp(content.getContext(), leftDp),
+                dp(content.getContext(), topDp),
+                dp(content.getContext(), rightDp),
+                dp(content.getContext(), bottomDp)
+        );
+        applySystemInsetsPadding(scrollView, 0, 0, 0, 0);
+    }
+
+    static View overlayWindowRoot(Context context, ScrollView content) {
+        FrameLayout frame = new FrameLayout(context);
+        frame.setBackgroundColor(COLOR_OVERLAY_BACKGROUND);
+        frame.addView(content, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+
+        View topScrim = systemBarScrim(context);
+        View bottomScrim = systemBarScrim(context);
+        View leftScrim = systemBarScrim(context);
+        View rightScrim = systemBarScrim(context);
+        FrameLayout.LayoutParams topParams = edgeScrimParams(Gravity.TOP);
+        FrameLayout.LayoutParams bottomParams = edgeScrimParams(Gravity.BOTTOM);
+        FrameLayout.LayoutParams leftParams = sideScrimParams(Gravity.START);
+        FrameLayout.LayoutParams rightParams = sideScrimParams(Gravity.END);
+        frame.addView(topScrim, topParams);
+        frame.addView(bottomScrim, bottomParams);
+        frame.addView(leftScrim, leftParams);
+        frame.addView(rightScrim, rightParams);
+
+        frame.setOnApplyWindowInsetsListener((target, insets) -> {
+            int left = insets.getSystemWindowInsetLeft();
+            int top = insets.getSystemWindowInsetTop();
+            int right = insets.getSystemWindowInsetRight();
+            int bottom = insets.getSystemWindowInsetBottom();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                DisplayCutout cutout = insets.getDisplayCutout();
+                if (cutout != null) {
+                    left = Math.max(left, cutout.getSafeInsetLeft());
+                    top = Math.max(top, cutout.getSafeInsetTop());
+                    right = Math.max(right, cutout.getSafeInsetRight());
+                    bottom = Math.max(bottom, cutout.getSafeInsetBottom());
+                }
+            }
+            topParams.height = top;
+            bottomParams.height = bottom;
+            leftParams.width = left;
+            rightParams.width = right;
+            topScrim.setLayoutParams(topParams);
+            bottomScrim.setLayoutParams(bottomParams);
+            leftScrim.setLayoutParams(leftParams);
+            rightScrim.setLayoutParams(rightParams);
+            return insets;
+        });
+        requestInsetsWhenReady(frame);
+        return frame;
     }
 
     static void applySystemInsetsPadding(View view, int leftDp, int topDp, int rightDp, int bottomDp) {
@@ -193,9 +323,7 @@ final class UiStyle {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(context, 16), dp(context, 16), dp(context, 16), dp(context, 16));
         card.setBackground(rounded(context, COLOR_SURFACE, 8, COLOR_OUTLINE, 1));
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            card.setElevation(dp(context, 1));
-        }
+        card.setElevation(dp(context, 1));
         return card;
     }
 
@@ -238,21 +366,39 @@ final class UiStyle {
     static Button primaryButton(Context context, String text) {
         Button button = baseButton(context, text);
         button.setTextColor(buttonTextColors(COLOR_TEXT_INVERSE, COLOR_TEXT_DISABLED));
-        button.setBackground(buttonBackground(context, COLOR_PRIMARY, COLOR_PRIMARY_DARK, COLOR_DISABLED_SURFACE, 0));
+        button.setBackground(buttonBackground(
+                context,
+                COLOR_PRIMARY,
+                COLOR_PRIMARY_DEEP,
+                COLOR_DISABLED_SURFACE,
+                0
+        ));
         return button;
     }
 
     static Button secondaryButton(Context context, String text) {
         Button button = baseButton(context, text);
         button.setTextColor(buttonTextColors(COLOR_TEXT_INVERSE, COLOR_TEXT_DISABLED));
-        button.setBackground(buttonBackground(context, COLOR_PRIMARY_DARK, COLOR_PRIMARY, COLOR_DISABLED_SURFACE, 0));
+        button.setBackground(buttonBackground(
+                context,
+                COLOR_PRIMARY_DEEP,
+                COLOR_PRIMARY_PRESSED,
+                COLOR_DISABLED_SURFACE,
+                0
+        ));
         return button;
     }
 
     static Button dangerButton(Context context, String text) {
         Button button = baseButton(context, text);
         button.setTextColor(buttonTextColors(COLOR_TEXT_INVERSE, COLOR_TEXT_DISABLED));
-        button.setBackground(buttonBackground(context, COLOR_DANGER, COLOR_DANGER_DARK, COLOR_DISABLED_SURFACE, 0));
+        button.setBackground(buttonBackground(
+                context,
+                COLOR_DANGER_ACTION,
+                COLOR_DANGER_DARK,
+                COLOR_DISABLED_SURFACE,
+                0
+        ));
         return button;
     }
 
@@ -268,8 +414,8 @@ final class UiStyle {
         button.setTextColor(buttonTextColors(COLOR_TEXT_INVERSE, COLOR_TEXT_DISABLED));
         button.setBackground(buttonBackground(
                 context,
-                COLOR_PRIMARY_DARK,
-                COLOR_PRIMARY,
+                COLOR_PRIMARY_DEEP,
+                COLOR_PRIMARY_PRESSED,
                 COLOR_DISABLED_SURFACE,
                 0
         ));
@@ -321,7 +467,7 @@ final class UiStyle {
                 context,
                 selected ? COLOR_PRIMARY_SOFT : COLOR_SURFACE,
                 8,
-                selected ? COLOR_PRIMARY : COLOR_OUTLINE,
+                selected ? COLOR_READY : COLOR_OUTLINE,
                 selected ? 2 : 1
         ));
     }
@@ -330,13 +476,7 @@ final class UiStyle {
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.VERTICAL);
         row.setPadding(dp(context, 12), dp(context, 12), dp(context, 12), dp(context, 12));
-        row.setBackground(rounded(
-                context,
-                overLimit ? COLOR_DANGER_SOFT : COLOR_SURFACE_ALT,
-                8,
-                overLimit ? COLOR_DANGER : COLOR_OUTLINE,
-                overLimit ? 2 : 1
-        ));
+        row.setBackgroundColor(overLimit ? COLOR_DANGER_SOFT : COLOR_SURFACE_ALT);
         return row;
     }
 
@@ -367,7 +507,7 @@ final class UiStyle {
     static LinearLayout.LayoutParams gooseBannerParams(Context context) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(context, 112)
+                ViewGroup.LayoutParams.WRAP_CONTENT
         );
         params.setMargins(0, dp(context, 4), 0, dp(context, 18));
         return params;
@@ -387,11 +527,34 @@ final class UiStyle {
         button.setMinWidth(dp(context, 48));
         button.setPadding(dp(context, 16), 0, dp(context, 16), 0);
         button.setGravity(Gravity.CENTER);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            button.setStateListAnimator(null);
-            button.setElevation(0);
-        }
+        button.setStateListAnimator(null);
+        button.setElevation(0);
         return button;
+    }
+
+    private static View systemBarScrim(Context context) {
+        View view = new View(context);
+        view.setBackgroundColor(COLOR_SYSTEM_BAR_CONTRAST);
+        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        return view;
+    }
+
+    private static FrameLayout.LayoutParams edgeScrimParams(int gravity) {
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0
+        );
+        params.gravity = gravity;
+        return params;
+    }
+
+    private static FrameLayout.LayoutParams sideScrimParams(int gravity) {
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        );
+        params.gravity = gravity;
+        return params;
     }
 
     private static ColorStateList buttonTextColors(int enabledColor, int disabledColor) {
@@ -459,5 +622,49 @@ final class UiStyle {
             public void onViewDetachedFromWindow(View detachedView) {
             }
         });
+    }
+
+    private static void attachConstrainedContent(
+            ScrollView scrollView,
+            LinearLayout content,
+            int maxWidthDp,
+            int height
+    ) {
+        ConstrainedContentHost host = new ConstrainedContentHost(
+                scrollView.getContext(),
+                maxWidthDp
+        );
+        host.setBackgroundColor(content.getSolidColor());
+        host.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        host.addView(content, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                height,
+                Gravity.TOP | Gravity.CENTER_HORIZONTAL
+        ));
+        scrollView.addView(host, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                height
+        ));
+    }
+
+    private static final class ConstrainedContentHost extends FrameLayout {
+        private final int maxContentWidthPx;
+
+        ConstrainedContentHost(Context context, int maxContentWidthDp) {
+            super(context);
+            maxContentWidthPx = dp(context, maxContentWidthDp);
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            int availableWidth = MeasureSpec.getSize(widthMeasureSpec);
+            int horizontalInset = Math.max(0, availableWidth - maxContentWidthPx);
+            int left = horizontalInset / 2;
+            int right = horizontalInset - left;
+            if (getPaddingLeft() != left || getPaddingRight() != right) {
+                setPadding(left, 0, right, 0);
+            }
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        }
     }
 }

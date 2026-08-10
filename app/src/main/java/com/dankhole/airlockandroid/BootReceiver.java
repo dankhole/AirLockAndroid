@@ -3,24 +3,18 @@ package com.dankhole.airlockandroid;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.os.Build;
 
 public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
+        String action = intent.getAction();
+        if (!Intent.ACTION_BOOT_COMPLETED.equals(action)
+                && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
             return;
         }
-        boolean enabled = Preferences.prefs(context).getBoolean(Preferences.KEY_ENABLED, false);
-        if (!enabled) {
+        if (!Preferences.isMonitoringRequested(context)) {
             return;
         }
-        Intent serviceIntent = new Intent(context, MonitoringService.class);
-        serviceIntent.setAction(MonitoringService.ACTION_START);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent);
-        } else {
-            context.startService(serviceIntent);
-        }
+        MonitoringService.requestStart(context);
     }
 }

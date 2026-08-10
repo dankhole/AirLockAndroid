@@ -1,0 +1,75 @@
+<resources>
+    <item name="permission_setup_scroll" type="id" />
+    <item name="permission_setup_progress" type="id" />
+    <item name="permission_usage_status" type="id" />
+    <item name="permission_usage_button" type="id" />
+    <item name="permission_overlay_status" type="id" />
+    <item name="permission_overlay_button" type="id" />
+    <item name="permission_notifications_status" type="id" />
+    <item name="permission_notifications_button" type="id" />
+
+    <item name="main_scroll" type="id" />
+    <item name="main_monitoring_status" type="id" />
+    <item name="main_monitoring_details_toggle" type="id" />
+    <item name="main_permissions_status" type="id" />
+    <item name="main_permissions_toggle" type="id" />
+    <item name="main_usage_access_button" type="id" />
+    <item name="main_overlay_access_button" type="id" />
+    <item name="main_notification_button" type="id" />
+    <item name="main_battery_settings_button" type="id" />
+    <item name="main_keyholder_status" type="id" />
+    <item name="main_keyholder_phone" type="id" />
+    <item name="main_keyholder_toggle" type="id" />
+    <item name="main_master_pin_status" type="id" />
+    <item name="main_master_pin_current" type="id" />
+    <item name="main_master_pin_new" type="id" />
+    <item name="main_master_pin_confirm" type="id" />
+    <item name="main_master_pin_save" type="id" />
+    <item name="main_master_pin_toggle" type="id" />
+    <item name="main_app_limits_status" type="id" />
+    <item name="main_app_limits_button" type="id" />
+    <item name="main_usage_status" type="id" />
+    <item name="main_usage_list" type="id" />
+    <item name="main_monitoring_switch" type="id" />
+    <item name="main_monitoring_controls_status" type="id" />
+    <item name="main_emergency_status" type="id" />
+    <item name="main_emergency_code" type="id" />
+    <item name="main_emergency_use" type="id" />
+    <item name="main_emergency_generate" type="id" />
+    <item name="main_emergency_toggle" type="id" />
+
+    <item name="app_catalog_loading" type="id" />
+    <item name="app_catalog_error" type="id" />
+    <item name="app_catalog_retry" type="id" />
+    <item name="app_catalog_back" type="id" />
+    <item name="app_picker_list" type="id" />
+    <item name="app_picker_search" type="id" />
+    <item name="app_picker_selection_status" type="id" />
+    <item name="app_picker_row" type="id" />
+    <item name="app_picker_checkbox" type="id" />
+    <item name="app_picker_continue" type="id" />
+    <item name="app_picker_remove" type="id" />
+    <item name="app_limit_minutes" type="id" />
+    <item name="app_limit_validation" type="id" />
+    <item name="app_limit_save" type="id" />
+    <item name="app_limit_back" type="id" />
+
+    <item name="master_pin_dialog_input" type="id" />
+
+    <item name="blocker_root" type="id" />
+    <item name="blocker_title" type="id" />
+    <item name="blocker_summary" type="id" />
+    <item name="blocker_request_status" type="id" />
+    <item name="blocker_minutes" type="id" />
+    <item name="blocker_text_keyholder" type="id" />
+    <item name="blocker_approval_code" type="id" />
+    <item name="blocker_error" type="id" />
+    <item name="blocker_unlock" type="id" />
+    <item name="blocker_emergency_hint" type="id" />
+    <item name="blocker_emergency_toggle" type="id" />
+    <item name="blocker_leave" type="id" />
+    <item name="blocker_celebration" type="id" />
+
+    <item name="usage_app_row" type="id" />
+    <item name="usage_app_enforcement_status" type="id" />
+</resources>

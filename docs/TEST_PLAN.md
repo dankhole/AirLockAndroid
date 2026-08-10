@@ -1,18 +1,28 @@
 # Test Plan
 
-Last updated: August 7, 2026
+Last updated: August 9, 2026
 
 ## Static Checks
 
 Run after Android tooling is available:
 
 ```sh
+./gradlew :app:testDebugUnitTest
 ./gradlew :app:assembleDebug
 ./gradlew :app:lintDebug
-adb shell dumpsys package com.dankhole.airlockandroid
+adb -e shell dumpsys package com.dankhole.airlockandroid
 ```
 
 Confirm the installed package reports `targetSdk=36`.
+
+The local unit suite verifies edit-authorization expiry, process-local editor
+sessions, bounded query execution, foreground event classification,
+approval-code duration policy, atomic approval redemption and rollback with
+multiple pending requests, three-code emergency-batch replacement,
+notification visibility policy, and monitoring-exit recovery classification.
+
+See `docs/TEST_AUTOMATION_TODO.md` for the staged work to automate this manual
+matrix without running a full emulator pass after every small change.
 
 Checks that were run before Android tooling was available:
 
@@ -23,14 +33,36 @@ Checks that were run before Android tooling was available:
 
 ### Permission Onboarding
 
-Expected result: the app accurately reports whether Usage Access and overlay permission are enabled.
+Expected result: required Android access is unmistakable and cannot be skipped.
 
 1. Open app fresh.
-2. Confirm both permissions show `off`.
-3. Grant Usage Access.
-4. Return to app and confirm Usage Access shows `on`.
-5. Grant overlay permission.
-6. Return to app and confirm Overlay shows `on`.
+2. Confirm the dedicated permission screen appears instead of the dashboard.
+3. Confirm Usage Access, Display Over Other Apps, and Notifications each show
+   `NOT DONE`, with a `0 of 3` progress state.
+4. Grant Usage Access.
+5. Return to app and confirm Usage Access shows `DONE`, its action is hidden,
+   and progress shows `1 of 3`.
+6. Grant overlay permission.
+7. Return and confirm Overlay shows `DONE` and progress shows `2 of 3`.
+8. Grant notifications and confirm the permission screen automatically gives
+   way to the dashboard.
+9. Confirm the duty switch is at the top, remains locked, and names the first
+   unfinished product setting below it.
+10. Confirm the compact Android-access review section is at the bottom of the
+    dashboard.
+11. Revoke Usage Access, overlay access, or notifications and return to AirLock.
+    Confirm the permission screen replaces the dashboard and identifies the
+    exact missing item.
+12. Restore the revoked access and confirm the dashboard returns automatically.
+13. Start duty and confirm the ongoing `AirLock goose watch` notification makes
+    no sound and does not vibrate on first creation or service status updates.
+14. Disable only the `AirLock goose watch` notification channel. Confirm the
+    permission screen reports Notifications as `NOT DONE` and opens that
+    channel's settings.
+15. On Android 8-12, disable app notifications and confirm the permission screen
+    reports Notifications as `NOT DONE` instead of assuming they are available.
+16. Set Android battery use to Restricted and confirm AirLock reports the
+    reliability warning on the dashboard without treating it as a permission.
 
 ### App Limit Setup
 
@@ -39,10 +71,27 @@ Expected result: app limits persist.
 1. Open `Set Goose Limits!`.
 2. Select one safe test app.
 3. Continue to the limit step.
-4. Enter daily limit `1`.
-5. Save the limit.
-6. Force-close AirLock Goose.
-7. Reopen and confirm configured app count is retained.
+4. Press Back and confirm the wizard returns to app selection rather than
+   exiting, including with predictive back on Android 13+.
+5. Confirm the launcher, Settings, dialer/phone, messaging, camera, AirLock,
+   and any installed autofill or Android credential-provider password manager
+   are not selectable.
+6. Search by app label and package name, confirm nonmatching rows disappear,
+   and confirm existing limited apps sort before unlimited apps.
+7. Select multiple apps, rotate the device, and confirm the search and
+   selections remain.
+8. Continue again, enter daily limit `1`, rotate the device, and confirm the
+   second wizard step, selection, and typed limit remain.
+9. Save the limit.
+10. Force-close AirLock Goose.
+11. Reopen and confirm configured app count is retained.
+12. With duty active, enter the master PIN and open the limit picker. Rotate
+    the device and confirm the authorized editor and wizard state remain.
+13. Put it in
+    Recents for more than 30 seconds, return, and confirm editing is locked.
+14. Open it again with the PIN, background it, kill the AirLock process without
+    removing its task, and restore the task. Confirm the old launch Intent does
+    not restore editing authorization.
 
 ### Limit Enforcement
 
@@ -54,6 +103,8 @@ Expected result: selected app is blocked after its daily budget is exhausted.
 4. Open the test app.
 5. Wait at least 65 seconds.
 6. Confirm the overlay appears.
+7. Confirm its content clears the status bar, camera cutout, gesture area, and
+   keyboard; system-bar icons remain readable against the dark blocker.
 
 ### Recents And App Switching
 
@@ -83,8 +134,27 @@ Expected result: valid approval code removes the overlay for the minutes request
 8. Confirm either valid approval code grants the minutes requested when that specific code was generated.
 9. Enter a partial approval code, leave the overlay, return, and confirm the approval code entry is still populated.
 10. Enter an incorrect approval code and confirm it is rejected.
-11. Enter a valid approval code, tap `Loose the Goose!`, and confirm the goose animation plays before the overlay disappears with `The goose is loose for X minutes!`.
-12. Keep the blocked app foregrounded and confirm the overlay returns after the extra time expires.
+11. Confirm emergency instructions are hidden by default, reveal them with
+    `Use emergency code`, then hide them again without losing either input.
+12. Enter a valid approval code, tap `Loose the Goose!`, and confirm the goose animation plays before the overlay disappears with `The goose is loose for X minutes!`.
+13. Keep the blocked app foregrounded and confirm the overlay returns after the extra time expires.
+
+### Responsive And Accessible UI
+
+Expected result: core flows remain readable and operable without relying on
+color or animation.
+
+1. Test the permission screen, main screen, both app-limit steps, and blocker in portrait,
+   landscape, and a tablet-width emulator. Confirm content is centered at a
+   readable width and no text or controls overlap.
+2. Set Android font size to its largest setting and repeat the core flow.
+   Confirm text wraps, controls remain at least 48 dp tall, and every action is
+   reachable by scrolling.
+3. Enable TalkBack and confirm requirement states, app selection state,
+   labeled inputs, validation errors, and the granted-minute announcement are
+   read in a logical order.
+4. Disable system animations and confirm a successful grant completes without
+   waiting for or requiring the goose animation.
 
 ### Stop Goose Duty
 
@@ -101,9 +171,9 @@ Expected result: blocking stops when goose duty is disabled.
 
 Expected result: the Keyholder can prepare one-time recovery codes, and one valid code pauses every guarded app for exactly 24 hours without permanently disabling goose duty.
 
-1. With goose duty on, open AirLock Goose and tap `Generate 5 New Codes`.
+1. With goose duty on, open AirLock Goose, expand emergency access, and tap `Generate 3 New Codes`.
 2. Enter an incorrect master PIN and confirm no codes are generated.
-3. Enter the correct master PIN, confirm replacement, and verify five distinct 8-digit numeric codes appear.
+3. Enter the correct master PIN, confirm replacement, and verify three distinct 8-digit numeric codes appear.
 4. Share or record the codes, tap `Hide Codes`, reopen AirLock Goose, and confirm plaintext codes cannot be displayed again.
 5. Enter an invalid 8-digit emergency code and confirm it is rejected without reducing the remaining-code count.
 6. Enter one generated code and confirm the app reports an emergency pause with the exact automatic-resume date and time.
@@ -124,23 +194,89 @@ Expected result: goose duty resumes after reboot when enabled.
 4. Confirm AirLock Goose's monitoring notification appears with `The goose is on duty!`.
 5. Open a selected over-limit app and confirm blocking still works.
 
+### Monitoring Self-Recovery
+
+Expected result: transient Android failures do not silently switch goose duty
+off, and recovery work remains bounded.
+
+1. Start goose duty and confirm the main status says `ON`, the service appears
+   in `dumpsys activity services`, and the ongoing notification is visible.
+2. Revoke Usage Access while the service runs. Confirm the notification and
+   main status say duty needs attention, the saved duty switch remains on, and
+   no blocker is attempted.
+3. Restore Usage Access. Confirm normal monitoring resumes within 30 seconds,
+   or immediately after returning to AirLock, without re-entering the master
+   PIN.
+4. Repeat by revoking and restoring Display Over Other Apps. Confirm the
+   overlay is removed while access is missing and returns after recovery.
+5. With duty on, reinstall the same APK using `adb -e install -r`. Confirm
+   `MY_PACKAGE_REPLACED` restarts the foreground service and an over-limit app
+   is blocked.
+6. On Android 13+, run
+   `adb -e shell cmd activity stop-app com.dankhole.airlockandroid`. Confirm the
+   process and notification stop, then reopen AirLock and confirm requested
+   duty starts again. Do not expect automatic restart after this explicit
+   Android user-stop path.
+7. Force-stop AirLock from system App Info, reboot, and confirm Android does not
+   deliver the boot receiver. Open AirLock once and confirm requested duty
+   starts again. This is an Android platform limit, not an in-app recovery
+   failure.
+8. Set AirLock battery use to Restricted. Confirm the main screen shows a clear
+   reliability warning and Android may demote the foreground service. Restore
+   Optimized or Unrestricted, reopen AirLock, and confirm `dumpsys activity
+   services` reports `isForeground=true` again.
+9. Repeat steps 1-5 after at least eight hours of ordinary use, then repeat
+   after 48-72 hours on a physical device.
+
+Useful emulator commands for Usage Access recovery:
+
+```sh
+adb -e shell appops set --uid com.dankhole.airlockandroid GET_USAGE_STATS ignore
+adb -e shell appops set --uid com.dankhole.airlockandroid GET_USAGE_STATS allow
+```
+
+### Screen And Keyguard Efficiency
+
+Expected result: AirLock performs no UsageStats polling while the display is
+off or the keyguard is visible and resumes promptly after unlock.
+
+1. Start duty, turn the screen off for at least five minutes, then inspect
+   thread CPU time and `AirLockMonitor` logs.
+2. Confirm the foreground and reconciliation workers do not continuously query
+   usage while the display is off.
+3. Turn the screen on without unlocking and confirm no blocker appears over the
+   keyguard.
+4. Unlock directly into an over-limit guarded app and confirm the blocker
+   appears promptly.
+5. Confirm today's saved usage did not increase for time spent behind the
+   keyguard.
+
 ### Monitoring Performance And Battery
 
 Expected result: foreground detection stays responsive without continuous main-thread work or per-second preference writes.
 
 1. Start goose duty, background AirLock Goose, and use the device normally for at least 30 minutes.
 2. Confirm the service remains active and no crashes, ANRs, or repeated overlay rebuild loops appear in Logcat.
-3. Confirm UsageStats work runs on the `AirLockForeground` and `AirLockReconciliation` worker threads rather than the main thread.
+3. Confirm UsageStats work runs on an `AirLockForeground-*` executor thread and
+   the `AirLockReconciliation` worker rather than the main thread.
 4. Confirm the usage preferences file changes on the 30-second batch boundary, not on every one-second foreground poll.
 5. Leave a blocked app through recents for more than 15 seconds, return, and confirm the overlay still returns within the normal one-second poll.
 6. Run an 8-24 hour physical-device battery comparison with goose duty on and off, recording CPU time, wakeups, and battery drain.
 7. Repeat the long battery run on at least one Pixel and one current Samsung device.
+8. Confirm foreground-query recovery never has more than two
+   `AirLockForeground-*` threads and never queues additional queries. After two
+   ten-second timeouts, retries should occur no more than once every 30 seconds.
 
 ## Regression Areas
 
 - Permission revocation while service is running.
 - App force-stop.
+- Android 13+ Active apps Stop.
+- App replacement/update while duty is on.
 - Device idle and battery saver.
+- Restricted battery mode and OEM sleeping-app controls.
+- Screen off, keyguard, and first unlock after reboot.
+- UsageStats query failure or delayed event delivery.
 - Midnight reset.
 - Timezone change.
 - Multi-window mode.

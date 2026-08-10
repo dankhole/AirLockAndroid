@@ -16,12 +16,15 @@ final class GooseCelebrationView extends View {
     private static final long DURATION_MS = 1800L;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final String honkText;
     private float progress;
     private ValueAnimator animator;
     private boolean animationCancelled;
 
     GooseCelebrationView(Context context) {
         super(context);
+        honkText = context.getString(R.string.celebration_honk);
+        setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
 
     void start(Runnable onFinished) {
@@ -29,6 +32,14 @@ final class GooseCelebrationView extends View {
             animator.cancel();
         }
         animationCancelled = false;
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            progress = 1f;
+            invalidate();
+            if (onFinished != null) {
+                post(onFinished);
+            }
+            return;
+        }
         animator = ValueAnimator.ofFloat(0f, 1f);
         animator.setDuration(DURATION_MS);
         animator.setInterpolator(new AccelerateDecelerateInterpolator());
@@ -142,7 +153,7 @@ final class GooseCelebrationView extends View {
         paint.setTextSize(dp(24));
         int alpha = 150 + (int) (Math.abs(flap) * 105);
         paint.setColor(Color.argb(alpha, 245, 190, 90));
-        canvas.drawText("HONK!", centerX, centerY - dp(84), paint);
+        canvas.drawText(honkText, centerX, centerY - dp(84), paint);
     }
 
     private void drawConfetti(Canvas canvas, float width, float height) {

@@ -1,16 +1,18 @@
 package com.dankhole.airlockandroid;
 
+import android.app.KeyguardManager;
 import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.app.usage.UsageEvents;
+import android.app.usage.UsageEventsQuery;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
+import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -22,6 +24,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.Process;
 import android.os.SystemClock;
 import android.provider.Settings;
@@ -29,7 +32,6 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.Log;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -47,12 +49,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class MonitoringService extends Service {
     public static final String ACTION_START = "com.dankhole.airlockandroid.START";
     public static final String ACTION_STOP = "com.dankhole.airlockandroid.STOP";
 
-    private static final String CHANNEL_ID = "airlock_monitoring";
+    static final String CHANNEL_ID = "airlock_monitoring_silent_v2";
     private static final String TAG = "AirLockMonitor";
     private static final int NOTIFICATION_ID = 42;
     private static final long POLL_INTERVAL_MS = 1000L;
@@ -60,28 +63,45 @@ public class MonitoringService extends Service {
     private static final long RECOVERY_WARM_POLL_INTERVAL_MS = 500L;
     private static final long RECOVERY_FAST_WINDOW_MS = 3_000L;
     private static final long RECOVERY_WARM_WINDOW_MS = 15_000L;
-    private static final long USAGE_EVENT_OVERLAP_MS = 500L;
-    private static final long RECOVERY_USAGE_EVENT_OVERLAP_MS = 3_000L;
+    private static final long USAGE_EVENT_OVERLAP_MS = 10_000L;
+    private static final long FOREGROUND_SANITY_CHECK_INTERVAL_MS = 30_000L;
+    private static final long FOREGROUND_QUERY_TIMEOUT_MS = 10_000L;
+    private static final int MAX_FOREGROUND_QUERY_WORKERS = 2;
+    private static final long FOREGROUND_QUERY_WORKER_IDLE_MS = 30_000L;
+    private static final long DEGRADED_RETRY_INTERVAL_MS = 30_000L;
+    private static final long BACKGROUND_RESTRICTION_CHECK_INTERVAL_MS = 30_000L;
+    private static final long SCREEN_OFF_CHECK_INTERVAL_MS = 60_000L;
     private static final long USAGE_RECONCILE_INTERVAL_MS = 60_000L;
     private static final long USAGE_PERSIST_INTERVAL_MS = 30_000L;
     private static final long EMERGENCY_PAUSE_CHECK_INTERVAL_MS = 60_000L;
     private static final long OVERLAY_STICKY_MS = 5 * 60 * 1000L;
+    private static final AtomicInteger FOREGROUND_THREAD_SEQUENCE = new AtomicInteger();
+    private static final BoundedTaskExecutor FOREGROUND_QUERY_EXECUTOR =
+            new BoundedTaskExecutor(
+                    MAX_FOREGROUND_QUERY_WORKERS,
+                    FOREGROUND_QUERY_WORKER_IDLE_MS,
+                    MonitoringService::newForegroundQueryThread
+            );
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private HandlerThread foregroundThread;
-    private Handler foregroundHandler;
     private HandlerThread reconciliationThread;
     private Handler reconciliationHandler;
     private WindowManager windowManager;
+    private PowerManager powerManager;
+    private KeyguardManager keyguardManager;
+    private BlockerOverlayController blockerOverlayController;
+    private BroadcastReceiver deviceStateReceiver;
     private View overlayView;
     private String overlayPackageName;
     private String stickyBlockedPackageName;
     private String homePackageName;
     private Set<String> homePackageNames;
     private String lastForegroundPackage;
+    private String lastCriticalBlockValidationPackage;
     private long lastTickElapsedMs;
     private long lastUsageQueryEndMs;
-    private long lastUsagePersistElapsedMs;
+    private long lastForegroundSanityCheckMs;
+    private long lastLifecycleEventMs;
     private long keepOverlayUntilMs;
     private long leaveAppGraceUntilElapsedMs;
     private long transientRecoveryStartedElapsedMs;
@@ -89,13 +109,24 @@ public class MonitoringService extends Service {
     private boolean overlayNeedsRefresh;
     private boolean overlayWindowObscured;
     private boolean foregroundQueryInFlight;
+    private long foregroundQueryId;
+    private Runnable foregroundQueryTimeoutRunnable;
+    private int consecutiveForegroundQueryFailures;
+    private int consecutiveForegroundQueryTimeouts;
     private boolean reconciliationInFlight;
     private boolean emergencyPauseNotificationShown;
     private boolean stopping;
-    private String cachedUsageDay;
-    private final Map<String, Long> usageTotalsMs = new HashMap<>();
-    private final Set<String> dirtyUsagePackages = new HashSet<>();
-    private final Map<String, OverlayFormState> overlayFormStates = new HashMap<>();
+    private boolean intentionallyStopped;
+    private boolean deviceInteractive;
+    private boolean deviceUnlocked;
+    private boolean foregroundStatusRecoveryPending;
+    private boolean backgroundRestricted;
+    private long nextForegroundPromotionAttemptElapsedMs;
+    private long lastBackgroundRestrictionCheckElapsedMs;
+    private String monitoringIssue = "";
+    private int consecutiveOverlayFailures;
+    private long nextOverlayAttemptElapsedMs;
+    private UsageLedger usageLedger;
 
     private final Runnable pollRunnable = new Runnable() {
         @Override
@@ -114,24 +145,41 @@ public class MonitoringService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        usageLedger = UsageLedger.forContext(this, USAGE_PERSIST_INTERVAL_MS);
+        monitoringIssue = getString(R.string.monitoring_issue_starting);
+        startForeground(NOTIFICATION_ID, buildNotification());
+
         windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-        foregroundThread = new HandlerThread(
-                "AirLockForeground",
-                Process.THREAD_PRIORITY_BACKGROUND
+        powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+        blockerOverlayController = new BlockerOverlayController(
+                this,
+                createBlockerOverlayListener()
         );
-        foregroundThread.start();
-        foregroundHandler = new Handler(foregroundThread.getLooper());
+        deviceInteractive = powerManager == null || powerManager.isInteractive();
+        deviceUnlocked = keyguardManager == null || !keyguardManager.isKeyguardLocked();
+        backgroundRestricted = AndroidPermissions.isBackgroundRestricted(this);
+        lastBackgroundRestrictionCheckElapsedMs = SystemClock.elapsedRealtime();
+        foregroundStatusRecoveryPending = backgroundRestricted;
+        long previousServiceStartMs = MonitoringHealth.onServiceCreated(this);
+        if (foregroundStatusRecoveryPending) {
+            monitoringIssue = getString(R.string.monitoring_issue_background_restricted);
+            MonitoringHealth.recordWaiting(this, monitoringIssue);
+        }
         reconciliationThread = new HandlerThread(
                 "AirLockReconciliation",
                 Process.THREAD_PRIORITY_BACKGROUND
         );
         reconciliationThread.start();
         reconciliationHandler = new Handler(reconciliationThread.getLooper());
+        reconciliationHandler.post(() -> MonitoringHealth.capturePreviousExit(
+                this,
+                previousServiceStartMs
+        ));
+        registerDeviceStateReceiver();
         emergencyPauseNotificationShown = Preferences.isEmergencyPauseActive(this);
-        startForeground(NOTIFICATION_ID, buildNotification());
         lastTickElapsedMs = SystemClock.elapsedRealtime();
-        lastUsagePersistElapsedMs = lastTickElapsedMs;
-        lastUsageQueryEndMs = System.currentTimeMillis();
+        lastUsageQueryEndMs = System.currentTimeMillis() - USAGE_EVENT_OVERLAP_MS;
         handler.post(pollRunnable);
         handler.post(reconciliationRunnable);
     }
@@ -139,35 +187,30 @@ public class MonitoringService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
-            stopMonitoring();
+            intentionallyStopped = true;
+            stopMonitoring(true);
             return START_NOT_STICKY;
         }
-        if (Preferences.prefs(this).getBoolean(Preferences.KEY_ENABLED, false)
-                && Preferences.isEmergencyPauseActive(this)) {
+        if (!Preferences.isMonitoringRequested(this)) {
+            stopMonitoring(false);
+            return START_NOT_STICKY;
+        }
+        boolean foregroundStatusNeedsAttention = refreshForegroundServiceHealth(true);
+        if (Preferences.isEmergencyPauseActive(this)) {
+            clearMonitoringIssue();
             updateForegroundNotification();
             return START_STICKY;
         }
-        if (!AndroidPermissions.hasUsageAccess(this)) {
-            stopMonitoring();
-            return START_NOT_STICKY;
+        String requirementIssue = monitoringRequirementIssue();
+        if (!requirementIssue.isEmpty()) {
+            waitForRecovery(requirementIssue, 0L);
+            return START_STICKY;
         }
-        if (!AndroidPermissions.hasOverlayAccess(this)) {
-            stopMonitoring();
-            return START_NOT_STICKY;
+        if (!foregroundStatusNeedsAttention) {
+            clearMonitoringIssue();
         }
-        if (!Preferences.hasAccountabilityNumber(this)) {
-            stopMonitoring();
-            return START_NOT_STICKY;
-        }
-        if (!Preferences.hasMasterPin(this)) {
-            stopMonitoring();
-            return START_NOT_STICKY;
-        }
-        if (!Preferences.hasLimitedApps(this)) {
-            stopMonitoring();
-            return START_NOT_STICKY;
-        }
-        Preferences.prefs(this).edit().putBoolean(Preferences.KEY_ENABLED, true).apply();
+        handler.removeCallbacks(pollRunnable);
+        handler.post(pollRunnable);
         return START_STICKY;
     }
 
@@ -176,20 +219,20 @@ public class MonitoringService extends Service {
         stopping = true;
         handler.removeCallbacks(pollRunnable);
         handler.removeCallbacks(reconciliationRunnable);
-        flushUsageTotals(true);
+        cancelForegroundQueryTimeout();
+        usageLedger.flush(true);
         hideOverlay(false);
-        if (foregroundHandler != null) {
-            foregroundHandler.removeCallbacksAndMessages(null);
-        }
+        unregisterDeviceStateReceiver();
         if (reconciliationHandler != null) {
             reconciliationHandler.removeCallbacksAndMessages(null);
-        }
-        if (foregroundThread != null) {
-            foregroundThread.quitSafely();
         }
         if (reconciliationThread != null) {
             reconciliationThread.quitSafely();
         }
+        MonitoringHealth.onServiceDestroyed(
+                this,
+                intentionallyStopped || !Preferences.isMonitoringRequested(this)
+        );
         super.onDestroy();
     }
 
@@ -198,36 +241,267 @@ public class MonitoringService extends Service {
         return null;
     }
 
+    static boolean requestStart(Context context) {
+        Intent intent = new Intent(context, MonitoringService.class);
+        intent.setAction(ACTION_START);
+        try {
+            context.startForegroundService(intent);
+            return true;
+        } catch (RuntimeException exception) {
+            MonitoringHealth.recordStartFailure(
+                    context,
+                    context.getString(R.string.monitoring_issue_start_denied)
+            );
+            return false;
+        }
+    }
+
+    private static Thread newForegroundQueryThread(Runnable task) {
+        Thread thread = new Thread(() -> {
+            try {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+            } catch (RuntimeException ignored) {
+                // The query is still kept off the main thread if priority adjustment fails.
+            }
+            task.run();
+        }, "AirLockForeground-" + FOREGROUND_THREAD_SEQUENCE.incrementAndGet());
+        thread.setDaemon(true);
+        return thread;
+    }
+
+    private void armForegroundQueryTimeout(long queryId) {
+        cancelForegroundQueryTimeout();
+        foregroundQueryTimeoutRunnable = () -> {
+            if (stopping || !foregroundQueryInFlight || queryId != foregroundQueryId) {
+                return;
+            }
+            foregroundQueryInFlight = false;
+            foregroundQueryId++;
+            consecutiveForegroundQueryFailures++;
+            consecutiveForegroundQueryTimeouts++;
+            lastTickElapsedMs = SystemClock.elapsedRealtime();
+            setMonitoringIssue(getString(R.string.monitoring_issue_query_timeout));
+            debugLog("foreground query timed out; consecutive timeouts="
+                    + consecutiveForegroundQueryTimeouts);
+            foregroundQueryTimeoutRunnable = null;
+            scheduleForegroundPoll(consecutiveForegroundQueryTimeouts < MAX_FOREGROUND_QUERY_WORKERS
+                    ? POLL_INTERVAL_MS
+                    : DEGRADED_RETRY_INTERVAL_MS);
+        };
+        handler.postDelayed(foregroundQueryTimeoutRunnable, FOREGROUND_QUERY_TIMEOUT_MS);
+    }
+
+    private void cancelForegroundQueryTimeout() {
+        if (foregroundQueryTimeoutRunnable != null) {
+            handler.removeCallbacks(foregroundQueryTimeoutRunnable);
+            foregroundQueryTimeoutRunnable = null;
+        }
+    }
+
+    private void handleForegroundQueryFailure() {
+        consecutiveForegroundQueryFailures++;
+        lastTickElapsedMs = SystemClock.elapsedRealtime();
+        if (consecutiveForegroundQueryFailures >= 3) {
+            setMonitoringIssue(getString(R.string.monitoring_issue_usage_unavailable));
+            scheduleForegroundPoll(DEGRADED_RETRY_INTERVAL_MS);
+        } else {
+            scheduleForegroundPoll(POLL_INTERVAL_MS);
+        }
+    }
+
+    private String monitoringRequirementIssue() {
+        if (!AndroidPermissions.hasUsageAccess(this)) {
+            return getString(R.string.monitoring_requirement_usage);
+        }
+        if (!AndroidPermissions.hasOverlayAccess(this)) {
+            return getString(R.string.monitoring_requirement_overlay);
+        }
+        if (!Preferences.hasAccountabilityNumber(this)) {
+            return getString(R.string.monitoring_requirement_keyholder);
+        }
+        if (!Preferences.hasMasterPin(this)) {
+            return getString(R.string.monitoring_requirement_pin);
+        }
+        if (!Preferences.hasLimitedApps(this)) {
+            return getString(R.string.monitoring_requirement_apps);
+        }
+        return "";
+    }
+
+    private boolean refreshForegroundServiceHealth(boolean forcePromotion) {
+        long elapsedNow = SystemClock.elapsedRealtime();
+        if (forcePromotion
+                || lastBackgroundRestrictionCheckElapsedMs == 0L
+                || elapsedNow - lastBackgroundRestrictionCheckElapsedMs
+                >= BACKGROUND_RESTRICTION_CHECK_INTERVAL_MS) {
+            backgroundRestricted = AndroidPermissions.isBackgroundRestricted(this);
+            lastBackgroundRestrictionCheckElapsedMs = elapsedNow;
+        }
+        if (backgroundRestricted) {
+            foregroundStatusRecoveryPending = true;
+            nextForegroundPromotionAttemptElapsedMs = 0L;
+            setMonitoringIssue(getString(R.string.monitoring_issue_background_restricted));
+            return true;
+        }
+
+        boolean shouldPromote = forcePromotion
+                || (foregroundStatusRecoveryPending
+                && elapsedNow >= nextForegroundPromotionAttemptElapsedMs);
+        if (!shouldPromote) {
+            return foregroundStatusRecoveryPending;
+        }
+
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification());
+            if (foregroundStatusRecoveryPending) {
+                debugLog("foreground service status restored");
+            }
+            foregroundStatusRecoveryPending = false;
+            nextForegroundPromotionAttemptElapsedMs = 0L;
+            return false;
+        } catch (RuntimeException exception) {
+            foregroundStatusRecoveryPending = true;
+            nextForegroundPromotionAttemptElapsedMs = elapsedNow + DEGRADED_RETRY_INTERVAL_MS;
+            setMonitoringIssue(getString(R.string.monitoring_issue_foreground_recovery));
+            debugLog("foreground service promotion failed: "
+                    + exception.getClass().getSimpleName());
+            return true;
+        }
+    }
+
+    private void waitForRecovery(String issue, long delayMs) {
+        usageLedger.flush(true);
+        hideOverlay(true);
+        lastForegroundPackage = null;
+        lastTickElapsedMs = SystemClock.elapsedRealtime();
+        endTransientRecovery();
+        setMonitoringIssue(issue);
+        scheduleForegroundPoll(delayMs <= 0L ? DEGRADED_RETRY_INTERVAL_MS : delayMs);
+    }
+
+    private void setMonitoringIssue(String issue) {
+        String safeIssue = issue == null
+                ? getString(R.string.monitoring_issue_waiting)
+                : issue;
+        boolean changed = !safeIssue.equals(monitoringIssue);
+        monitoringIssue = safeIssue;
+        MonitoringHealth.recordWaiting(this, safeIssue);
+        if (changed) {
+            updateForegroundNotification();
+        }
+    }
+
+    private void clearMonitoringIssue() {
+        boolean changed = !monitoringIssue.isEmpty();
+        monitoringIssue = "";
+        MonitoringHealth.recordHealthyPoll(this);
+        if (changed) {
+            updateForegroundNotification();
+        }
+    }
+
+    private boolean isDeviceReadyForMonitoring() {
+        if (!deviceInteractive && (powerManager == null || powerManager.isInteractive())) {
+            deviceInteractive = true;
+            deviceUnlocked = keyguardManager == null || !keyguardManager.isKeyguardLocked();
+        }
+        if (!deviceUnlocked && (keyguardManager == null || !keyguardManager.isKeyguardLocked())) {
+            deviceUnlocked = true;
+        }
+        return deviceInteractive && deviceUnlocked;
+    }
+
+    private void pauseWhileDeviceUnavailable() {
+        usageLedger.flush(true);
+        hideOverlay(true);
+        lastForegroundPackage = null;
+        lastTickElapsedMs = SystemClock.elapsedRealtime();
+        endTransientRecovery();
+        MonitoringHealth.recordHeartbeat(this);
+        scheduleForegroundPoll(SCREEN_OFF_CHECK_INTERVAL_MS);
+    }
+
+    private void registerDeviceStateReceiver() {
+        deviceStateReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                String action = intent.getAction();
+                if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                    deviceInteractive = false;
+                    deviceUnlocked = false;
+                    pauseWhileDeviceUnavailable();
+                    return;
+                }
+                if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                    deviceInteractive = true;
+                    deviceUnlocked = keyguardManager == null || !keyguardManager.isKeyguardLocked();
+                } else if (Intent.ACTION_USER_PRESENT.equals(action)
+                        || Intent.ACTION_USER_UNLOCKED.equals(action)) {
+                    deviceInteractive = true;
+                    deviceUnlocked = true;
+                }
+                if (Intent.ACTION_SCREEN_ON.equals(action)
+                        || Intent.ACTION_USER_PRESENT.equals(action)
+                        || Intent.ACTION_USER_UNLOCKED.equals(action)
+                        || Intent.ACTION_TIME_CHANGED.equals(action)
+                        || Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
+                    long now = System.currentTimeMillis();
+                    lastUsageQueryEndMs = now - USAGE_EVENT_OVERLAP_MS;
+                    lastForegroundSanityCheckMs = 0L;
+                    lastLifecycleEventMs = 0L;
+                    lastTickElapsedMs = SystemClock.elapsedRealtime();
+                    handler.removeCallbacks(pollRunnable);
+                    handler.post(pollRunnable);
+                    handler.removeCallbacks(reconciliationRunnable);
+                    handler.post(reconciliationRunnable);
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        filter.addAction(Intent.ACTION_SCREEN_OFF);
+        filter.addAction(Intent.ACTION_USER_PRESENT);
+        filter.addAction(Intent.ACTION_USER_UNLOCKED);
+        filter.addAction(Intent.ACTION_TIME_CHANGED);
+        filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(deviceStateReceiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(deviceStateReceiver, filter);
+        }
+    }
+
+    private void unregisterDeviceStateReceiver() {
+        if (deviceStateReceiver == null) {
+            return;
+        }
+        try {
+            unregisterReceiver(deviceStateReceiver);
+        } catch (IllegalArgumentException ignored) {
+            // The process may already have detached the receiver.
+        }
+        deviceStateReceiver = null;
+    }
+
     private void requestForegroundPoll() {
         if (stopping || foregroundQueryInFlight) {
             return;
         }
-        SharedPreferences preferences = Preferences.prefs(this);
-        if (!preferences.getBoolean(Preferences.KEY_ENABLED, false)) {
-            stopMonitoring();
+        if (!Preferences.isMonitoringRequested(this)) {
+            stopMonitoring(false);
             return;
         }
         if (!unlockCelebrationRunning && pauseForEmergencyDayPassIfActive()) {
             return;
         }
-        if (!AndroidPermissions.hasUsageAccess(this)) {
-            stopMonitoring();
+        String requirementIssue = monitoringRequirementIssue();
+        if (!requirementIssue.isEmpty()) {
+            waitForRecovery(requirementIssue, DEGRADED_RETRY_INTERVAL_MS);
             return;
         }
-        if (!AndroidPermissions.hasOverlayAccess(this)) {
-            stopMonitoring();
-            return;
-        }
-        if (!Preferences.hasAccountabilityNumber(this)) {
-            stopMonitoring();
-            return;
-        }
-        if (!Preferences.hasMasterPin(this)) {
-            stopMonitoring();
-            return;
-        }
-        if (!Preferences.hasLimitedApps(this)) {
-            stopMonitoring();
+        refreshForegroundServiceHealth(false);
+        if (!isDeviceReadyForMonitoring()) {
+            pauseWhileDeviceUnavailable();
             return;
         }
         if (unlockCelebrationRunning) {
@@ -235,39 +509,47 @@ public class MonitoringService extends Service {
             scheduleNextForegroundPoll();
             return;
         }
-
         long now = System.currentTimeMillis();
         long elapsedNow = SystemClock.elapsedRealtime();
         long previousQueryEndMs = lastUsageQueryEndMs;
-        lastUsageQueryEndMs = now;
-        long usageEventOverlapMs = isTransientRecoveryActive(elapsedNow)
-                ? RECOVERY_USAGE_EVENT_OVERLAP_MS
-                : USAGE_EVENT_OVERLAP_MS;
+        if (previousQueryEndMs <= 0L
+                || previousQueryEndMs > now
+                || now - previousQueryEndMs > 5 * 60_000L) {
+            previousQueryEndMs = now - USAGE_EVENT_OVERLAP_MS;
+        }
+        final long queryPreviousEndMs = previousQueryEndMs;
+        boolean runSanityCheck = lastForegroundSanityCheckMs == 0L
+                || now - lastForegroundSanityCheckMs >= FOREGROUND_SANITY_CHECK_INTERVAL_MS;
         String previousForegroundPackage = lastForegroundPackage;
         String blockedPackage = overlayPackageName != null
                 ? overlayPackageName
                 : stickyBlockedPackageName;
         Set<String> selectedPackages = Preferences.selectedPackages(this);
         Set<String> transientPackages = transientSystemPackages();
+        long previousLifecycleEventMs = lastLifecycleEventMs;
+        long queryId = ++foregroundQueryId;
 
         foregroundQueryInFlight = true;
-        boolean posted = foregroundHandler != null && foregroundHandler.post(() -> {
+        armForegroundQueryTimeout(queryId);
+        boolean posted = FOREGROUND_QUERY_EXECUTOR.tryExecute(() -> {
             ForegroundQueryResult result;
             try {
                 result = queryForegroundPackage(
                         now,
-                        previousQueryEndMs,
-                        usageEventOverlapMs,
+                        queryPreviousEndMs,
                         previousForegroundPackage,
                         blockedPackage,
-                        transientPackages
+                        transientPackages,
+                        previousLifecycleEventMs,
+                        runSanityCheck
                 );
             } catch (RuntimeException exception) {
                 debugLog("foreground query failed: " + exception.getClass().getSimpleName());
-                result = new ForegroundQueryResult(previousForegroundPackage, false);
+                result = ForegroundQueryResult.failed(previousForegroundPackage, previousLifecycleEventMs);
             }
             ForegroundQueryResult completedResult = result;
             handler.post(() -> completeForegroundPoll(
+                    queryId,
                     previousForegroundPackage,
                     selectedPackages,
                     completedResult
@@ -275,23 +557,47 @@ public class MonitoringService extends Service {
         });
         if (!posted) {
             foregroundQueryInFlight = false;
-            scheduleNextForegroundPoll();
+            cancelForegroundQueryTimeout();
+            consecutiveForegroundQueryFailures++;
+            setMonitoringIssue(getString(R.string.monitoring_issue_stalled));
+            scheduleForegroundPoll(DEGRADED_RETRY_INTERVAL_MS);
+            return;
+        }
+        lastUsageQueryEndMs = now;
+        if (runSanityCheck) {
+            lastForegroundSanityCheckMs = now;
         }
     }
 
     private void completeForegroundPoll(
+            long queryId,
             String previousForegroundPackage,
             Set<String> selectedPackages,
             ForegroundQueryResult queryResult
     ) {
+        if (queryId != foregroundQueryId) {
+            return;
+        }
         foregroundQueryInFlight = false;
+        cancelForegroundQueryTimeout();
+        consecutiveForegroundQueryTimeouts = 0;
         if (stopping) {
             return;
         }
         if (!unlockCelebrationRunning && pauseForEmergencyDayPassIfActive()) {
             return;
         }
+        if (!isDeviceReadyForMonitoring()) {
+            pauseWhileDeviceUnavailable();
+            return;
+        }
+        if (!queryResult.successful) {
+            handleForegroundQueryFailure();
+            return;
+        }
 
+        consecutiveForegroundQueryFailures = 0;
+        lastLifecycleEventMs = Math.max(lastLifecycleEventMs, queryResult.latestLifecycleEventMs);
         long now = System.currentTimeMillis();
         long elapsedNow = SystemClock.elapsedRealtime();
         String foregroundPackage = queryResult.packageName;
@@ -305,28 +611,31 @@ public class MonitoringService extends Service {
         }
         if (queryResult.overlayInterrupted) {
             overlayNeedsRefresh = true;
+            lastCriticalBlockValidationPackage = null;
         }
-        if (!samePackage(previousForegroundPackage, foregroundPackage)) {
+        if (!ForegroundEventPolicy.samePackage(previousForegroundPackage, foregroundPackage)) {
             debugLog("foreground " + previousForegroundPackage + " -> " + foregroundPackage
                     + ", overlay=" + overlayPackageName
                     + ", sticky=" + stickyBlockedPackageName);
         }
 
-        ensureUsageCache(selectedPackages);
-
-        if (foregroundPackage != null
-                && selectedPackages.contains(foregroundPackage)
-                && foregroundPackage.equals(lastForegroundPackage)) {
-            addUsageToCache(foregroundPackage, elapsedNow - lastTickElapsedMs);
-        }
-
-        lastForegroundPackage = foregroundPackage;
-        lastTickElapsedMs = elapsedNow;
-
+        boolean pollHealthy = true;
         try {
+            usageLedger.ensure(selectedPackages);
+
+            if (foregroundPackage != null
+                    && selectedPackages.contains(foregroundPackage)
+                    && foregroundPackage.equals(lastForegroundPackage)) {
+                usageLedger.add(foregroundPackage, elapsedNow - lastTickElapsedMs);
+            }
+
+            lastForegroundPackage = foregroundPackage;
+            lastTickElapsedMs = elapsedNow;
+
             boolean foregroundSelected = foregroundPackage != null
                     && selectedPackages.contains(foregroundPackage);
             if (!foregroundSelected) {
+                lastCriticalBlockValidationPackage = null;
                 String stickyPackage = stickyBlockedPackageForTransient(
                         now,
                         foregroundPackage,
@@ -338,6 +647,7 @@ public class MonitoringService extends Service {
                     hideOverlay(true, true);
                     return;
                 }
+                resetOverlayFailures();
                 hideOverlay(true);
                 return;
             }
@@ -348,68 +658,106 @@ public class MonitoringService extends Service {
             }
             leaveAppGraceUntilElapsedMs = 0L;
 
-            boolean shouldBlock = isOverLimit(foregroundPackage)
+            boolean shouldBlock = usageLedger.isOverLimit(foregroundPackage)
                     && !Preferences.isTemporarilyUnlocked(this, foregroundPackage);
             if (shouldBlock) {
-                if (!samePackage(previousForegroundPackage, foregroundPackage)
+                if (!isStillSafeToBlock(foregroundPackage)) {
+                    resetOverlayFailures();
+                    clearStickyBlockedPackage();
+                    hideOverlay(false);
+                    return;
+                }
+                if (!ForegroundEventPolicy.samePackage(previousForegroundPackage, foregroundPackage)
                         && foregroundPackage.equals(stickyBlockedPackageName)) {
                     overlayNeedsRefresh = true;
                 }
                 showOverlay(foregroundPackage);
             } else {
+                lastCriticalBlockValidationPackage = null;
+                resetOverlayFailures();
                 if (foregroundPackage.equals(stickyBlockedPackageName)) {
                     clearStickyBlockedPackage();
                 }
                 hideOverlay(false);
             }
+        } catch (RuntimeException exception) {
+            pollHealthy = false;
+            setMonitoringIssue(getString(R.string.monitoring_issue_blocker_error));
+            debugLog("foreground completion failed: " + exception.getClass().getSimpleName());
         } finally {
-            flushUsageTotals(false);
+            usageLedger.flush(false);
+            if (pollHealthy
+                    && consecutiveOverlayFailures == 0
+                    && !foregroundStatusRecoveryPending) {
+                clearMonitoringIssue();
+            }
             scheduleNextForegroundPoll();
         }
+    }
+
+    private boolean isStillSafeToBlock(String packageName) {
+        if (packageName.equals(lastCriticalBlockValidationPackage)) {
+            return true;
+        }
+        CriticalApps.refresh(getApplicationContext());
+        boolean stillSelected = Preferences.selectedPackages(this).contains(packageName);
+        if (stillSelected) {
+            lastCriticalBlockValidationPackage = packageName;
+        }
+        return stillSelected;
     }
 
     private ForegroundQueryResult queryForegroundPackage(
             long now,
             long previousQueryEndMs,
-            long usageEventOverlapMs,
             String previousForegroundPackage,
             String blockedPackage,
-            Set<String> transientPackages
+            Set<String> transientPackages,
+            long previousLifecycleEventMs,
+            boolean runSanityCheck
     ) {
         UsageStatsManager usageStatsManager = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
         if (usageStatsManager == null) {
-            return new ForegroundQueryResult(previousForegroundPackage, false);
+            return ForegroundQueryResult.failed(previousForegroundPackage, previousLifecycleEventMs);
         }
 
         UsageEvents events;
         try {
             long queryStartMs = Math.max(
-                    now - 10_000L,
-                    previousQueryEndMs - usageEventOverlapMs
+                    now - USAGE_EVENT_OVERLAP_MS,
+                    previousQueryEndMs - USAGE_EVENT_OVERLAP_MS
             );
-            events = usageStatsManager.queryEvents(queryStartMs, now);
+            events = queryLifecycleEvents(usageStatsManager, queryStartMs, now);
         } catch (SecurityException ignored) {
-            return new ForegroundQueryResult(previousForegroundPackage, false);
+            return ForegroundQueryResult.failed(previousForegroundPackage, previousLifecycleEventMs);
+        }
+        if (events == null) {
+            return ForegroundQueryResult.failed(previousForegroundPackage, previousLifecycleEventMs);
         }
 
         UsageEvents.Event event = new UsageEvents.Event();
         String candidate = previousForegroundPackage;
         boolean sawForegroundEvent = false;
         boolean overlayInterrupted = false;
-        while (events != null && events.hasNextEvent()) {
+        long latestLifecycleEventMs = previousLifecycleEventMs;
+        while (events.hasNextEvent()) {
             events.getNextEvent(event);
             int type = event.getEventType();
             String eventPackageName = event.getPackageName();
             if (eventPackageName == null) {
                 continue;
             }
+            if (ForegroundEventPolicy.isLifecycleEvent(type)) {
+                latestLifecycleEventMs = Math.max(latestLifecycleEventMs, event.getTimeStamp());
+            }
 
             if (event.getTimeStamp() > previousQueryEndMs
-                    && isOverlayInterruptionEvent(
+                    && ForegroundEventPolicy.isOverlayInterruptionEvent(
                             type,
                             eventPackageName,
                             blockedPackage,
-                            transientPackages
+                            transientPackages,
+                            Build.VERSION.SDK_INT
                     )) {
                 overlayInterrupted = true;
                 debugLog("overlay interruption event=" + type + " package=" + eventPackageName);
@@ -417,10 +765,10 @@ public class MonitoringService extends Service {
 
             // A canceled recents gesture can pause an app without resuming a replacement.
             // Keep the last real foreground app until another foreground event names one.
-            if (isForegroundEvent(type)) {
+            if (ForegroundEventPolicy.isForegroundEvent(type)) {
                 sawForegroundEvent = true;
                 candidate = eventPackageName;
-            } else if (isBackgroundEvent(type)
+            } else if (ForegroundEventPolicy.isBackgroundEvent(type)
                     && eventPackageName.equals(candidate)
                     && isTransientSystemSurface(eventPackageName, transientPackages)
                     && blockedPackage != null) {
@@ -431,13 +779,46 @@ public class MonitoringService extends Service {
             }
         }
 
-        if (candidate != null) {
-            return new ForegroundQueryResult(candidate, overlayInterrupted);
-        }
-        if (sawForegroundEvent) {
-            return new ForegroundQueryResult(null, overlayInterrupted);
+        if (runSanityCheck || (candidate == null && !sawForegroundEvent)) {
+            UsageStats mostRecent = mostRecentlyUsedPackage(usageStatsManager, now);
+            if (mostRecent != null
+                    && mostRecent.getLastTimeUsed() > latestLifecycleEventMs
+                    && mostRecent.getLastTimeUsed() >= now - 5 * 60_000L) {
+                if (!ForegroundEventPolicy.samePackage(candidate, mostRecent.getPackageName())) {
+                    debugLog("usage summary repaired foreground " + candidate
+                            + " -> " + mostRecent.getPackageName());
+                }
+                candidate = mostRecent.getPackageName();
+                latestLifecycleEventMs = mostRecent.getLastTimeUsed();
+            }
         }
 
+        return ForegroundQueryResult.successful(
+                candidate,
+                overlayInterrupted,
+                latestLifecycleEventMs
+        );
+    }
+
+    private UsageEvents queryLifecycleEvents(
+            UsageStatsManager usageStatsManager,
+            long queryStartMs,
+            long queryEndMs
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            UsageEventsQuery query = new UsageEventsQuery.Builder(queryStartMs, queryEndMs)
+                    .setEventTypes(
+                            UsageEvents.Event.ACTIVITY_RESUMED,
+                            UsageEvents.Event.ACTIVITY_PAUSED,
+                            UsageEvents.Event.ACTIVITY_STOPPED
+                    )
+                    .build();
+            return usageStatsManager.queryEvents(query);
+        }
+        return usageStatsManager.queryEvents(queryStartMs, queryEndMs);
+    }
+
+    private UsageStats mostRecentlyUsedPackage(UsageStatsManager usageStatsManager, long now) {
         List<UsageStats> stats;
         try {
             stats = usageStatsManager.queryUsageStats(
@@ -446,10 +827,10 @@ public class MonitoringService extends Service {
                     now
             );
         } catch (SecurityException ignored) {
-            return new ForegroundQueryResult(previousForegroundPackage, overlayInterrupted);
+            return null;
         }
         if (stats == null || stats.isEmpty()) {
-            return new ForegroundQueryResult(previousForegroundPackage, overlayInterrupted);
+            return null;
         }
 
         UsageStats mostRecent = null;
@@ -458,23 +839,19 @@ public class MonitoringService extends Service {
                 mostRecent = stat;
             }
         }
-        return new ForegroundQueryResult(
-                mostRecent == null ? previousForegroundPackage : mostRecent.getPackageName(),
-                overlayInterrupted
-        );
+        return mostRecent;
     }
 
     private void requestUsageReconciliation() {
         if (stopping || reconciliationInFlight) {
             return;
         }
-        SharedPreferences preferences = Preferences.prefs(this);
-        if (!preferences.getBoolean(Preferences.KEY_ENABLED, false)
+        if (!Preferences.isMonitoringRequested(this)
                 || !AndroidPermissions.hasUsageAccess(this)) {
             scheduleNextUsageReconciliation();
             return;
         }
-        if (Preferences.isEmergencyPauseActive(this)) {
+        if (Preferences.isEmergencyPauseActive(this) || !isDeviceReadyForMonitoring()) {
             scheduleNextUsageReconciliation();
             return;
         }
@@ -523,10 +900,8 @@ public class MonitoringService extends Service {
         if (stopping) {
             return;
         }
-        ensureUsageCache(selectedPackages);
-        if (observedDay.equals(cachedUsageDay)) {
-            mergeObservedUsage(observedUsage);
-        }
+        usageLedger.ensure(selectedPackages);
+        usageLedger.mergeObserved(observedDay, observedUsage);
         scheduleNextUsageReconciliation();
     }
 
@@ -536,84 +911,6 @@ public class MonitoringService extends Service {
         }
         handler.removeCallbacks(reconciliationRunnable);
         handler.postDelayed(reconciliationRunnable, USAGE_RECONCILE_INTERVAL_MS);
-    }
-
-    private void ensureUsageCache(Set<String> selectedPackages) {
-        String currentDay = Preferences.currentUsageDay();
-        if (cachedUsageDay == null) {
-            cachedUsageDay = currentDay;
-        } else if (!cachedUsageDay.equals(currentDay)) {
-            flushUsageTotals(true);
-            cachedUsageDay = currentDay;
-            usageTotalsMs.clear();
-            dirtyUsagePackages.clear();
-            lastUsagePersistElapsedMs = SystemClock.elapsedRealtime();
-        }
-
-        for (String packageName : selectedPackages) {
-            if (!usageTotalsMs.containsKey(packageName)) {
-                usageTotalsMs.put(
-                        packageName,
-                        Preferences.getUsageForDayMs(this, cachedUsageDay, packageName)
-                );
-            }
-        }
-    }
-
-    private void addUsageToCache(String packageName, long deltaMs) {
-        if (deltaMs <= 0L || deltaMs > 10_000L) {
-            return;
-        }
-        long current = usageTotalsMs.containsKey(packageName)
-                ? usageTotalsMs.get(packageName)
-                : Preferences.getUsageForDayMs(this, cachedUsageDay, packageName);
-        usageTotalsMs.put(packageName, current + deltaMs);
-        dirtyUsagePackages.add(packageName);
-    }
-
-    private void mergeObservedUsage(Map<String, Long> observedUsage) {
-        for (Map.Entry<String, Long> entry : observedUsage.entrySet()) {
-            String packageName = entry.getKey();
-            long observedMs = entry.getValue() == null ? 0L : entry.getValue();
-            long currentMs = usageTotalsMs.containsKey(packageName)
-                    ? usageTotalsMs.get(packageName)
-                    : 0L;
-            if (observedMs >= currentMs) {
-                usageTotalsMs.put(packageName, observedMs);
-                dirtyUsagePackages.remove(packageName);
-            }
-        }
-    }
-
-    private long usageTodayMs(String packageName) {
-        Long cached = usageTotalsMs.get(packageName);
-        return cached == null ? Preferences.getUsageTodayMs(this, packageName) : cached;
-    }
-
-    private boolean isOverLimit(String packageName) {
-        long limitMs = Preferences.dailyLimitMinutes(this, packageName) * 60_000L;
-        return usageTodayMs(packageName) >= limitMs;
-    }
-
-    private void flushUsageTotals(boolean force) {
-        if (cachedUsageDay == null || dirtyUsagePackages.isEmpty()) {
-            return;
-        }
-        long elapsedNow = SystemClock.elapsedRealtime();
-        if (!force && elapsedNow - lastUsagePersistElapsedMs < USAGE_PERSIST_INTERVAL_MS) {
-            return;
-        }
-
-        Map<String, Long> dirtyTotals = new HashMap<>();
-        for (String packageName : dirtyUsagePackages) {
-            Long usageMs = usageTotalsMs.get(packageName);
-            if (usageMs != null) {
-                dirtyTotals.put(packageName, usageMs);
-            }
-        }
-        Preferences.saveUsageForDayMs(this, cachedUsageDay, dirtyTotals);
-        dirtyUsagePackages.clear();
-        lastUsagePersistElapsedMs = elapsedNow;
     }
 
     private Set<String> transientSystemPackages() {
@@ -638,17 +935,6 @@ public class MonitoringService extends Service {
         transientRecoveryStartedElapsedMs = 0L;
     }
 
-    private boolean isTransientRecoveryActive(long elapsedNow) {
-        if (transientRecoveryStartedElapsedMs == 0L) {
-            return false;
-        }
-        long recoveryElapsedMs = elapsedNow - transientRecoveryStartedElapsedMs;
-        if (recoveryElapsedMs < RECOVERY_FAST_WINDOW_MS) {
-            return true;
-        }
-        return isWaitingForBlockedAppReturn() && recoveryElapsedMs < RECOVERY_WARM_WINDOW_MS;
-    }
-
     private boolean pauseForEmergencyDayPassIfActive() {
         long pauseUntilMs = Preferences.emergencyPauseUntilMs(this);
         long remainingMs = pauseUntilMs - System.currentTimeMillis();
@@ -664,25 +950,28 @@ public class MonitoringService extends Service {
             emergencyPauseNotificationShown = true;
             updateForegroundNotification();
         }
-        flushUsageTotals(true);
+        usageLedger.flush(true);
         hideOverlay(false);
         lastForegroundPackage = null;
         lastTickElapsedMs = SystemClock.elapsedRealtime();
         transientRecoveryStartedElapsedMs = 0L;
-        handler.removeCallbacks(pollRunnable);
-        handler.postDelayed(
-                pollRunnable,
+        MonitoringHealth.recordHeartbeat(this);
+        scheduleForegroundPoll(
                 Math.max(200L, Math.min(EMERGENCY_PAUSE_CHECK_INTERVAL_MS, remainingMs))
         );
         return true;
     }
 
     private void scheduleNextForegroundPoll() {
+        scheduleForegroundPoll(nextPollDelayMs());
+    }
+
+    private void scheduleForegroundPoll(long delayMs) {
         if (stopping) {
             return;
         }
         handler.removeCallbacks(pollRunnable);
-        handler.postDelayed(pollRunnable, nextPollDelayMs());
+        handler.postDelayed(pollRunnable, Math.max(200L, delayMs));
     }
 
     private long nextPollDelayMs() {
@@ -710,6 +999,7 @@ public class MonitoringService extends Service {
         rememberBlockedPackage(packageName);
         if (overlayView != null && packageName.equals(overlayPackageName)) {
             if (!overlayNeedsRefresh && overlayView.isAttachedToWindow()) {
+                resetOverlayFailures();
                 return;
             }
             debugLog("rebuilding overlay for " + packageName
@@ -720,7 +1010,14 @@ public class MonitoringService extends Service {
             hideOverlay(true, true);
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+        if (SystemClock.elapsedRealtime() < nextOverlayAttemptElapsedMs) {
+            return;
+        }
+
+        if (!Settings.canDrawOverlays(this)) {
+            consecutiveOverlayFailures = Math.max(1, consecutiveOverlayFailures);
+            nextOverlayAttemptElapsedMs = SystemClock.elapsedRealtime() + DEGRADED_RETRY_INTERVAL_MS;
+            setMonitoringIssue(getString(R.string.monitoring_requirement_overlay));
             return;
         }
 
@@ -743,13 +1040,10 @@ public class MonitoringService extends Service {
             }
         });
 
-        int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                : WindowManager.LayoutParams.TYPE_PHONE;
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
-                type,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT
         );
@@ -758,360 +1052,133 @@ public class MonitoringService extends Service {
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         }
         params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-                | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
+                | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN;
         params.gravity = Gravity.CENTER;
 
         try {
             windowManager.addView(overlayView, params);
+            UiStyle.applyDarkSystemBarAppearance(overlayView);
+            overlayView.post(() -> {
+                if (overlayView == observedOverlay && observedOverlay.isAttachedToWindow()) {
+                    UiStyle.applyDarkSystemBarAppearance(observedOverlay);
+                }
+            });
             overlayNeedsRefresh = false;
+            resetOverlayFailures();
             debugLog("overlay added for " + packageName);
-            OverlayFormState formState = overlayFormState(packageName);
-            EditText firstInput = overlayView.findViewWithTag(
-                    formState.lastRequestedMinutes > 0 ? "code_input" : "minutes_input"
-            );
-            if (firstInput != null) {
-                showKeyboard(firstInput);
-            }
-        } catch (RuntimeException ignored) {
+            blockerOverlayController.onAttached(overlayView);
+        } catch (RuntimeException exception) {
             overlayView = null;
             overlayPackageName = null;
             overlayNeedsRefresh = true;
-            debugLog("overlay add failed for " + packageName);
+            consecutiveOverlayFailures++;
+            long retryDelayMs = Math.min(
+                    30_000L,
+                    1_000L << Math.min(4, consecutiveOverlayFailures - 1)
+            );
+            nextOverlayAttemptElapsedMs = SystemClock.elapsedRealtime() + retryDelayMs;
+            setMonitoringIssue(getString(R.string.monitoring_issue_blocker_failed));
+            debugLog("overlay add failed for " + packageName + ": "
+                    + exception.getClass().getSimpleName());
         }
+    }
+
+    private void resetOverlayFailures() {
+        consecutiveOverlayFailures = 0;
+        nextOverlayAttemptElapsedMs = 0L;
     }
 
     private View buildOverlay(String packageName) {
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setFillViewport(true);
-        scrollView.setClipToPadding(false);
-        scrollView.setBackgroundColor(UiStyle.COLOR_OVERLAY_BACKGROUND);
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER);
-        root.setBackgroundColor(UiStyle.COLOR_OVERLAY_BACKGROUND);
-        UiStyle.applySystemInsetsPadding(root, 20, 24, 20, 24);
-        scrollView.addView(root, new ScrollView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-        ));
-
-        LinearLayout card = UiStyle.overlayCard(this);
-        root.addView(card, UiStyle.fullWidth(this, 0));
-
-        String appLabel = appLabel(packageName);
-        long usedMinutes = usageTodayMs(packageName) / 60_000L;
-        int limitMinutes = Preferences.dailyLimitMinutes(this, packageName);
-        OverlayFormState formState = overlayFormState(packageName);
-
-        card.addView(UiStyle.overlayTitle(this, "The goose says time's up!"), UiStyle.fullWidth(this, 8));
-
-        TextView detail = UiStyle.overlayBody(
-                this,
-                appLabel + "\nThe goose counted " + usedMinutes + " of "
-                        + limitMinutes + " minutes today!"
+        return blockerOverlayController.build(
+                packageName,
+                appLabel(packageName),
+                usageLedger.usageMs(packageName) / 60_000L,
+                Preferences.dailyLimitMinutes(this, packageName)
         );
-        detail.setGravity(Gravity.CENTER);
-        card.addView(detail, UiStyle.fullWidth(this, 18));
+    }
 
-        TextView requestStatus = UiStyle.statusText(this);
-        if (formState.lastRequestedMinutes > 0) {
-            requestStatus.setText(requestSentMessage(formState.lastRequestedMinutes));
-            UiStyle.setStatus(requestStatus, UiStyle.STATUS_READY);
-        } else {
-            requestStatus.setText("Need more time? Ask the Keyholder for an approval code!");
-            UiStyle.setStatus(requestStatus, UiStyle.STATUS_WARNING);
-        }
-        card.addView(requestStatus, UiStyle.fullWidth(this, 14));
-
-        TextView errorText = UiStyle.statusText(this);
-
-        card.addView(UiStyle.overlayStepLabel(this, "1. Ask for minutes!"), UiStyle.fullWidth(this, 6));
-        EditText minutesInput = new EditText(this);
-        minutesInput.setTag("minutes_input");
-        minutesInput.setHint("Extra minutes");
-        KeyboardHelper.prepareNumericInput(minutesInput);
-        minutesInput.setSingleLine(true);
-        minutesInput.setImeOptions(EditorInfo.IME_ACTION_NEXT);
-        minutesInput.setText(formState.requestedMinutesText);
-        minutesInput.setSelectAllOnFocus(true);
-        minutesInput.setGravity(Gravity.CENTER);
-        UiStyle.styleOverlayInput(minutesInput, formState.minutesInputError);
-        minutesInput.addTextChangedListener(new SimpleTextWatcher() {
+    private BlockerOverlayController.Listener createBlockerOverlayListener() {
+        return new BlockerOverlayController.Listener() {
             @Override
-            public void afterTextChanged(Editable editable) {
-                formState.requestedMinutesText = editable.toString();
-                formState.minutesInputError = false;
-                UiStyle.styleOverlayInput(minutesInput, false);
-                hideOverlayError(errorText, formState);
+            public void onFormInteraction() {
+                keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
             }
-        });
-        minutesInput.setOnTouchListener((v, event) -> {
-            boolean handled = KeyboardHelper.showOnTouch(this, minutesInput, event);
-            if (event.getActionMasked() == MotionEvent.ACTION_UP) {
-                scrollToInput(scrollView, minutesInput);
-            }
-            return handled;
-        });
-        minutesInput.setOnClickListener(v -> {
-            showKeyboard(minutesInput);
-            scrollToInput(scrollView, minutesInput);
-        });
-        minutesInput.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus) {
-                showKeyboard(minutesInput);
-                scrollToInput(scrollView, minutesInput);
-            }
-        });
-        card.addView(minutesInput, UiStyle.fullWidth(this, 12));
 
-        card.addView(UiStyle.overlayStepLabel(this, "2. Text the Keyholder!"), UiStyle.fullWidth(this, 6));
-        Button textCodeButton = UiStyle.primaryButton(this, "Text the Keyholder!");
-        card.addView(textCodeButton, UiStyle.buttonParams(this));
-
-        card.addView(UiStyle.overlayStepLabel(this, "3. Enter approval code!"), UiStyle.fullWidth(this, 6));
-        EditText codeInput = new EditText(this);
-        codeInput.setTag("code_input");
-        codeInput.setHint("Approval code");
-        KeyboardHelper.prepareNumericInput(codeInput);
-        codeInput.setSingleLine(true);
-        codeInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        codeInput.setText(formState.approvalCodeText);
-        codeInput.setGravity(Gravity.CENTER);
-        UiStyle.styleOverlayInput(codeInput, formState.codeInputError);
-        codeInput.addTextChangedListener(new SimpleTextWatcher() {
             @Override
-            public void afterTextChanged(Editable editable) {
-                formState.approvalCodeText = editable.toString();
-                formState.codeInputError = false;
-                UiStyle.styleOverlayInput(codeInput, false);
-                hideOverlayError(errorText, formState);
+            public boolean requestApproval(String packageName, int requestedMinutes) {
+                return composeCodeSms(packageName, requestedMinutes);
             }
-        });
-        codeInput.setOnTouchListener((v, event) -> {
-            boolean handled = KeyboardHelper.showOnTouch(this, codeInput, event);
-            if (event.getActionMasked() == MotionEvent.ACTION_UP) {
-                scrollToInput(scrollView, codeInput);
-            }
-            return handled;
-        });
-        codeInput.setOnClickListener(v -> {
-            showKeyboard(codeInput);
-            scrollToInput(scrollView, codeInput);
-        });
-        codeInput.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus) {
-                showKeyboard(codeInput);
-                scrollToInput(scrollView, codeInput);
-            }
-        });
-        card.addView(codeInput, UiStyle.fullWidth(this, 12));
 
-        TextView emergencyCodeHint = UiStyle.helperText(
-                this,
-                "Have a one-time 8-digit emergency code? Enter it here to pause all goose blocking for 24 hours."
-        );
-        emergencyCodeHint.setGravity(Gravity.CENTER);
-        card.addView(emergencyCodeHint, UiStyle.fullWidth(this, 10));
-
-        if (formState.errorMessage.isEmpty()) {
-            errorText.setVisibility(View.GONE);
-        } else {
-            errorText.setText(formState.errorMessage);
-            UiStyle.setStatus(errorText, UiStyle.STATUS_REQUIRED);
-            errorText.setVisibility(View.VISIBLE);
-        }
-        card.addView(errorText, UiStyle.fullWidth(this, 12));
-
-        card.addView(UiStyle.overlayStepLabel(this, "4. Let the goose loose!"), UiStyle.fullWidth(this, 6));
-        Button unlockButton = UiStyle.primaryButton(this, "Loose the Goose!");
-        card.addView(unlockButton, UiStyle.buttonParams(this));
-
-        Button leaveButton = UiStyle.overlaySecondaryButton(this, "Leave App!");
-        card.addView(leaveButton, UiStyle.buttonParams(this));
-
-        textCodeButton.setOnClickListener(v -> {
-            int requestedMinutes = parsePositiveInt(minutesInput);
-            keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
-            if (requestedMinutes <= 0) {
-                formState.minutesInputError = true;
-                UiStyle.styleOverlayInput(minutesInput, true);
-                showOverlayError(
-                        errorText,
-                        formState,
-                        "Tell the goose how many minutes to ask for!"
-                );
-                return;
-            }
-            UiStyle.styleOverlayInput(minutesInput, false);
-            if (composeCodeSms(packageName, requestedMinutes)) {
-                formState.requestedMinutesText = String.valueOf(requestedMinutes);
-                formState.lastRequestedMinutes = requestedMinutes;
-                formState.minutesInputError = false;
-                formState.errorMessage = "";
-                minutesInput.setText(formState.requestedMinutesText);
-                requestStatus.setText(requestSentMessage(requestedMinutes));
-                UiStyle.setStatus(requestStatus, UiStyle.STATUS_READY);
-                hideOverlayError(errorText, formState);
-                showKeyboard(codeInput);
-            }
-        });
-
-        unlockButton.setOnClickListener(v -> {
-            String entered = codeInput.getText().toString().trim();
-            keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
-            if (entered.isEmpty()) {
-                formState.codeInputError = true;
-                UiStyle.styleOverlayInput(codeInput, true);
-                showOverlayError(
-                        errorText,
-                        formState,
-                        "Enter the approval code first! The goose is still guarding this app!"
-                );
-                return;
-            }
-            if (Preferences.consumeEmergencyCode(this, entered)) {
-                formState.approvalCodeText = "";
-                formState.errorMessage = "";
-                showEmergencyPauseCelebration(card);
-                return;
-            }
-            int approvedMinutes = Preferences.consumeApprovalCodeMinutesIfValid(this, packageName, entered);
-            if (approvedMinutes > 0) {
-                Preferences.grantExtraTime(this, packageName, approvedMinutes);
-                showUnlockCelebration(card, approvedMinutes);
-            } else {
-                formState.codeInputError = true;
-                UiStyle.styleOverlayInput(codeInput, true);
-                showOverlayError(
-                        errorText,
-                        formState,
-                        "That code did not honk! Request a new one from the Keyholder if needed!"
+            @Override
+            public int redeemApprovalCode(String packageName, String enteredCode) {
+                return Preferences.redeemApprovalCodeAndGrantMinutes(
+                        MonitoringService.this,
+                        packageName,
+                        enteredCode
                 );
             }
-        });
 
-        leaveButton.setOnClickListener(v -> {
-            leaveAppGraceUntilElapsedMs = SystemClock.elapsedRealtime() + 1_500L;
-            Intent home = new Intent(Intent.ACTION_MAIN);
-            home.addCategory(Intent.CATEGORY_HOME);
-            home.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(home);
-            hideOverlay(true);
-        });
+            @Override
+            public boolean consumeEmergencyCode(String enteredCode) {
+                return Preferences.consumeEmergencyCode(MonitoringService.this, enteredCode);
+            }
 
-        return scrollView;
+            @Override
+            public void onLeaveApp() {
+                leaveBlockedApp();
+            }
+
+            @Override
+            public void onUnlockCelebrationStarted() {
+                unlockCelebrationRunning = true;
+                keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
+            }
+
+            @Override
+            public void onUnlockCelebrationFinished(int approvedMinutes) {
+                unlockCelebrationRunning = false;
+                hideOverlay(false);
+                Toast.makeText(
+                        MonitoringService.this,
+                        getResources().getQuantityString(
+                                R.plurals.unlock_granted_toast,
+                                approvedMinutes,
+                                approvedMinutes
+                        ),
+                        Toast.LENGTH_LONG
+                ).show();
+            }
+
+            @Override
+            public void onEmergencyCelebrationStarted() {
+                unlockCelebrationRunning = true;
+                clearStickyBlockedPackage();
+                emergencyPauseNotificationShown = true;
+                updateForegroundNotification();
+            }
+
+            @Override
+            public void onEmergencyCelebrationFinished() {
+                unlockCelebrationRunning = false;
+                hideOverlay(false);
+                Toast.makeText(
+                        MonitoringService.this,
+                        R.string.emergency_active_toast,
+                        Toast.LENGTH_LONG
+                ).show();
+                handler.removeCallbacks(pollRunnable);
+                handler.post(pollRunnable);
+            }
+        };
     }
 
-    private void showUnlockCelebration(LinearLayout card, int approvedMinutes) {
-        unlockCelebrationRunning = true;
-        keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
-        card.removeAllViews();
-        card.setGravity(Gravity.CENTER_HORIZONTAL);
-
-        GooseCelebrationView gooseView = new GooseCelebrationView(this);
-        card.addView(gooseView, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                UiStyle.dp(this, 190)
-        ));
-
-        TextView title = UiStyle.overlayTitle(this, "The goose is loose!");
-        card.addView(title, UiStyle.fullWidth(this, 8));
-
-        TextView body = UiStyle.overlayBody(
-                this,
-                approvedMinutes + " minutes of extra time! Honk!"
-        );
-        body.setGravity(Gravity.CENTER);
-        card.addView(body, UiStyle.fullWidth(this, 0));
-
-        gooseView.start(() -> {
-            unlockCelebrationRunning = false;
-            hideOverlay(false);
-            Toast.makeText(
-                    this,
-                    "The goose is loose for " + approvedMinutes + " minutes!",
-                    Toast.LENGTH_LONG
-            ).show();
-        });
-    }
-
-    private void showEmergencyPauseCelebration(LinearLayout card) {
-        unlockCelebrationRunning = true;
-        clearStickyBlockedPackage();
-        emergencyPauseNotificationShown = true;
-        updateForegroundNotification();
-        card.removeAllViews();
-        card.setGravity(Gravity.CENTER_HORIZONTAL);
-
-        GooseCelebrationView gooseView = new GooseCelebrationView(this);
-        card.addView(gooseView, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                UiStyle.dp(this, 190)
-        ));
-
-        TextView title = UiStyle.overlayTitle(this, "The goose is taking the day off!");
-        card.addView(title, UiStyle.fullWidth(this, 8));
-
-        TextView body = UiStyle.overlayBody(
-                this,
-                "All goose blocking is paused for 24 hours. Duty resumes automatically!"
-        );
-        body.setGravity(Gravity.CENTER);
-        card.addView(body, UiStyle.fullWidth(this, 0));
-
-        gooseView.start(() -> {
-            unlockCelebrationRunning = false;
-            hideOverlay(false);
-            Toast.makeText(
-                    this,
-                    "Emergency day pass active. Goose duty resumes in 24 hours!",
-                    Toast.LENGTH_LONG
-            ).show();
-            handler.removeCallbacks(pollRunnable);
-            handler.post(pollRunnable);
-        });
-    }
-
-    private OverlayFormState overlayFormState(String packageName) {
-        OverlayFormState state = overlayFormStates.get(packageName);
-        if (state == null) {
-            state = new OverlayFormState();
-            overlayFormStates.put(packageName, state);
-        }
-        return state;
-    }
-
-    private String requestSentMessage(int requestedMinutes) {
-        return "Goose request sent to the Keyholder for " + requestedMinutes
-                + " minutes! Enter the approval code the Keyholder sends back!";
-    }
-
-    private void showOverlayError(TextView errorText, OverlayFormState formState, String message) {
-        formState.errorMessage = "REQUIRED: " + message;
-        errorText.setText(formState.errorMessage);
-        UiStyle.setStatus(errorText, UiStyle.STATUS_REQUIRED);
-        errorText.setVisibility(View.VISIBLE);
-    }
-
-    private void hideOverlayError(TextView errorText, OverlayFormState formState) {
-        formState.errorMessage = "";
-        errorText.setText("");
-        errorText.setVisibility(View.GONE);
-    }
-
-    private void scrollToInput(ScrollView scrollView, View input) {
-        input.postDelayed(() -> {
-            Rect bounds = new Rect();
-            input.getDrawingRect(bounds);
-            scrollView.offsetDescendantRectToMyCoords(input, bounds);
-            int targetY = Math.max(0, bounds.top - UiStyle.dp(this, 80));
-            scrollView.smoothScrollTo(0, targetY);
-        }, 250);
-    }
-
-    private void showKeyboard(EditText input) {
-        KeyboardHelper.show(this, input);
+    private void leaveBlockedApp() {
+        leaveAppGraceUntilElapsedMs = SystemClock.elapsedRealtime() + 1_500L;
+        Intent home = new Intent(Intent.ACTION_MAIN);
+        home.addCategory(Intent.CATEGORY_HOME);
+        home.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(home);
+        hideOverlay(true);
     }
 
     private String stickyBlockedPackageForTransient(
@@ -1124,48 +1191,11 @@ public class MonitoringService extends Service {
                 || now > keepOverlayUntilMs
                 || !selectedPackages.contains(packageName)
                 || !isTransientSystemSurface(foregroundPackage)
-                || !isOverLimit(packageName)
+                || !usageLedger.isOverLimit(packageName)
                 || Preferences.isTemporarilyUnlocked(this, packageName)) {
             return null;
         }
         return packageName;
-    }
-
-    private boolean isForegroundEvent(int type) {
-        return type == UsageEvents.Event.MOVE_TO_FOREGROUND
-                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                && type == UsageEvents.Event.ACTIVITY_RESUMED);
-    }
-
-    private boolean isLifecycleEvent(int type) {
-        return isForegroundEvent(type) || isBackgroundEvent(type);
-    }
-
-    private boolean isBackgroundEvent(int type) {
-        return type == UsageEvents.Event.MOVE_TO_BACKGROUND
-                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                && (type == UsageEvents.Event.ACTIVITY_PAUSED
-                || type == UsageEvents.Event.ACTIVITY_STOPPED));
-    }
-
-    private boolean isOverlayInterruptionEvent(
-            int type,
-            String packageName,
-            String blockedPackage,
-            Set<String> transientPackages
-    ) {
-        if (blockedPackage == null) {
-            return false;
-        }
-        if (blockedPackage.equals(packageName)) {
-            return isLifecycleEvent(type);
-        }
-        return isForegroundEvent(type)
-                && isTransientSystemSurface(packageName, transientPackages);
-    }
-
-    private boolean samePackage(String left, String right) {
-        return left == null ? right == null : left.equals(right);
     }
 
     private boolean isTransientSystemSurface(String packageName) {
@@ -1233,27 +1263,29 @@ public class MonitoringService extends Service {
         overlayWindowObscured = false;
     }
 
-    private int parsePositiveInt(EditText input) {
-        try {
-            int parsed = Integer.parseInt(input.getText().toString().trim());
-            return parsed > 0 ? parsed : -1;
-        } catch (NumberFormatException ignored) {
-            return -1;
-        }
-    }
-
     private boolean composeCodeSms(String packageName, int requestedMinutes) {
         String phone = Preferences.accountabilityPhoneNumber(this);
         if (phone.length() != 10) {
-            Toast.makeText(this, "Add the Keyholder's 10-digit phone number first!", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, R.string.sms_keyholder_required, Toast.LENGTH_LONG).show();
             return false;
         }
 
         String requestCode = Preferences.createRequestCode(this, packageName, requestedMinutes);
-        String message = "The Goose is asking for " + requestedMinutes
-                + " minutes of extra time in " + appLabel(packageName) + "!"
-                + " Request code: " + requestCode
-                + ". If approved, send back the approval code for this Goose request.";
+        if (requestCode.isEmpty()) {
+            Toast.makeText(
+                    this,
+                    R.string.sms_request_save_failed,
+                    Toast.LENGTH_LONG
+            ).show();
+            return false;
+        }
+        String message = getResources().getQuantityString(
+                R.plurals.sms_request_body,
+                requestedMinutes,
+                requestedMinutes,
+                appLabel(packageName),
+                requestCode
+        );
         Intent intent = new Intent(Intent.ACTION_SENDTO);
         intent.setData(Uri.parse("smsto:" + Uri.encode(phone)));
         intent.putExtra("sms_body", message);
@@ -1262,7 +1294,7 @@ public class MonitoringService extends Service {
             startActivity(intent);
             return true;
         } catch (RuntimeException ignored) {
-            Toast.makeText(this, "No SMS app found!", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.sms_app_missing, Toast.LENGTH_SHORT).show();
             return false;
         }
     }
@@ -1288,7 +1320,7 @@ public class MonitoringService extends Service {
                 clearStickyBlockedPackage();
             }
             if (!preserveFormState && removedPackageName != null) {
-                overlayFormStates.remove(removedPackageName);
+                blockerOverlayController.clearFormState(removedPackageName);
             }
             return;
         }
@@ -1305,18 +1337,23 @@ public class MonitoringService extends Service {
             clearStickyBlockedPackage();
         }
         if (!preserveFormState && removedPackageName != null) {
-            overlayFormStates.remove(removedPackageName);
+            blockerOverlayController.clearFormState(removedPackageName);
         }
     }
 
-    private void stopMonitoring() {
+    private void stopMonitoring(boolean clearEnabledPreference) {
         stopping = true;
+        if (clearEnabledPreference) {
+            Preferences.setMonitoringRequested(this, false);
+        }
+        intentionallyStopped = intentionallyStopped
+                || !Preferences.isMonitoringRequested(this);
         handler.removeCallbacks(pollRunnable);
         handler.removeCallbacks(reconciliationRunnable);
-        flushUsageTotals(true);
-        Preferences.prefs(this).edit().putBoolean(Preferences.KEY_ENABLED, false).apply();
+        cancelForegroundQueryTimeout();
+        usageLedger.flush(true);
         hideOverlay(false);
-        overlayFormStates.clear();
+        blockerOverlayController.clearAllFormStates();
         stopForeground(true);
         stopSelf();
     }
@@ -1335,39 +1372,7 @@ public class MonitoringService extends Service {
     }
 
     private Notification buildNotification() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    "AirLock goose watch",
-                    NotificationManager.IMPORTANCE_LOW
-            );
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            manager.createNotificationChannel(channel);
-        }
-
-        Intent openIntent = new Intent(this, MainActivity.class);
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-                this,
-                0,
-                openIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
-
-        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                ? new Notification.Builder(this, CHANNEL_ID)
-                : new Notification.Builder(this);
-        boolean emergencyPaused = Preferences.isEmergencyPauseActive(this);
-        return builder
-                .setContentTitle(emergencyPaused
-                        ? "The goose is taking the day off!"
-                        : "The goose is on duty!")
-                .setContentText(emergencyPaused
-                        ? "Emergency pause active. Goose duty resumes automatically!"
-                        : "Guarding selected app limits!")
-                .setSmallIcon(R.drawable.ic_stat_lock_clock)
-                .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .build();
+        return MonitoringNotificationFactory.build(this, CHANNEL_ID, monitoringIssue);
     }
 
     private String appLabel(String packageName) {
@@ -1382,32 +1387,45 @@ public class MonitoringService extends Service {
         }
     }
 
-    private abstract static class SimpleTextWatcher implements TextWatcher {
-        @Override
-        public void beforeTextChanged(CharSequence text, int start, int count, int after) {
-        }
-
-        @Override
-        public void onTextChanged(CharSequence text, int start, int before, int count) {
-        }
-    }
-
     private static final class ForegroundQueryResult {
         final String packageName;
         final boolean overlayInterrupted;
+        final boolean successful;
+        final long latestLifecycleEventMs;
 
-        ForegroundQueryResult(String packageName, boolean overlayInterrupted) {
+        private ForegroundQueryResult(
+                String packageName,
+                boolean overlayInterrupted,
+                boolean successful,
+                long latestLifecycleEventMs
+        ) {
             this.packageName = packageName;
             this.overlayInterrupted = overlayInterrupted;
+            this.successful = successful;
+            this.latestLifecycleEventMs = latestLifecycleEventMs;
+        }
+
+        static ForegroundQueryResult successful(
+                String packageName,
+                boolean overlayInterrupted,
+                long latestLifecycleEventMs
+        ) {
+            return new ForegroundQueryResult(
+                    packageName,
+                    overlayInterrupted,
+                    true,
+                    latestLifecycleEventMs
+            );
+        }
+
+        static ForegroundQueryResult failed(String packageName, long latestLifecycleEventMs) {
+            return new ForegroundQueryResult(
+                    packageName,
+                    false,
+                    false,
+                    latestLifecycleEventMs
+            );
         }
     }
 
-    private static final class OverlayFormState {
-        String requestedMinutesText = "5";
-        String approvalCodeText = "";
-        String errorMessage = "";
-        boolean minutesInputError;
-        boolean codeInputError;
-        int lastRequestedMinutes = -1;
-    }
 }

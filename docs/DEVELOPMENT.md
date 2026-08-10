@@ -1,6 +1,6 @@
 # Development Guide
 
-Last updated: August 7, 2026
+Last updated: August 9, 2026
 
 ## Status
 
@@ -18,6 +18,7 @@ This is a compiling Android MVP, not a verified release. The debug build and lin
 Use the checked-in Gradle 8.11.1 wrapper:
 
 ```sh
+./gradlew :app:testDebugUnitTest
 ./gradlew :app:assembleDebug
 ```
 
@@ -30,11 +31,32 @@ target API 36 or higher starting August 31, 2026:
 
 - Keep the MVP native and dependency-light until the first real device test passes.
 - Prefer Android platform APIs over adding libraries.
+- Keep test-only dependencies out of the packaged application; JUnit 4 backs
+  the current pure-Java unit suite.
 - Keep app usage data local by default.
 - Keep settings and blocker behavior explicit; hidden hardening is a trust problem.
 - Do not request permissions before the UI explains why they are needed.
 - Do not request direct SMS permissions for the default MVP path.
 - Do not request Accessibility Service for whole-app blocking.
+
+## Engineering Priority Order
+
+AirLock is useful only while monitoring remains trustworthy over ordinary
+multi-day use. Apply these priorities, in order, when making tradeoffs:
+
+1. Long-running monitoring reliability and automatic recovery.
+2. Visible, accurate health and permission state; never silently fail open.
+3. Prompt blocker appearance during normal and gesture-based app switching.
+4. Low idle battery, CPU, and storage cost through bounded adaptive work.
+5. Correct limits, usage totals, override grants, and persisted state.
+6. Maintainable native Java implementation and accessible visual polish.
+
+Reliability work should favor idempotent startup, persisted checkpoints,
+periodic reconciliation, and bounded recovery windows. Avoid permanent fast
+polling, frequent synchronous preference writes, unbounded wake locks, and
+restart loops. Android and manufacturer background restrictions that cannot be
+fixed in-app must be detected where possible, shown as degraded health, and
+covered in `docs/TEST_PLAN.md`.
 
 ## Programmatic UI Styling
 
@@ -45,6 +67,17 @@ inset padding. Avoid hardcoded colors, corner radii, button backgrounds, and
 screen padding in activities or services unless a new reusable style is first
 added to `UiStyle`.
 
+The green palette is one tonal family in `UiStyle`: `COLOR_PRIMARY` for main
+actions, `COLOR_PRIMARY_DEEP` for secondary actions, `COLOR_PRIMARY_PRESSED`
+for pressed state, `COLOR_PRIMARY_SOFT` for themed surfaces, and
+`COLOR_PRIMARY_BRIGHT` for ready/status emphasis. Android XML accents use the
+matching `airlock_primary` value. Do not introduce a separate green directly in
+Java, XML, or Canvas drawing.
+
+User-facing copy belongs in `app/src/main/res/values/strings.xml`, including
+formatted status messages and plurals. Java should pass resource values into
+the `UiStyle` builders instead of assembling display text in `setText(...)`.
+
 Use the named button styles by intent:
 
 - `primaryButton`: main forward action.
@@ -54,8 +87,26 @@ Use the named button styles by intent:
 
 Requirement and error states should use `statusText` with `setStatus(...)` so
 users get text, color, and shape cues together. Screens that can touch the
-status bar, navigation bar, or camera cutout should apply
-`applySystemInsetsPadding(...)` to their top-level content container.
+status bar, navigation bar, or camera cutout should use `screenScroll(...)` and
+apply `applyScreenInsetsPadding(...)` to the scroll viewport and its content,
+then attach that content with `attachScreenContent(...)`. The shared host
+centers content at a readable maximum width on tablets and landscape screens.
+This keeps scrolled controls clipped outside system bar and cutout regions.
+Overlay content uses `attachOverlayContent(...)`, and overlay windows must also
+use `overlayWindowRoot(...)`; its neutral system-bar
+scrims preserve icon contrast when the underlying app controls icon appearance.
+
+`PermissionSetupScreen` owns the required first-run access gate. Usage Access,
+Display Over Other Apps, and notification visibility must all be ready before
+`MainActivity` reveals the dashboard. `MainActivity.refresh()` rechecks that
+policy on every resume, so revoked access returns to the gate. Keep battery
+restriction as a dashboard reliability warning because OEM battery controls are
+not a consistently verifiable runtime permission.
+
+The foreground-service channel is intentionally silent. Keep its low importance,
+null sound, disabled vibration, and zero notification defaults when changing
+monitoring notifications. A channel-ID migration is required if a future release
+needs to change immutable channel behavior for existing installs.
 
 ## Goose Visual Theme
 
@@ -79,7 +130,10 @@ The main screen's "Today's goose count" section only renders apps that already h
 AirLock limits. Foreground detection and full-day reconciliation run on separate
 background workers. The service keeps current usage in memory, persists dirty
 totals in one batch every 30 seconds, reconciles against Android UsageStats once
-per minute, and retains seven days of usage keys.
+per minute, and retains seven days of usage keys. Foreground queries and
+reconciliation pause while the screen is off or locked, then resume immediately
+after unlock. See `docs/RELIABILITY.md` before changing service lifecycle,
+polling cadence, UsageEvents windows, health state, or restart behavior.
 
 ## Permission Notes
 
@@ -97,29 +151,87 @@ Required because monitoring happens while the app is not foregrounded. The servi
 
 ### Notifications
 
-Required on Android 13+ so the foreground service notification can be shown cleanly.
+Recommended on Android 13+ so the ongoing duty and recovery state remains
+visible in the notification shade. Android allows the foreground service to
+run after notification permission is denied, but only exposes it through the
+system Active apps surface. AirLock reports that reduced visibility without
+treating it as a monitoring prerequisite. Notification readiness checks the
+runtime permission where applicable, app-level notification access, and the
+monitoring channel instead of assuming pre-Android-13 notifications are on.
+
+## Automated Tests
+
+Run `./gradlew :app:testDebugUnitTest` for the fast local suite. The tests cover
+one-use app-limit authorization and expiry, configuration-safe process-local
+editor sessions, process-local token loss, bounded
+foreground-query concurrency, approval-code duration policy, atomic approval
+redemption with multiple pending requests, three-code emergency-batch
+replacement and revocation, foreground lifecycle classification, failed-write restoration,
+notification visibility policy, and monitoring-exit recovery classification.
+These tests do not require an emulator. Batch the device scenarios in
+`docs/TEST_PLAN.md` after changes to Android lifecycle, UsageStats, overlays,
+permissions, or system settings.
+
+The staged backlog for automating those functional, UI, accessibility, and
+reliability checks is in `docs/TEST_AUTOMATION_TODO.md`.
+
+### Emulator Smoke Suite
+
+Run the batched P0 emulator flow after related UI, permission, UsageStats,
+service, or overlay changes:
+
+```sh
+scripts/android-smoke.sh
+```
+
+The runner requires exactly one running emulator and always uses `adb -e`; it
+refuses to target physical devices. It builds and installs the debug APK,
+resets app-private fixture state, exercises setup gating, picker recreation,
+live service blocking, retained blocker input, invalid codes, and the current
+request-code `+5` approval rule, then restores emulator settings and app-op
+permissions. Use `scripts/android-smoke.sh --skip-build` only after assembling
+the current debug APK. Set `TARGET_PACKAGE` and `TARGET_QUERY` when the pinned
+emulator does not contain YouTube.
+
+Debug builds alone include `DebugFixtureReceiver` and `DebugBlockerActivity`
+for deterministic state and blocker setup. Neither component is merged into
+release builds. Smoke artifacts are written under
+`app/build/reports/android-smoke/`.
+
+### Local Data And Backup
+
+App limits, usage totals, the Keyholder number, PIN material, approval-code
+state, and emergency-code hashes stay in app-private storage. Android cloud
+backup and device-to-device transfer are disabled for this data in both legacy
+and current backup rules. Do not enable backup without a data migration and
+security review.
 
 ## Debugging
 
 Useful checks after installing a debug build:
 
 ```sh
-adb shell dumpsys package com.dankhole.airlockandroid
-adb shell dumpsys usagestats
-adb shell appops get com.dankhole.airlockandroid
-adb shell dumpsys activity services com.dankhole.airlockandroid
+adb -e shell dumpsys package com.dankhole.airlockandroid
+adb -e shell dumpsys usagestats
+adb -e shell appops get com.dankhole.airlockandroid
+adb -e shell dumpsys activity services com.dankhole.airlockandroid
 ```
 
-Start and stop from the app UI first. Only use `adb` to inspect state until the MVP behavior is confirmed manually.
+Start and stop from the app UI first. Use `adb -e` for emulator work and
+`adb -d` only when intentionally inspecting a connected physical device.
 
 ## Build Verification Checklist
 
 - Gradle sync succeeds.
+- `:app:testDebugUnitTest` succeeds.
 - `:app:assembleDebug` succeeds.
 - App installs on a physical device.
 - Usage Access grant is detected by the app.
 - Overlay grant is detected by the app.
-- Foreground service notification appears.
+- Notification denial is explained and does not silently stop duty.
+- Foreground service notification appears after notification access is granted.
+- Critical phone, launcher, settings, messaging, camera, autofill, and Android
+  credential-provider apps are absent from the limit picker.
 - App selection persists after process restart.
 - Blocking overlay appears after limit.
 - Code unlock grants temporary extra time.
@@ -133,7 +245,7 @@ Do not treat this as releasable until these are done:
 - Keep release signing credentials outside git and maintain a secure keystore backup.
 - Add privacy policy review.
 - Add in-app permission disclosures.
-- Add safety exclusions for critical apps.
+- Verify critical-app exclusions on each release device matrix.
 - Add device test notes for at least Pixel and one Samsung device.
 - Decide Play Store vs F-Droid/sideload distribution.
 - Review foreground service policy and declaration text.

@@ -1,5 +1,4 @@
 <resources>
-    <color name="airlock_blue">#2EA378</color>
-    <color name="airlock_red">#DC5246</color>
+    <color name="airlock_primary">#1A805B</color>
     <color name="airlock_surface">#1C2228</color>
 </resources>

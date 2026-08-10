@@ -1,6 +1,6 @@
 # AirLock Android Plan
 
-Last updated: August 7, 2026
+Last updated: August 9, 2026
 
 ## Purpose
 
@@ -37,14 +37,16 @@ The MVP should prove the core loop with the least Android-policy risk:
 3. User grants Display Over Other Apps.
 4. User selects one launchable app or a group of apps.
 5. User confirms that selection and sets its daily limit in minutes.
-6. User enters a Keyholder phone number.
-7. User sets a local master override PIN.
-8. A foreground service polls the foreground app.
-9. Usage time accrues only while a selected app is foregrounded.
-10. When the daily limit is exceeded, an overlay appears.
-11. The overlay asks how many extra minutes the Goose should request and can compose a text message to the Keyholder.
-12. Entering the valid approval code grants the minutes bound to that generated request code.
-13. The master PIN can create five one-time emergency codes for pre-authorized 24-hour recovery access.
+6. AirLock omits phone/emergency, launcher, Settings, messaging, camera, and
+   detected password-manager apps from selection.
+7. User enters a Keyholder phone number.
+8. User sets a local master override PIN.
+9. A foreground service polls the foreground app.
+10. Usage time accrues only while a selected app is foregrounded.
+11. When the daily limit is exceeded, an overlay appears.
+12. The overlay asks how many extra minutes the Goose should request and can compose a text message to the Keyholder.
+13. Entering the valid approval code grants the minutes bound to that generated request code.
+14. The master PIN can create three one-time emergency codes for pre-authorized 24-hour recovery access.
 
 ## Recommended Architecture
 
@@ -55,6 +57,8 @@ The MVP should prove the core loop with the least Android-policy risk:
 - `MonitoringService`: foreground service that polls the current foreground package and manages blocking.
 - `BootReceiver`: restarts monitoring after reboot if the user left monitoring enabled.
 - `Preferences`: small local storage helper around `SharedPreferences`.
+- `CriticalApps`: resolves and excludes safety-sensitive app handlers.
+- `MonitoringHealth`: separates requested duty from actual service health and records recovery diagnostics.
 
 ### Data Stored Locally
 
@@ -66,9 +70,11 @@ The MVP should prove the core loop with the least Android-policy risk:
 - Per-day usage counters keyed by date and package name.
 - Temporary unlock expiration timestamps keyed by package name.
 - Short-lived one-time approval codes keyed by package name and code, with requested minutes stored per code.
-- Salted hashes for five one-time emergency codes and the active 24-hour pause deadline.
+- Salted hashes for three one-time emergency codes and the active 24-hour pause deadline.
 
-No data should leave the device in the MVP except text the user explicitly sends through their chosen SMS app.
+No data should leave the device in the MVP except text the user explicitly
+sends through their chosen SMS app. Android backup and device-to-device
+transfer are disabled for AirLock's app-private state.
 
 ## Android APIs
 
@@ -109,7 +115,6 @@ This has an accountability weakness: the request code and requested minutes are 
 - Add a cool-down before granting an unlock.
 - Add daily unlock caps.
 - Add code expiration and attempt throttling.
-- Exclude critical apps by default: dialer, emergency, launcher, settings, SMS, camera, password manager.
 - Add tamper notices when permissions are revoked.
 - Add Device Owner mode for family/enterprise installs where real policy enforcement is required.
 - Add a local VPN only if website blocking becomes a goal.
