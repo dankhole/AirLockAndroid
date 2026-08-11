@@ -1,5 +1,7 @@
 # AirLock Goose Product Language
 
+Last updated: August 11, 2026
+
 This document defines the characters, roles, and vocabulary used throughout the app. New UI copy, notifications, SMS text, screenshots, and documentation should follow it.
 
 ## Core Concept
@@ -74,6 +76,13 @@ The blocking screen should tell one coherent story:
 5. The user enters that code in AirLock.
 6. The goose is let loose for exactly the approved request duration.
 
+The requested-minutes field remains editable after a request and both numeric
+fields survive temporary overlay hide/reopen. A new request creates a separate
+pending approval; it does not replace or mutate earlier requests. The blocker
+must not open the keyboard on appearance. It may focus and open the keyboard
+only after explicit input interaction or after returning successfully from the
+SMS compose action.
+
 Recommended overlay labels:
 
 1. `Ask for minutes!`
@@ -86,6 +95,12 @@ Recommended SMS structure:
 `The Goose is asking for 10 minutes of extra time in YouTube! Request code: 123456. If approved, send back the approval code for this Goose request.`
 
 The SMS may identify the requested app, duration, and request code. It must never include the locally derived approval code.
+
+For the first internal test only, the Keyholder derives the approval code by
+adding 5 to each request-code digit modulo 10. Do not describe that transparent
+rule as secure approval. User-facing copy can call it an approval code because
+it exercises the intended interaction, but release and engineering docs must
+identify it as temporary test plumbing pending real Keyholder authorization.
 
 ## Implementation Note
 

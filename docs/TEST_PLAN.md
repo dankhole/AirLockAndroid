@@ -1,6 +1,6 @@
 # Test Plan
 
-Last updated: August 9, 2026
+Last updated: August 11, 2026
 
 ## Static Checks
 
@@ -24,11 +24,6 @@ notification visibility policy, and monitoring-exit recovery classification.
 See `docs/TEST_AUTOMATION_TODO.md` for the staged work to automate this manual
 matrix without running a full emulator pass after every small change.
 
-Checks that were run before Android tooling was available:
-
-- XML well-formedness with `xmllint`.
-- Sensitive permission scan for direct SMS and broad package visibility.
-
 ## Manual MVP Tests
 
 ### Permission Onboarding
@@ -37,31 +32,34 @@ Expected result: required Android access is unmistakable and cannot be skipped.
 
 1. Open app fresh.
 2. Confirm the dedicated permission screen appears instead of the dashboard.
-3. Confirm Usage Access, Display Over Other Apps, and Notifications each show
+3. Confirm the introduction says foreground usage is processed locally and app
+   lists or usage history are not uploaded.
+4. Tap `Read Privacy Policy` and confirm the public policy opens in a browser.
+5. Confirm Usage Access, Display Over Other Apps, and Notifications each show
    `NOT DONE`, with a `0 of 3` progress state.
-4. Grant Usage Access.
-5. Return to app and confirm Usage Access shows `DONE`, its action is hidden,
+6. Grant Usage Access.
+7. Return to app and confirm Usage Access shows `DONE`, its action is hidden,
    and progress shows `1 of 3`.
-6. Grant overlay permission.
-7. Return and confirm Overlay shows `DONE` and progress shows `2 of 3`.
-8. Grant notifications and confirm the permission screen automatically gives
+8. Grant overlay permission.
+9. Return and confirm Overlay shows `DONE` and progress shows `2 of 3`.
+10. Grant notifications and confirm the permission screen automatically gives
    way to the dashboard.
-9. Confirm the duty switch is at the top, remains locked, and names the first
+11. Confirm the duty switch is at the top, remains locked, and names the first
    unfinished product setting below it.
-10. Confirm the compact Android-access review section is at the bottom of the
-    dashboard.
-11. Revoke Usage Access, overlay access, or notifications and return to AirLock.
+12. Confirm the compact Android-access review section and working privacy-policy
+    link are at the bottom of the dashboard.
+13. Revoke Usage Access, overlay access, or notifications and return to AirLock.
     Confirm the permission screen replaces the dashboard and identifies the
     exact missing item.
-12. Restore the revoked access and confirm the dashboard returns automatically.
-13. Start duty and confirm the ongoing `AirLock goose watch` notification makes
+14. Restore the revoked access and confirm the dashboard returns automatically.
+15. Start duty and confirm the ongoing `AirLock goose watch` notification makes
     no sound and does not vibrate on first creation or service status updates.
-14. Disable only the `AirLock goose watch` notification channel. Confirm the
+16. Disable only the `AirLock goose watch` notification channel. Confirm the
     permission screen reports Notifications as `NOT DONE` and opens that
     channel's settings.
-15. On Android 8-12, disable app notifications and confirm the permission screen
+17. On Android 8-12, disable app notifications and confirm the permission screen
     reports Notifications as `NOT DONE` instead of assuming they are available.
-16. Set Android battery use to Restricted and confirm AirLock reports the
+18. Set Android battery use to Restricted and confirm AirLock reports the
     reliability warning on the dashboard without treating it as a permission.
 
 ### App Limit Setup
@@ -103,7 +101,8 @@ Expected result: selected app is blocked after its daily budget is exhausted.
 4. Open the test app.
 5. Wait at least 65 seconds.
 6. Confirm the overlay appears.
-7. Confirm its content clears the status bar, camera cutout, gesture area, and
+7. Confirm the keyboard does not open until an input is explicitly tapped.
+8. Confirm its content clears the status bar, camera cutout, gesture area, and
    keyboard; system-bar icons remain readable against the dark blocker.
 
 ### Recents And App Switching
@@ -131,7 +130,9 @@ Expected result: valid approval code removes the overlay for the minutes request
 5. Confirm the SMS compose screen says `The Goose is asking for X minutes of extra time`, identifies the app, and includes the numeric request code.
 6. Return to the overlay and confirm the requested minutes field is still populated and editable.
 7. Change the requested minutes and tap `Text the Keyholder!` again.
-8. Confirm either valid approval code grants the minutes requested when that specific code was generated.
+8. For this internal-test build, derive each approval by adding 5 to every
+   request-code digit modulo 10. Confirm either valid approval grants the
+   minutes requested when that specific code was generated.
 9. Enter a partial approval code, leave the overlay, return, and confirm the approval code entry is still populated.
 10. Enter an incorrect approval code and confirm it is rejected.
 11. Confirm emergency instructions are hidden by default, reveal them with

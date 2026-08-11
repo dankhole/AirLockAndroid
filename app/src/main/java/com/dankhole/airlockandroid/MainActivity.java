@@ -362,6 +362,15 @@ public class MainActivity extends Activity {
             );
         });
         card.addView(permissionsDetailsButton, UiStyle.buttonParams(this));
+
+        card.addView(
+                UiStyle.helperText(this, getString(R.string.privacy_local_summary)),
+                UiStyle.fullWidth(this, 6)
+        );
+        Button privacyButton = UiStyle.quietButton(this, getString(R.string.open_privacy_policy));
+        privacyButton.setId(R.id.main_privacy_button);
+        privacyButton.setOnClickListener(view -> AppLinks.openPrivacyPolicy(this));
+        card.addView(privacyButton, UiStyle.buttonParams(this));
         return card;
     }
 

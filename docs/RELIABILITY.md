@@ -1,6 +1,6 @@
 # Monitoring Reliability
 
-Last updated: August 9, 2026
+Last updated: August 11, 2026
 
 ## Reliability Contract
 
@@ -20,6 +20,11 @@ Within those Android limits, AirLock should:
   or locked.
 - Never use a permanent wake lock, exact-alarm restart loop, Accessibility
   Service, or broad package visibility as a reliability shortcut.
+
+The current implementation satisfies these design boundaries in code and local
+tests, but multi-day reliability and real battery impact are not considered
+verified until the physical Pixel and Samsung runs in `docs/TEST_PLAN.md` are
+recorded. Do not turn an emulator pass into a device-reliability claim.
 
 ## Failure And Recovery Matrix
 
@@ -73,6 +78,11 @@ starts, remove existing foreground services, suppress jobs/alarms, and delay
 boot broadcasts. Manufacturer controls such as sleeping apps or auto-start
 allowlists are not exposed through one portable API. Physical Pixel and Samsung
 multi-day tests remain release requirements.
+
+Retained blocker input is process-local UI state and does not participate in
+foreground detection, UsageEvents queries, or polling cadence. Preserve it when
+investigating blocker latency; gesture-switch regressions belong in the event
+overlap/recovery path unless device evidence shows otherwise.
 
 ## Diagnostics
 

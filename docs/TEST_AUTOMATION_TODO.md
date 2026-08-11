@@ -1,5 +1,7 @@
 # Test Automation TODO
 
+Last reviewed: August 11, 2026
+
 This backlog converts the functional and visual checks in `docs/TEST_PLAN.md`
 into repeatable tests without adding AndroidX, Compose, Kotlin, or runtime
 dependencies. Automation should target an emulator explicitly with `adb -e` so
@@ -69,7 +71,7 @@ it cannot accidentally drive a connected physical phone.
 - [x] Requested minutes and approval-code input survive leaving and reopening
   the blocked app.
 - [ ] Generate multiple approval requests for different minute values and
-  redeem them out of order; each code must grant only the minutes hashed into
+  redeem them out of order; each code must grant only the minutes persisted for
   that request, regardless of the current form value.
 - [ ] A successful grant announces `The goose is loose for X minutes!`, keeps
   the exact granted amount, and plays or skips celebration according to the

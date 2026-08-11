@@ -72,7 +72,19 @@ final class PermissionSetupScreen {
                 R.id.permission_notifications_button,
                 openNotificationAccess
         );
-        content.addView(notifications.card, UiStyle.fullWidth(context, 4));
+        content.addView(notifications.card, UiStyle.fullWidth(context, 12));
+
+        content.addView(
+                UiStyle.helperText(context, context.getString(R.string.privacy_local_summary)),
+                UiStyle.fullWidth(context, 6)
+        );
+        Button privacyButton = UiStyle.quietButton(
+                context,
+                context.getString(R.string.open_privacy_policy)
+        );
+        privacyButton.setId(R.id.permission_privacy_button);
+        privacyButton.setOnClickListener(view -> AppLinks.openPrivacyPolicy(context));
+        content.addView(privacyButton, UiStyle.buttonParams(context));
     }
 
     ScrollView view() {

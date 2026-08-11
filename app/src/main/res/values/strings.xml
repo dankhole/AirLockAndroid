@@ -153,7 +153,7 @@
     <string name="main_title">AirLock Goose</string>
     <string name="main_tagline">A silly little goose guards distracting apps after their daily allowance!</string>
     <string name="permission_setup_title">Get the goose ready!</string>
-    <string name="permission_setup_intro">Finish the three required Android access steps before continuing. AirLock checks them again whenever you return!</string>
+    <string name="permission_setup_intro">AirLock reads foreground app usage only to count goose-guarded apps on this device. It does not upload app lists or usage history. Finish the three required Android access steps before continuing!</string>
     <plurals name="permission_setup_progress">
         <item quantity="one">%1$d of %2$d required permission is done!</item>
         <item quantity="other">%1$d of %2$d required permissions are done!</item>
@@ -162,7 +162,7 @@
     <string name="permission_setup_done">DONE: This permission is ready!</string>
     <string name="permission_setup_not_done">NOT DONE: This permission is still required!</string>
     <string name="permission_usage_title">1. Usage Access</string>
-    <string name="permission_usage_detail">Lets AirLock count time spent in goose-guarded apps.</string>
+    <string name="permission_usage_detail">Lets AirLock see which app is in front and count time spent in apps you choose to guard. This usage history stays on your device.</string>
     <string name="permission_overlay_title">2. Display Over Other Apps</string>
     <string name="permission_overlay_detail">Lets the goose appear over a guarded app when its daily limit is reached.</string>
     <string name="permission_notifications_title">3. Goose Notifications</string>
@@ -178,6 +178,9 @@
     <string name="open_app_settings">Open AirLock App Settings</string>
     <string name="review_android_access">Review Android access</string>
     <string name="hide_android_access">Hide Android access</string>
+    <string name="privacy_local_summary">Goose settings and usage totals stay on this device. The privacy policy explains exactly what AirLock stores and shares.</string>
+    <string name="open_privacy_policy">Read Privacy Policy</string>
+    <string name="privacy_policy_unavailable">No browser is available to open the privacy policy.</string>
     <string name="section_keyholder">The Keyholder</string>
     <string name="section_keyholder_helper">The goose opens your SMS app to ask the Keyholder for extra time. It does not request SMS permissions.</string>
     <string name="keyholder_phone_label">Keyholder phone number</string>

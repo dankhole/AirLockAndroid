@@ -1,17 +1,24 @@
 # Release Guide
 
-Last updated: August 7, 2026
+Last updated: August 11, 2026
 
 This guide covers the two supported ways to share AirLock Goose builds:
 
-- Direct distribution through the Android Developer Console: signed APK shared
-  privately with testers.
+- Direct distribution: a signed APK shared privately with testers after package
+  and certificate verification in Android Developer Console.
 - Google Play Internal testing: signed Android App Bundle (AAB) installed from
   the Play Store through a tester opt-in link.
 
 Use a real Android device for release validation. Usage Access, overlay access,
 the foreground service, and OEM battery policies cannot be meaningfully
 validated by an emulator alone.
+
+Copy-ready listing text and policy declarations are maintained in
+`docs/PLAY_CONSOLE_SUBMISSION.md`.
+
+Current release stage, unresolved owner decisions, and last-known artifact facts
+are maintained in `docs/PROJECT_STATUS.md`. The app is not release-qualified
+until the physical-device matrix is recorded as passed.
 
 ## Signing Decision
 
@@ -41,6 +48,12 @@ matches the key registered in the Android Developer Console. Do not change the
 package ID (`com.dankhole.airlockandroid`) or regenerate the release key during
 this process.
 
+The registered release certificate SHA-256 is:
+
+```text
+0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B
+```
+
 ## Prepare a Release
 
 1. Finish the manual scenarios in `docs/TEST_PLAN.md` on a physical device.
@@ -51,10 +64,8 @@ this process.
 4. Run the required checks and create both artifacts:
 
 ```sh
-./gradlew :app:assembleDebug
-./gradlew :app:lintDebug
-./gradlew :app:assembleRelease
-./gradlew :app:bundleRelease
+./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug \
+  :app:assembleRelease :app:bundleRelease
 ```
 
 5. Confirm the artifacts exist:
@@ -63,6 +74,10 @@ this process.
 app/build/outputs/apk/release/app-release.apk
 app/build/outputs/bundle/release/app-release.aab
 ```
+
+The locally copied tester artifacts under `releases/` are intentionally ignored
+by Git. Publish signed binaries through a controlled distribution channel, not
+as source-repository files.
 
 Never share a debug APK with external testers. `keystore.properties`, keystore
 files, and passwords must remain outside Git. Keep an encrypted backup of the
@@ -83,6 +98,9 @@ host tester downloads.
 Testers may need to allow installation from the app they used to download the
 APK. If Android reports a signature conflict, they have an older build signed
 with a different key and must uninstall it before installing this release.
+Play Protect or the installer may also warn that a sideloaded app is unknown or
+potentially unsafe. That reputation warning can appear on a correctly signed,
+developer-verified APK and is not proof that the artifact is unsigned.
 
 ### Tester Setup Checklist
 
@@ -95,6 +113,11 @@ with a different key and must uninstall it before installing this release.
    appears after the limit.
 7. Exercise the extra-time request and approval-code flow.
 
+For the first internal test, the Keyholder reply code is produced by adding 5
+to each request-code digit modulo 10. Example: request `123456` becomes approval
+`678901`. The mapping is transparent test plumbing; it is not the planned real
+authorization mechanism.
+
 ## Google Play Internal Testing
 
 Use Internal testing when testers should install and update through the normal
@@ -106,7 +129,8 @@ new-personal-account closed-test requirement.
 
 1. Wait for Play Console developer verification to complete.
 2. Complete any device-verification prompt in the Play Console mobile app.
-3. In Play Console, select **Create app**.
+3. In Play Console, select **Create app** with English (United States), App,
+   Free, and the required policy acknowledgements.
 4. Create `AirLock Goose` as an app, using
    `com.dankhole.airlockandroid` when prompted by the first bundle upload.
 5. In **Testing > Internal testing > Testers**, create a tester email list or
@@ -115,14 +139,20 @@ new-personal-account closed-test requirement.
 7. During Play App Signing setup, use the signing strategy selected in
    [Signing Decision](#signing-decision). If retaining the existing key as the
    Play app-signing key, follow Play Console's secure key-enrollment flow.
+8. Complete the App content foreground-service declaration for `specialUse`,
+   including the functionality, user impact, and demonstration video in
+   `docs/PLAY_CONSOLE_SUBMISSION.md`. Apps targeting Android 14+ must declare
+   their foreground-service types; do not assume Internal testing is exempt.
 
 ### Ship an Internal Test Build
 
 1. Open **Testing > Internal testing > Releases**.
 2. Select **Create new release**.
 3. Upload `app-release.aab`.
-4. Set a release name, for example `0.1.0 internal`.
-5. Add concise release notes describing what testers should try.
+4. Set the release name to `0.1.0 internal 1` only if `versionCode 1` has never
+   been uploaded. Otherwise increment `versionCode`, rebuild, and use a matching
+   release name.
+5. Use the release notes from `docs/PLAY_CONSOLE_SUBMISSION.md`.
 6. Save the release, review it, and select **Start rollout to Internal testing**.
 7. Copy the tester opt-in link from the Testers page and send it to the group.
 
@@ -137,16 +167,15 @@ Internal testing can begin before the full public store listing is complete.
 Before a closed, open, or production release, complete the Play Console policy
 tasks and keep them consistent with the app:
 
-- Host `PRIVACY.md` as a public, non-editable privacy-policy page and add an
-  in-app privacy-policy link.
+- Keep the hosted privacy policy and in-app privacy-policy link current.
 - Complete Data safety, ads, target audience, content rating, and app-access
   declarations.
 - Add a 512 x 512 Play listing icon, a 1024 x 500 feature graphic, and at least
   two truthful phone screenshots.
-- Complete the foreground-service declaration for `specialUse`, including the
-  required description, user impact, and demonstration video. Explain that
-  Goose Duty is user-started, has a persistent notification, can be stopped by
-  the user, and enforces limits for only user-selected apps.
+- Keep the foreground-service declaration for `specialUse` synchronized with
+  the shipped service. Explain that Goose Duty is user-started, has a
+  persistent notification, can be stopped by the user, and enforces limits for
+  only user-selected apps.
 - Keep user-facing claims accurate: the overlay is intentional friction, not
   uninstall-proof security.
 
@@ -168,3 +197,5 @@ does not have that requirement.
   <https://support.google.com/googleplay/android-developer/answer/13392821>
 - Google Play target API policy:
   <https://support.google.com/googleplay/android-developer/answer/11926878>
+- Android App Bundle upload guidance:
+  <https://developer.android.com/studio/publish/upload-bundle>

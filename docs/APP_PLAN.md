@@ -1,203 +1,141 @@
-# AirLock Android Plan
+# AirLock Goose Product Plan
 
-Last updated: August 9, 2026
+Last updated: August 11, 2026
 
 ## Purpose
 
-AirLock Android brings the same core idea as the AirLock browser extension to mobile apps: add intentional friction before using distracting apps after a configured amount of time. The goal is not absolute device lockdown. The goal is a practical, privacy-preserving accountability tool that interrupts automatic app-opening behavior and makes extra access require a deliberate action involving another person.
+AirLock Goose adds intentional friction before using distracting Android apps
+after a user-configured daily limit. It is a private accountability aid for an
+adult managing their own device, not hard parental control or device security.
 
-The first product shape is:
+The core promise is simple:
 
-- Choose apps to limit.
-- Set a daily usage budget per selected app.
-- Show a full-screen blocking wall after the budget is exhausted.
-- Allow an extra-time grant when the user enters a one-time approval code tied to requested minutes.
-- Let a numeric request code be sent to a preset Keyholder phone number.
+1. Choose launchable apps to guard.
+2. Give each app a daily usage budget.
+3. Show a blocking Goose after that app reaches its budget.
+4. Require a deliberate Keyholder approval step for extra time.
+5. Keep all settings and usage data on the device.
 
-## Target User
+## Current Product Contract
 
-The primary user is an adult who wants self-accountability for social media, video, games, adult content, shopping, or other distraction loops. A secondary user is a parent or guardian setting limits for a child, but the first MVP should avoid claiming hard parental-control guarantees until we have a hardened deployment mode.
+The MVP currently includes:
 
-## Non-Goals For MVP
+- A required first-run gate for Usage Access, Display Over Other Apps, and
+  visible silent notifications. Revoking any of them returns to the gate.
+- A two-step app-selection and per-app-limit wizard with safety-critical app
+  exclusions and search.
+- A master PIN required to start/stop Goose Duty, change the PIN, replace
+  emergency codes, and edit limits while Duty is active.
+- A Keyholder phone number and user-initiated SMS compose intent; AirLock never
+  reads or sends SMS directly.
+- Guarded-app-only usage totals with explicit active, off, paused, and unhealthy
+  enforcement states.
+- A foreground monitoring service with boot/update restart, health reporting,
+  bounded recovery, gesture-switch detection, and conservative persistence.
+- A dark, safe-area-aware Goose UI and full-screen blocker that retains both
+  inputs, stays readable on narrow phones, and does not open the keyboard until
+  the user touches an input.
+- Multiple pending extra-time requests. Each approval grants the exact minutes
+  saved when its request was created, even if the form changes later.
+- Three one-time emergency codes per replacement batch. Replacing a batch
+  revokes the old one; each valid code pauses all blocking for 24 hours.
 
-- No iOS support.
-- No cloud account.
-- No remote dashboard.
-- No content-specific blockers for Reels, Shorts, URLs, or in-app feeds.
-- No direct SMS permission.
-- No attempt to prevent uninstall or settings changes beyond normal Android affordances.
-- No Play Store claim that this is an accessibility tool for disabled users.
+See `docs/ARCHITECTURE.md` for mechanics and `docs/PRODUCT_LANGUAGE.md` for the
+user-facing story.
 
-## MVP Scope
+## Deliberate Internal-Test Rule
 
-The MVP should prove the core loop with the least Android-policy risk:
+The first testing release uses a six-digit request code and a deterministic
+approval code produced by adding 5 to each digit modulo 10. AirLock stores the
+approval value, requested minutes, and a 10-minute expiry locally so more than
+one request can be pending and each grant is independent of the editable form.
 
-1. Onboarding screen explains the required special permissions.
-2. User grants Usage Access.
-3. User grants Display Over Other Apps.
-4. User selects one launchable app or a group of apps.
-5. User confirms that selection and sets its daily limit in minutes.
-6. AirLock omits phone/emergency, launcher, Settings, messaging, camera, and
-   detected password-manager apps from selection.
-7. User enters a Keyholder phone number.
-8. User sets a local master override PIN.
-9. A foreground service polls the foreground app.
-10. Usage time accrues only while a selected app is foregrounded.
-11. When the daily limit is exceeded, an overlay appears.
-12. The overlay asks how many extra minutes the Goose should request and can compose a text message to the Keyholder.
-13. Entering the valid approval code grants the minutes bound to that generated request code.
-14. The master PIN can create three one-time emergency codes for pre-authorized 24-hour recovery access.
+This is intentionally transparent test plumbing. It validates monitoring,
+blocking, SMS handoff, return navigation, local one-time redemption, and unlock
+UX before investing in a real remote authorization system. It must not be
+described as secure authentication or production-grade accountability.
 
-## Recommended Architecture
+## Target User And Claims
 
-### App Layer
+The primary user is an adult who wants help interrupting social media, video,
+games, shopping, adult content, or another distraction loop. Do not market the
+current build as a child-safety product. A device owner can revoke access,
+force-stop, clear, or uninstall AirLock, and OEM background controls can delay
+monitoring.
 
-- `MainActivity`: settings, permission shortcuts, monitoring start/stop.
-- `AppSelectionActivity`: lists launchable apps and saves selected package names.
-- `MonitoringService`: foreground service that polls the current foreground package and manages blocking.
-- `BootReceiver`: restarts monitoring after reboot if the user left monitoring enabled.
-- `Preferences`: small local storage helper around `SharedPreferences`.
-- `CriticalApps`: resolves and excludes safety-sensitive app handlers.
-- `MonitoringHealth`: separates requested duty from actual service health and records recovery diagnostics.
+## Non-Goals For This MVP
 
-### Data Stored Locally
+- iOS, cloud accounts, remote dashboards, or cross-device sync.
+- Uninstall prevention, Device Owner enrollment, or tamper-proof enforcement.
+- Blocking specific in-app feeds, URLs, Reels, or Shorts.
+- Direct SMS permissions, broad installed-app visibility, or Accessibility
+  Service.
+- Analytics, advertising, trackers, cloud backup, or app-usage uploads.
+- Settings-change delays, daily unlock caps, or a permanent audit history.
 
-- Monitoring enabled flag.
-- Selected package names.
-- Per-app daily limit minutes.
-- Keyholder phone number.
-- Master PIN hash and salt.
-- Per-day usage counters keyed by date and package name.
-- Temporary unlock expiration timestamps keyed by package name.
-- Short-lived one-time approval codes keyed by package name and code, with requested minutes stored per code.
-- Salted hashes for three one-time emergency codes and the active 24-hour pause deadline.
+## Product And Safety Invariants
 
-No data should leave the device in the MVP except text the user explicitly
-sends through their chosen SMS app. Android backup and device-to-device
-transfer are disabled for AirLock's app-private state.
+- Never allow AirLock, launchers, phone/emergency, Settings, messaging, camera,
+  autofill, or credential-provider apps to become blocked.
+- Keep unmet requirements visible and name the exact recovery action. Never
+  equate a saved Duty toggle with a healthy running service.
+- Usage and approval state must survive ordinary process recreation without
+  letting stale authorization bypass the master PIN.
+- Errors and requirement states must remain understandable without color,
+  animation, or Goose jokes.
+- Emergency codes are recovery access, not ordinary Keyholder approvals.
+- Overlay enforcement is friction. Product copy and store claims must say so.
 
-## Android APIs
+## Roadmap Order
 
-### Foreground App Detection
+### 1. Internal Testing
 
-Use `UsageStatsManager` and `UsageEvents` to infer the active foreground app. Android requires `android.permission.PACKAGE_USAGE_STATS`; declaring the permission is not enough, because the user must grant Usage Access in Settings.
+- Finish the physical Pixel/Samsung matrix and multi-day reliability run.
+- Resolve Play App Signing, Play verification, tester list, support email, and
+  foreground-service declaration tasks.
+- Release the current `+5` build to friends through Play Internal testing and,
+  where useful, a correctly signed direct APK.
+- Collect reliability, battery, setup clarity, and blocker-return feedback.
 
-MVP behavior:
+### 2. Real Keyholder Authorization
 
-- Poll recent usage events every second on a dedicated background worker.
-- Use a short adaptive 200/500 ms recovery burst after recents interrupts a blocking overlay, then return to the one-second cadence.
-- Reconcile full-day UsageStats separately once per minute on another background worker.
-- Treat `MOVE_TO_FOREGROUND` and `ACTIVITY_RESUMED` as foreground signals.
-- Accrue elapsed time only when the same selected package remains active.
-- Persist in-memory usage totals in a single batch every 30 seconds and prune usage keys older than seven days.
+- Choose a backend SMS provider or Keyholder companion app.
+- Generate approvals outside the limited device.
+- Bind app, minutes, expiry, request identity, and one-time redemption to the
+  authorization record.
+- Add rate limits, attempt throttling, delivery/retry UX, privacy/security
+  review, and migration away from the deterministic test rule.
 
-### Blocking UI
+### 3. Accountability Hardening
 
-Use `WindowManager` with `TYPE_APPLICATION_OVERLAY` on Android 8.0+ and request `SYSTEM_ALERT_WINDOW`. The user must explicitly enable "Display over other apps." This is enough for a basic wall, but it is not hard security.
+- Optional delayed setting reductions, cooldowns, daily grant caps, and a local
+  audit trail.
+- Better timezone/midnight handling and broader OEM evidence.
+- Consider Device Owner only for a separate family/enterprise deployment; do
+  not quietly turn the consumer app into device-management software.
 
-### Service Lifetime
+## Distribution Posture
 
-Use a foreground service with a persistent notification. On Android 14+ foreground services require types and policy declarations if distributed through Google Play. For an MVP, `specialUse` is the closest fit, but this must be reviewed before Play submission.
+Google Play Internal testing is the primary friends-and-family path. Direct
+signed APK distribution remains useful for early testing, but Play Protect may
+warn about unknown-source installs. Package ownership and certificate
+verification do not remove that sideload warning.
 
-### SMS Code
+Before wider Play release, keep the privacy policy, Data safety answers,
+foreground-service declaration, screenshots, and store claims synchronized
+with the exact bundle. See `docs/RELEASE.md` and
+`docs/PLAY_CONSOLE_SUBMISSION.md`.
 
-Avoid `SEND_SMS` in the MVP. Google Play heavily restricts SMS and Call Log permissions. Use an `ACTION_SENDTO` intent with an `smsto:` URI to open the user's SMS app with a prefilled message.
+## Reference Implementations
 
-This has an accountability weakness: the request code and requested minutes are visible to the user before the message is sent to the Keyholder. The local approval code is derived from the request code, and the approved duration is stored against that pending approval code, but a production-grade version should use one of these instead:
+These informed the original MVP shape; do not copy code without reviewing
+license and architecture fit:
 
-- Backend-generated code sent by Twilio or another SMS provider.
-- Companion app for Keyholders.
-- Direct `SEND_SMS` only for sideload/F-Droid builds, after accepting the distribution tradeoff.
+- TapBlok: <https://github.com/cajdata/TapBlok>
+- Curbox: <https://github.com/curbox-app/curbox-android>
+- Open TimeLimit: <https://f-droid.org/en/packages/io.timelimit.android.open/>
+- Mindful: <https://github.com/akaMrNagar/Mindful>
 
-## Hardening Options After MVP
-
-- Add a setting-change delay so weakening limits takes effect later.
-- Add a cool-down before granting an unlock.
-- Add daily unlock caps.
-- Add code expiration and attempt throttling.
-- Add tamper notices when permissions are revoked.
-- Add Device Owner mode for family/enterprise installs where real policy enforcement is required.
-- Add a local VPN only if website blocking becomes a goal.
-- Add Accessibility Service only if we need in-app feature blocking or stronger foreground detection, and include the required disclosure/consent flow.
-
-## Policy And Compliance Risks
-
-- `PACKAGE_USAGE_STATS` exposes app usage behavior and should be requested only with clear user explanation.
-- `SYSTEM_ALERT_WINDOW` is powerful and visually intrusive, so the app must be transparent about why it is used.
-- `AccessibilityService` can trigger Play review and disclosure requirements. Use narrower APIs first.
-- Direct SMS permissions are usually not allowed unless the app is the default SMS, Phone, or Assistant handler.
-- Installed-app inventory can be sensitive. Prefer querying launchable apps through package visibility declarations instead of requesting broad `QUERY_ALL_PACKAGES`.
-
-## Open-Source References
-
-### TapBlok
-
-URL: https://github.com/cajdata/TapBlok
-
-Why it matters: smallest useful architectural reference. It is Kotlin, Apache 2.0, uses Usage Access, overlay blocking, a foreground monitoring service, QR/NFC unlock, schedules, and boot persistence. This is the best model for a focused MVP.
-
-### Curbox
-
-URL: https://github.com/curbox-app/curbox-android
-
-Why it matters: most feature-complete open-source app/site blocker reference. It includes app limits, unlock mechanisms, granular UI blocking, usage insights, and settings-delay ideas. It is GPL-3.0-or-later, so copying code would require compatible licensing.
-
-### Open TimeLimit
-
-URL: https://f-droid.org/en/packages/io.timelimit.android.open/
-
-Why it matters: mature open-source parental-control/time-limit reference. Its F-Droid listing documents usage access, overlays, notification access, accessibility, extra time, multi-user support, and device-admin anti-uninstall concepts.
-
-### Mindful
-
-URL: https://github.com/akaMrNagar/Mindful
-
-Why it matters: open-source screen-time app with Play Store presence, Flutter UI, Kotlin platform code, app limits, blocking, local VPN, notifications, and parental controls. Useful for product ideas, less ideal for this MVP if we want the smallest native scaffold.
-
-## Official References
-
-- UsageStatsManager: https://developer.android.com/reference/android/app/usage/UsageStatsManager
-- PACKAGE_USAGE_STATS permission: https://developer.android.com/reference/android/Manifest.permission#PACKAGE_USAGE_STATS
-- SYSTEM_ALERT_WINDOW permission: https://developer.android.com/reference/android/Manifest.permission#SYSTEM_ALERT_WINDOW
-- TYPE_APPLICATION_OVERLAY: https://developer.android.com/reference/android/view/WindowManager.LayoutParams#TYPE_APPLICATION_OVERLAY
-- SMS compose intents: https://developer.android.com/guide/components/intents-common#Messaging
-- Google Play SMS and Call Log policy: https://support.google.com/googleplay/android-developer/answer/10208820
-- Google Play AccessibilityService policy: https://support.google.com/googleplay/android-developer/answer/10964491
-- AccessibilityService API: https://developer.android.com/reference/android/accessibilityservice/AccessibilityService
-- DevicePolicyManager: https://developer.android.com/reference/android/app/admin/DevicePolicyManager
-
-## Milestones
-
-### Milestone 1: Local MVP
-
-- Native Android project builds.
-- Permission prompts work.
-- User can select apps.
-- Foreground service starts and stops.
-- Usage time accrues for selected apps.
-- Overlay appears after limit.
-- Code unlock grants extra time.
-
-### Milestone 2: Reliability
-
-- Better foreground detection fallback.
-- Boot persistence.
-- Daily reset edge cases.
-- Battery optimization guidance.
-- App exclusions and safety list.
-- Attempt throttling.
-
-### Milestone 3: Accountability
-
-- Replace the deterministic request-code conversion with backend-generated SMS.
-- Add Keyholder contact verification.
-- Add rate limits and audit trail stored locally.
-- Add unlock caps and optional delay.
-
-### Milestone 4: Distribution
-
-- Decide Play Store vs F-Droid/sideload.
-- Add privacy policy and prominent disclosures.
-- Review foreground service type declaration.
-- Avoid Accessibility unless necessary.
-- Prepare demo video for Play review if sensitive APIs are used.
+Relevant Android API and policy links are maintained in
+`docs/ARCHITECTURE.md`, `docs/RELIABILITY.md`, and `docs/RELEASE.md` rather than
+duplicated here.

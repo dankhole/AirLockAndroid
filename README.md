@@ -43,7 +43,7 @@ With Android Studio:
 With command-line tooling:
 
 ```sh
-./gradlew :app:assembleDebug
+./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ```
 
 ## First Device Test
@@ -60,65 +60,50 @@ With command-line tooling:
 6. Open the selected app and keep it foregrounded for over one minute.
 7. Confirm the goose overlay appears.
 8. Enter requested extra minutes and tap `Text the Keyholder!`.
-9. Return to the blocked app and enter the approval code for that request.
+9. For this internal-test build, derive the reply by adding 5 to each request
+   digit modulo 10, then return and enter that approval code.
 10. Confirm the goose animation plays and the overlay disappears for the requested duration.
 
 For emergency-code testing, use the master PIN to generate a replacement set, save or share the three plaintext codes, then hide them. Each 8-digit code can be used once to pause all goose blocking for 24 hours; only salted hashes remain on the device.
 
 ## Project Map
 
-```text
-app/src/main/AndroidManifest.xml
-  Permissions, activities, foreground service, boot receiver
+Start with [the documentation map](docs/README.md) and
+[current project status](docs/PROJECT_STATUS.md). The core runtime owners are:
 
-app/src/main/java/com/dankhole/airlockandroid/MainActivity.java
-  Settings, permission shortcuts, monitoring controls
-
-app/src/main/java/com/dankhole/airlockandroid/AppSelectionActivity.java
-  Launchable app list and selected package persistence
-
-app/src/main/java/com/dankhole/airlockandroid/MonitoringService.java
-  Foreground app polling, usage accrual, blocking overlay, code unlock
-
-app/src/main/java/com/dankhole/airlockandroid/Preferences.java
-  SharedPreferences keys, daily counters, unlocks, one-time codes
-
-docs/PRODUCT_LANGUAGE.md
-  Product roles, terminology, voice, and approval-flow copy rules
-
-app/src/main/java/com/dankhole/airlockandroid/BootReceiver.java
-  Restarts monitoring after reboot when enabled
-
-docs/APP_PLAN.md
-  Product purpose, scope, references, milestones
-
-docs/ARCHITECTURE.md
-  Runtime flow, data model, Android API details
-
-docs/DEVELOPMENT.md
-  Local setup, coding rules, debugging notes
-
-docs/TEST_PLAN.md
-  Build checks and manual validation matrix
-```
+- `MainActivity`: access gate, dashboard settings, health, usage, and Duty controls.
+- `AppSelectionActivity`: two-step guarded-app and limit editor.
+- `MonitoringService`: foreground detection, usage accrual, recovery, and overlay lifecycle.
+- `BlockerOverlayController`: blocker form state, validation, and celebrations.
+- `Preferences`: local state, per-app limits, approval records, and emergency codes.
+- `UiStyle`: reusable dark visual system, controls, status styles, and safe areas.
 
 ## Current Limitations
 
-- The SMS step opens the user's SMS app with the request code and requested minutes for the Keyholder. The local approval code is derived from the request code, and the requested minutes are stored against that pending approval code. This still is not production-grade accountability without a backend or companion app.
+- The internal-test approval code is a transparent per-digit `+5` transform of
+  the request code. Requested minutes are stored against that pending code for
+  10 minutes. This proves the Android flow but is not production-grade
+  accountability; a backend or Keyholder companion app is the next auth phase.
 - Overlay blocking is friction, not hard security. A determined user can revoke special permissions, force-stop, or uninstall the app.
 - The foreground app detector polls recent UsageEvents on a background thread. Full usage reconciliation runs separately once per minute, and OEM battery management can still affect reliability.
 - No settings-change delay, unlock caps, audit trail, or backend SMS provider yet.
 - Emergency day passes use the device clock and are intentional recovery access, not tamper-proof enforcement.
-- Release signing is configured locally, but there is no CI, store listing, or Play policy submission package yet.
+- Release signing and a Play submission draft exist, but there is no CI and the
+  complete physical-device release matrix has not passed yet.
 
 ## Documentation
 
+- [Documentation Map](docs/README.md)
+- [Current Project Status](docs/PROJECT_STATUS.md)
 - [App Plan](docs/APP_PLAN.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Monitoring Reliability](docs/RELIABILITY.md)
 - [Development Guide](docs/DEVELOPMENT.md)
+- [Product Language](docs/PRODUCT_LANGUAGE.md)
 - [Test Plan](docs/TEST_PLAN.md)
 - [Release Guide](docs/RELEASE.md)
-- [Privacy Notes](PRIVACY.md)
+- [Play Console Submission Draft](docs/PLAY_CONSOLE_SUBMISSION.md)
+- [Privacy Policy](PRIVACY.md)
 
 ## License
 

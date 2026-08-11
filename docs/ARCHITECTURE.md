@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: August 9, 2026
+Last updated: August 11, 2026
 
 ## Runtime Flow
 
@@ -33,15 +33,42 @@ Overlay
 
 ## Components
 
+### Ownership Map
+
+| Area | Primary owner |
+| --- | --- |
+| Access checks and first-run gate | `AndroidPermissions`, `RequiredAccessPolicy`, `PermissionSetupScreen` |
+| Dashboard and local settings | `MainActivity`, `MasterPinPrompt`, `UsageSummaryRenderer` |
+| App discovery and limit wizard | `AppCatalogLoader`, `AppPickerAdapter`, `AppSelectionActivity`, `EditAuthorization` |
+| Monitoring lifecycle and recovery | `MonitoringService`, `MonitoringHealth`, `BootReceiver` |
+| Foreground-event decisions and bounded work | `ForegroundEventPolicy`, `BoundedTaskExecutor` |
+| Usage accounting | `UsageLedger`, `UsageTracker`, `Preferences` |
+| Blocking form and unlock UX | `BlockerOverlayController`, `ApprovalCodePolicy`, `GooseCelebrationView` |
+| Safety exclusions | `CriticalApps`, `Preferences`, `MonitoringService` |
+| Styling, insets, keyboard, and mascot | `UiStyle`, `KeyboardHelper`, `GooseMascotView` |
+| Notification rendering | `MonitoringNotificationFactory`, `NotificationAccessPolicy` |
+| External privacy link | `AppLinks` |
+
+Pure policy and persistence behavior is covered by local JUnit tests. Android
+windowing, UsageStats delivery, process lifecycle, and OEM behavior require the
+debug smoke runner or physical-device plan.
+
 ### `MainActivity`
 
-The settings surface. It owns:
+The launcher activity. It switches between a dedicated required-access gate and
+the dashboard on every resume. The dashboard places Duty state and guarded-app
+usage first, then owns:
 
 - Permission shortcuts.
 - Monitoring on/off state.
 - Keyholder phone number.
 - Master override PIN setup.
 - Navigation to app limit setup.
+
+Notification visibility is part of the product gate even though Android can
+technically keep a foreground service running without the Android 13 runtime
+notification permission. This prevents AirLock from presenting invisible
+background monitoring as a fully configured experience.
 
 ### `AppSelectionActivity`
 
@@ -65,7 +92,10 @@ Owns blocker form rendering, per-app transient form state, validation,
 accessibility announcements, and the unlock celebration. `MonitoringService`
 retains enforcement and lifecycle ownership through a narrow listener
 contract. Emergency-code instructions are hidden behind a secondary reveal so
-the ordinary request flow remains focused.
+the ordinary request flow remains focused. Initial attachment focuses the
+window root and hides the keyboard; the keyboard opens only after explicit
+input interaction. Requested minutes, approval entry, errors, and emergency
+disclosure state survive temporary overlay removal for the same package.
 
 ### `ForegroundEventPolicy`
 
@@ -142,6 +172,8 @@ Small helper around `SharedPreferences`. Current keys:
 - `approval_code_expiry_<packageName>_<approvalCode>`
 - `approval_code_minutes_<packageName>_<approvalCode>`
 - `notification_permission_requested`
+- `last_usage_prune_day`
+- `health_*` service heartbeat, issue, exit, and recovery keys
 
 Usage keys older than seven days are pruned once per day. This remains acceptable for the MVP; move to Room only after usage history, analytics, or migrations become meaningful.
 
@@ -156,6 +188,15 @@ Ordinary extra-time request records are synchronously persisted before the SMS
 composer opens. Redemption removes the one-time approval metadata and writes
 the package unlock deadline in one committed preference transaction, so a
 process cannot persist only half of the grant.
+
+For the internal-test build, the request is six digits and the approval value
+adds 5 to each digit modulo 10. Every generated approval value is stored in a
+per-package pending set with the requested minutes and a 10-minute expiry.
+Several requests can coexist and can be redeemed out of order. The current
+minutes field is never consulted during redemption. Pending approval values are
+temporary app-private records, not salted hashes; the deterministic transform
+will be replaced by the real authorization design after the first testing
+release. Legacy single-code keys remain readable only for upgrade compatibility.
 
 ### `BootReceiver`
 
@@ -233,6 +274,7 @@ Known weakness: the request code and requested minutes are visible in the compos
 - Add a repository layer and typed settings object.
 - Add setting-change delay for weakening limits.
 - Add unlock attempt throttling.
-- Add a backend SMS code provider if accountability becomes the core differentiator.
+- Replace the deterministic internal-test approval transform with a backend or
+  Keyholder companion flow using server-generated, one-time authorization.
 - Add platform device instrumentation when the project permits an appropriate
   runner without changing the no-AndroidX production constraint.

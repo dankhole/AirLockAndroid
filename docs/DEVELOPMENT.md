@@ -1,10 +1,13 @@
 # Development Guide
 
-Last updated: August 9, 2026
+Last updated: August 11, 2026
 
 ## Status
 
-This is a compiling Android MVP, not a verified release. The debug build and lint run locally, but the manual test plan still needs physical-device coverage before any product claims are made.
+This is an internal-testing candidate, not a verified release. JVM tests,
+debug/release assembly, bundle generation, lint, and the batched emulator smoke
+flow work locally. The physical-device matrix still must pass before release
+readiness is claimed. See `docs/PROJECT_STATUS.md` for the current handoff.
 
 ## Local Setup
 
@@ -18,8 +21,7 @@ This is a compiling Android MVP, not a verified release. The debug build and lin
 Use the checked-in Gradle 8.11.1 wrapper:
 
 ```sh
-./gradlew :app:testDebugUnitTest
-./gradlew :app:assembleDebug
+./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ```
 
 The app compiles and targets Android 16 (`compileSdk 36`, `targetSdk 36`) using
@@ -151,13 +153,14 @@ Required because monitoring happens while the app is not foregrounded. The servi
 
 ### Notifications
 
-Recommended on Android 13+ so the ongoing duty and recovery state remains
-visible in the notification shade. Android allows the foreground service to
-run after notification permission is denied, but only exposes it through the
-system Active apps surface. AirLock reports that reduced visibility without
-treating it as a monitoring prerequisite. Notification readiness checks the
-runtime permission where applicable, app-level notification access, and the
-monitoring channel instead of assuming pre-Android-13 notifications are on.
+Android allows a foreground service to run after Android 13 notification
+permission is denied, exposing it only through the system Active apps surface.
+AirLock deliberately treats visible notifications as a product setup
+requirement so monitoring and recovery status cannot be hidden from the user.
+Revocation returns the UI to the access gate while an already-running service
+continues best-effort monitoring. Notification readiness checks the runtime
+permission where applicable, app-level notification access, and the monitoring
+channel instead of assuming pre-Android-13 notifications are on.
 
 ## Automated Tests
 
@@ -237,16 +240,10 @@ Start and stop from the app UI first. Use `adb -e` for emulator work and
 - Code unlock grants temporary extra time.
 - Monitoring can be stopped from the app.
 
-## Release Readiness Checklist
+## Release Readiness
 
-Do not treat this as releasable until these are done:
-
-- Add CI build.
-- Keep release signing credentials outside git and maintain a secure keystore backup.
-- Add privacy policy review.
-- Add in-app permission disclosures.
-- Verify critical-app exclusions on each release device matrix.
-- Add device test notes for at least Pixel and one Samsung device.
-- Decide Play Store vs F-Droid/sideload distribution.
-- Review foreground service policy and declaration text.
-- Replace SMS-compose code if strong accountability is required.
+The authoritative release checklist and current external blockers live in
+`docs/RELEASE.md`, `docs/PLAY_CONSOLE_SUBMISSION.md`, and
+`docs/PROJECT_STATUS.md`. Keep signing credentials outside Git, verify critical
+app exclusions on the release device matrix, and do not treat the transparent
+`+5` approval rule as production authentication.
