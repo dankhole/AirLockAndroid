@@ -35,6 +35,8 @@ The MVP currently includes:
 - A dark, safe-area-aware Goose UI and full-screen blocker that retains both
   inputs, stays readable on narrow phones, and does not open the keyboard until
   the user touches an input.
+- A navigation-safe blocker that clears for Home and Recents, keeps system
+  controls reachable, and treats Android Back as an explicit safe exit.
 - Multiple pending extra-time requests. Each approval grants the exact minutes
   saved when its request was created, even if the form changes later.
 - Three one-time emergency codes per replacement batch. Replacing a batch

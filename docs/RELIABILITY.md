@@ -91,6 +91,14 @@ never replace a known launcher or Recents candidate, because doing so can attach
 the blocker to a system-navigation surface after the guarded app has left the
 foreground.
 
+The five-minute sticky-blocker record is only a recovery hint for canceled
+Recents/launcher transitions and temporary overlay interruption. It does not
+authorize drawing over a known system surface. When Home, Recents, launcher, or
+System UI is the lifecycle candidate, the overlay must be removed while the
+service polls briefly for a return to the guarded app. Back on a focused blocker
+must also provide the same Home escape as `Leave App!` so a focusable overlay
+cannot trap all navigation.
+
 ## Diagnostics
 
 Useful device checks:
@@ -104,9 +112,11 @@ adb -e shell dumpsys deviceidle whitelist
 ```
 
 Debug builds log foreground transitions, recovery windows, query timeouts,
-overlay attachment failures, and aggregate candidate repairs under
+overlay attachment failures, and aggregate candidate seeding under
 `AirLockMonitor`. They do not log access codes, phone numbers, or app usage
-totals.
+totals. `NAVIGATION_ONLY=true scripts/android-smoke.sh --skip-build` uses a
+debug-only immediate trigger for the real sanity path; production polling
+intervals remain unchanged.
 
 ## Android References
 

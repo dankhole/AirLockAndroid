@@ -80,8 +80,9 @@ The requested-minutes field remains editable after a request and both numeric
 fields survive temporary overlay hide/reopen. A new request creates a separate
 pending approval; it does not replace or mutate earlier requests. The blocker
 must not open the keyboard on appearance. It may focus and open the keyboard
-only after explicit input interaction or after returning successfully from the
-SMS compose action.
+only after explicit input interaction or the explicit text-request action.
+Rebuilding the blocker after another app was foregrounded restores root focus
+and keeps the keyboard hidden.
 
 Recommended overlay labels:
 

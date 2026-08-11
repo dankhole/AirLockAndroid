@@ -78,7 +78,8 @@ backoff unless tests and device evidence justify a change. See
 - Put reusable colors, spacing, typography, cards, buttons, inputs, status
   treatments, safe-area handling, and responsive width rules in `UiStyle`.
   Keep the dark palette and consolidated green family; primary green buttons
-  use high-contrast light text.
+  use high-contrast light text. Follow [`docs/DESIGN.md`](docs/DESIGN.md) for
+  screen hierarchy, accessibility, system-bar, and Goose visual rules.
 - Put user-visible text and plurals in `strings.xml`. Follow
   [`docs/PRODUCT_LANGUAGE.md`](docs/PRODUCT_LANGUAGE.md) for Goose/Keyholder
   roles and keep requirement/error copy clear before making it playful.
@@ -100,9 +101,11 @@ For a coherent code batch, run:
 
 Also run `:app:assembleRelease :app:bundleRelease` for release/signing changes.
 Run `scripts/android-smoke.sh` once at a meaningful UI, permission, service, or
-overlay checkpoint, not after every small edit. Before release readiness, run
-[`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) on a physical Pixel and Samsung device;
-emulator success does not validate multi-day reliability or battery impact.
+overlay checkpoint, not after every small edit. For blocker navigation work,
+run `NAVIGATION_ONLY=true scripts/android-smoke.sh --skip-build`. Before
+release readiness, run [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) on a physical
+Pixel and Samsung device; emulator success does not validate multi-day
+reliability or battery impact.
 
 ## Code Review Rules
 
@@ -112,5 +115,8 @@ emulator success does not validate multi-day reliability or battery impact.
 - Flag approval grants that read current form minutes instead of persisted
   request metadata, non-atomic one-time-code consumption, or stale critical-app
   selections that could survive filtering.
+- Flag any aggregate `UsageStats` fallback that can replace a foreground
+  candidate already established by lifecycle events, especially launcher,
+  Recents, or System UI. It may seed only an unknown candidate.
 - Flag new sensitive permissions, data egress, backup enablement, release-key
   changes, or Play declarations that no longer match the shipped build.

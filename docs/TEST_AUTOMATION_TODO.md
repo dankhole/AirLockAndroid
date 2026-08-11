@@ -34,6 +34,19 @@ it cannot accidentally drive a connected physical phone.
 - [ ] Keep test fixture data in the emulator app sandbox and clear it only when
   a test explicitly requests a clean-install scenario.
 
+## P0: Harness Reliability
+
+- [ ] Fix the Android 17/API 37 rotation race in the broad smoke runner. The
+  wizard state appears to survive, but `uiautomator dump` can miss the restored
+  portrait hierarchy; replace the timing assumption with an explicit rotation
+  and window-stability wait.
+- [ ] Add a short self-check that distinguishes an unavailable UI hierarchy,
+  an emulator rotation failure, and an actual missing app control in the
+  failure report.
+- [x] Keep blocker navigation in a separate approximately 30-second path with a
+  debug-only immediate foreground-sanity trigger; do not sleep through the
+  production 30-second interval or run this matrix after every small change.
+
 ## P0: Black-Box Emulator Smoke Runner
 
 - [x] Add `scripts/android-smoke.sh` using `adb -e`; fail when zero or multiple

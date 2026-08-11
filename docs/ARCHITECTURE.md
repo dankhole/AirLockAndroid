@@ -53,6 +53,19 @@ Pure policy and persistence behavior is covered by local JUnit tests. Android
 windowing, UsageStats delivery, process lifecycle, and OEM behavior require the
 debug smoke runner or physical-device plan.
 
+### State Ownership
+
+| Lifetime | State | Owner |
+| --- | --- | --- |
+| Installation-persistent | Duty intent, limits, usage totals, Keyholder number, PIN/hash material, pending approvals, unlock deadlines, emergency codes/pause, health history | `Preferences` / app-private `SharedPreferences` |
+| Process-local | Service-running truth, foreground candidate, bounded worker state, sticky blocker recovery, retained blocker fields, app-editor authorization sessions | `MonitoringHealth`, `MonitoringService`, `BlockerOverlayController`, `EditAuthorization` |
+| Android-derived | Access grants, foreground lifecycle events, aggregate usage, keyguard/display state, background restriction, process-exit reason | Platform services through the narrow owners above |
+
+Do not persist process-local edit authorization or blocker form state merely to
+survive process death; doing so changes the security and recovery contract.
+Conversely, do not use a process-local boolean as proof of durable Duty intent
+or saved approval metadata.
+
 ### `MainActivity`
 
 The launcher activity. It switches between a dedicated required-access gate and
@@ -68,7 +81,10 @@ usage first, then owns:
 Notification visibility is part of the product gate even though Android can
 technically keep a foreground service running without the Android 13 runtime
 notification permission. This prevents AirLock from presenting invisible
-background monitoring as a fully configured experience.
+background monitoring as a fully configured experience. If notification access
+is revoked while Duty is already running, the dashboard returns to the gate but
+the service remains best-effort active; notification visibility does not
+silently clear the saved Duty intent.
 
 ### `AppSelectionActivity`
 
@@ -95,7 +111,18 @@ contract. Emergency-code instructions are hidden behind a secondary reveal so
 the ordinary request flow remains focused. Initial attachment focuses the
 window root and hides the keyboard; the keyboard opens only after explicit
 input interaction. Requested minutes, approval entry, errors, and emergency
-disclosure state survive temporary overlay removal for the same package.
+disclosure state survive temporary overlay removal for the same package. Back
+with the keyboard closed routes to the same Home exit as `Leave App!`; Recents,
+Home, and navigation surfaces must remain usable while the blocker is hidden.
+
+### `UiStyle`
+
+The programmatic design-system layer for plain platform Views. It owns the dark
+palette, semantic status roles, typography, 52+ dp controls, cards, buttons,
+inputs, responsive width hosts, system/cutout inset padding, and overlay
+system-bar scrims. `GooseMascotView` and `GooseCelebrationView` are decorative
+Canvas views and stay outside the accessibility tree. See `docs/DESIGN.md` for
+the screen and accessibility contract.
 
 ### `ForegroundEventPolicy`
 
@@ -139,8 +166,10 @@ queries filter to lifecycle event types. A newly observed launcher or system
 surface starts a bounded gesture-recovery window that polls at 200 ms for up to
 three seconds. Recovery for an already-blocked app can continue at 500 ms
 through 15 seconds before returning to normal cadence. A low-frequency
-UsageStats sanity check repairs a stale foreground candidate every 30 seconds
-if the event stream missed a transition.
+UsageStats sanity check runs every 30 seconds but may seed only an unknown
+candidate when the event query saw no lifecycle event. Aggregate `lastTimeUsed`
+must never replace a known lifecycle candidate, especially launcher, Recents,
+or System UI; doing so previously reattached the blocker over system navigation.
 
 UsageStats work pauses while the screen is off or the keyguard is showing and
 resumes immediately on screen-on/unlock. Foreground queries have a ten-second
@@ -218,6 +247,15 @@ not treated as proof that the service is alive. Only an explicit PIN-authorized
 stop clears that intent; missing access or transient Android failures leave it
 set so the service can recover.
 
+### Debug-Only Test Surface
+
+The debug manifest alone exports `DebugFixtureReceiver` and
+`DebugBlockerActivity`. They seed deterministic local state, render the real
+blocker controller, and can ask an already-running debug service to execute the
+production foreground-sanity path immediately with a log token. Release builds
+contain neither exported component. Keep fixture capabilities in the debug
+source set and never add a release bypass for test speed.
+
 ## Android API Choices
 
 ### Usage Access
@@ -272,6 +310,10 @@ Known weakness: the request code and requested minutes are visible in the compos
 ## Next Architecture Upgrades
 
 - Add a repository layer and typed settings object.
+- Split `MainActivity` and `MonitoringService` only at tested ownership
+  boundaries; both remain large MVP orchestrators and high-regression areas.
+- Inject clocks and foreground/usage sources at narrow policy boundaries for
+  deterministic midnight, expiry, delayed-event, and recovery tests.
 - Add setting-change delay for weakening limits.
 - Add unlock attempt throttling.
 - Replace the deterministic internal-test approval transform with a backend or

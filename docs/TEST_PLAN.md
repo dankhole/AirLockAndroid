@@ -24,6 +24,11 @@ notification visibility policy, and monitoring-exit recovery classification.
 See `docs/TEST_AUTOMATION_TODO.md` for the staged work to automate this manual
 matrix without running a full emulator pass after every small change.
 
+Current automation evidence and known harness failures live in
+`docs/PROJECT_STATUS.md`. A focused navigation pass does not imply the broad
+smoke flow or physical matrix passed, and an automation hierarchy/rotation
+failure must be triaged separately from an app crash or state-loss failure.
+
 ## Manual MVP Tests
 
 ### Permission Onboarding
@@ -160,7 +165,8 @@ color or animation.
    reachable by scrolling.
 3. Enable TalkBack and confirm requirement states, app selection state,
    labeled inputs, validation errors, and the granted-minute announcement are
-   read in a logical order.
+   read in a logical order. Record that section-title heading navigation is
+   currently a known gap if it has not been implemented before this run.
 4. Disable system animations and confirm a successful grant completes without
    waiting for or requiring the goose animation.
 

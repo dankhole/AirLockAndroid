@@ -14,8 +14,8 @@ changes.
 | Release certificate | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
 | Target SDK | 36 |
 | Version | `versionCode 1`, `versionName 0.1.0` |
-| Signed AAB | `releases/AirLock-Goose-0.1.0.aab` (local and Git-ignored) |
-| Privacy policy | Source and in-app link prepared; public raw URL updates only after commit/push |
+| Signed AAB | Existing local copy is stale after `16bd88c`; rebuild before upload |
+| Privacy policy | Published at the current raw GitHub URL and linked in-app; re-check after policy changes |
 | Play Console developer verification | Owner must confirm completion |
 | Play App Signing strategy | Owner must choose before first upload; see `docs/RELEASE.md` |
 | Tester list | Owner must provide Google-account email addresses |
@@ -33,14 +33,15 @@ https://raw.githubusercontent.com/dankhole/AirLockAndroid/master/PRIVACY.md
 Replace this with a branded HTTPS page before public launch if one becomes
 available. Keep the in-app URL and Play Console URL identical.
 
-Current AAB SHA-256:
+Historical AAB SHA-256 (do not upload this artifact):
 
 ```text
 3779d53b53eb85f616f89dab939562d030b8daf2a6d16939aa91944c89053a07
 ```
 
-This checksum describes only the currently prepared local bundle. Rebuild and
-replace the checksum after any packaged Java, manifest, or resource change.
+This checksum describes the pre-navigation-fix local bundle. Rebuild from the
+exact release candidate, verify its certificate, replace this checksum, and
+only then upload the new bundle.
 
 ## Create App
 

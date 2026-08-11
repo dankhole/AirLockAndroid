@@ -12,6 +12,7 @@ tests.
 | [`PROJECT_STATUS.md`](PROJECT_STATUS.md) | Current stage, shipped capabilities, open decisions, next sequence | Starting any new task or release work |
 | [`APP_PLAN.md`](APP_PLAN.md) | Product purpose, scope, non-goals, and roadmap | Product behavior or feature scope |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Runtime flow, component ownership, state model, and behavioral invariants | Java structure, persistence, authorization, or Android APIs |
+| [`DESIGN.md`](DESIGN.md) | Screen hierarchy, dark visual system, accessibility baseline, and system-area behavior | UI, styling, forms, responsive layout, insets, or Goose visuals |
 | [`RELIABILITY.md`](RELIABILITY.md) | Monitoring contract, recovery matrix, polling budgets, and platform limits | Service lifecycle, UsageStats, overlays, boot, battery, or health |
 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | Local setup, coding/style conventions, debug tooling, and routine validation | Implementing or testing code |
 | [`PRODUCT_LANGUAGE.md`](PRODUCT_LANGUAGE.md) | Goose/Keyholder roles, voice, and approval-flow wording | UI, notifications, SMS copy, screenshots, or listing text |
@@ -30,9 +31,17 @@ tests.
   or a major decision is made.
 - Keep durable rules in `AGENTS.md`; do not copy full architecture or release
   instructions into it.
+- Put volatile evidence, current release stage, external owner actions, and
+  known blockers in `PROJECT_STATUS.md`, not in `AGENTS.md`.
 - Update one canonical document and link to it instead of duplicating detailed
   tables across files. `RELIABILITY.md` owns polling/recovery numbers;
-  `RELEASE.md` owns signing steps; `PRIVACY.md` owns public data claims.
+  `DESIGN.md` owns UI/accessibility rules; `RELEASE.md` owns signing steps;
+  `PRIVACY.md` owns public data claims.
+- Promote consequential user feedback and repeated agent mistakes into the
+  narrowest durable rule, test, or source-of-truth document. Do not preserve a
+  conversation transcript when a concise invariant and evidence link suffice.
+- Add a nested `AGENTS.md` only when a subtree genuinely needs different
+  commands or conventions; otherwise keep one root instruction chain.
 - Dates mean the file was checked against the repository on that date, not that
   every external policy link is permanently current. Re-check Play and Android
   policy sources at submission time.
@@ -41,5 +50,5 @@ This layout follows current Codex guidance: repository instructions are layered
 by directory, so the root `AGENTS.md` stays small and points to deeper sources
 instead of becoming an encyclopedia. References:
 
-- <https://developers.openai.com/codex/guides/agents-md/>
+- <https://learn.chatgpt.com/docs/agent-configuration/agents-md>
 - <https://openai.com/index/harness-engineering/>

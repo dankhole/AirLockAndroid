@@ -89,7 +89,9 @@ Start with [the documentation map](docs/README.md) and
 - No settings-change delay, unlock caps, audit trail, or backend SMS provider yet.
 - Emergency day passes use the device clock and are intentional recovery access, not tamper-proof enforcement.
 - Release signing and a Play submission draft exist, but there is no CI and the
-  complete physical-device release matrix has not passed yet.
+  complete physical-device release matrix has not passed yet. The focused
+  blocker-navigation emulator path passes; the broad Android 17 smoke path has
+  a known rotation/UI-dump harness race.
 
 ## Documentation
 
@@ -97,6 +99,7 @@ Start with [the documentation map](docs/README.md) and
 - [Current Project Status](docs/PROJECT_STATUS.md)
 - [App Plan](docs/APP_PLAN.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [UI And Accessibility Design](docs/DESIGN.md)
 - [Monitoring Reliability](docs/RELIABILITY.md)
 - [Development Guide](docs/DEVELOPMENT.md)
 - [Product Language](docs/PRODUCT_LANGUAGE.md)

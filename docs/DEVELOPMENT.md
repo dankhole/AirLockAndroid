@@ -5,9 +5,11 @@ Last updated: August 11, 2026
 ## Status
 
 This is an internal-testing candidate, not a verified release. JVM tests,
-debug/release assembly, bundle generation, lint, and the batched emulator smoke
-flow work locally. The physical-device matrix still must pass before release
-readiness is claimed. See `docs/PROJECT_STATUS.md` for the current handoff.
+debug/release assembly, bundle generation, and lint work locally. The focused
+blocker-navigation emulator path passes; the broad smoke path has a documented
+Android 17 rotation harness race. The physical-device matrix still must pass
+before release readiness is claimed. See `docs/PROJECT_STATUS.md` for the
+current handoff.
 
 ## Local Setup
 
@@ -63,6 +65,8 @@ covered in `docs/TEST_PLAN.md`.
 ## Programmatic UI Styling
 
 This app uses platform Java views, so shared styling lives in `UiStyle.java`.
+The canonical screen hierarchy, accessibility baseline, measured color pairs,
+and inset rules live in `docs/DESIGN.md`.
 New UI should use that helper for colors, spacing, text styles, cards, buttons,
 input fields, status messages, selectable rows, overlay controls, and system
 inset padding. Avoid hardcoded colors, corner radii, button backgrounds, and
@@ -210,6 +214,14 @@ timing remains unchanged; the test does not wait on the 30-second wall clock.
 It skips unrelated setup, picker, and approval scenarios. Run both the normal
 and focused commands for a release candidate. Set
 `NAVIGATION_MATRIX=false` only to debug the emulator's current navigation mode.
+
+Known current harness limitation: on the Android 17/API 37 emulator, the broad
+runner can fail at the app-limit wizard rotation step because `uiautomator dump`
+does not observe the restored portrait hierarchy in time. Treat that as an open
+automation issue, not a passed broad suite and not automatically as a product
+rotation failure. The focused navigation path remains independent and passes in
+about 30 seconds. See `docs/PROJECT_STATUS.md` for the last evidence and
+`docs/TEST_AUTOMATION_TODO.md` for the repair item.
 
 Debug builds alone include `DebugFixtureReceiver` and `DebugBlockerActivity`
 for deterministic state, blocker setup, and immediate foreground-sanity test
