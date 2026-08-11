@@ -73,4 +73,22 @@ public class ForegroundEventPolicyTest {
                 Build.VERSION_CODES.Q
         ));
     }
+
+    @Test
+    public void usageSummaryOnlySeedsAnUnknownForegroundAtSanityCheck() {
+        assertTrue(ForegroundEventPolicy.shouldSeedFromUsageSummary(null, false, true));
+
+        assertFalse(ForegroundEventPolicy.shouldSeedFromUsageSummary(
+                SYSTEM_UI,
+                false,
+                true
+        ));
+        assertFalse(ForegroundEventPolicy.shouldSeedFromUsageSummary(
+                BLOCKED_APP,
+                false,
+                true
+        ));
+        assertFalse(ForegroundEventPolicy.shouldSeedFromUsageSummary(null, true, true));
+        assertFalse(ForegroundEventPolicy.shouldSeedFromUsageSummary(null, false, false));
+    }
 }

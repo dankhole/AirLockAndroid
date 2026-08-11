@@ -5,6 +5,7 @@ import android.graphics.Rect;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
@@ -249,9 +250,29 @@ final class BlockerOverlayController {
     }
 
     void onAttached(View overlayView) {
+        installBackHandler(overlayView);
         overlayView.setFocusableInTouchMode(true);
         overlayView.requestFocus();
         KeyboardHelper.hide(context, overlayView);
+    }
+
+    private void installBackHandler(View view) {
+        view.setOnKeyListener((focusedView, keyCode, event) -> {
+            if (keyCode != KeyEvent.KEYCODE_BACK) {
+                return false;
+            }
+            if (event.getAction() == KeyEvent.ACTION_UP) {
+                listener.onLeaveApp();
+            }
+            return true;
+        });
+        if (!(view instanceof ViewGroup)) {
+            return;
+        }
+        ViewGroup group = (ViewGroup) view;
+        for (int index = 0; index < group.getChildCount(); index++) {
+            installBackHandler(group.getChildAt(index));
+        }
     }
 
     void clearFormState(String packageName) {

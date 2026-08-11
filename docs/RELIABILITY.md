@@ -36,7 +36,7 @@ recorded. Do not turn an emulator pass into a device-reliability claim.
 | Usage Access revoked or temporarily unavailable | AppOps check and query result | Keep service/notification alive; retry every 30 seconds |
 | Overlay access revoked | Settings check | Hide blocker, show required state, retry every 30 seconds |
 | Delayed UsageEvents | Ten-second overlapping query window | Reprocess recent lifecycle events without double-counting elapsed time |
-| Missed foreground transition | 30-second aggregate sanity check | Repair the foreground package candidate |
+| Unknown foreground after service creation | 30-second aggregate sanity check | Seed an empty candidate only when no lifecycle event supplied one; aggregate stats never override a known launcher, System UI, or app candidate |
 | Stuck foreground query | Ten-second main-thread watchdog | Use at most two process-wide workers with no queue; reject additional work and retry every 30 seconds until a worker returns or the process restarts |
 | Overlay attach failure | `WindowManager.addView` exception | Exponential retry from one to 30 seconds |
 | Screen off or keyguard visible | Screen/user-present broadcasts plus state check | Flush usage, stop querying, resume immediately after unlock |
@@ -83,6 +83,13 @@ Retained blocker input is process-local UI state and does not participate in
 foreground detection, UsageEvents queries, or polling cadence. Preserve it when
 investigating blocker latency; gesture-switch regressions belong in the event
 overlap/recovery path unless device evidence shows otherwise.
+
+`UsageEvents` activity lifecycle transitions are the authoritative foreground
+signal once a candidate exists. `queryUsageStats()` is interval-aggregated and
+is used only to seed an unknown candidate during a bounded sanity check. It must
+never replace a known launcher or Recents candidate, because doing so can attach
+the blocker to a system-navigation surface after the guarded app has left the
+foreground.
 
 ## Diagnostics
 

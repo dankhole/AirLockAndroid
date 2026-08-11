@@ -59,4 +59,12 @@ final class ForegroundEventPolicy {
     static boolean samePackage(String left, String right) {
         return left == null ? right == null : left.equals(right);
     }
+
+    static boolean shouldSeedFromUsageSummary(
+            String candidate,
+            boolean sawLifecycleEvent,
+            boolean runSanityCheck
+    ) {
+        return runSanityCheck && candidate == null && !sawLifecycleEvent;
+    }
 }

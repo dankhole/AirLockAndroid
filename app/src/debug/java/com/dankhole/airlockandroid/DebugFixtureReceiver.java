@@ -22,9 +22,11 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
     static final String EXTRA_MONITORING = "monitoring";
     static final String EXTRA_REQUEST_MINUTES = "request_minutes";
     static final String EXTRA_EMERGENCY_CODES = "emergency_codes";
+    static final String EXTRA_SANITY_TOKEN = "sanity_token";
 
     private static final String COMMAND_RESET = "reset";
     private static final String COMMAND_SEED = "seed";
+    private static final String COMMAND_FORCE_FOREGROUND_SANITY = "force_foreground_sanity";
     private static final String DEFAULT_TARGET_PACKAGE = "com.google.android.youtube";
     private static final String FIXTURE_PHONE_NUMBER = "5555551212";
     private static final String FIXTURE_MASTER_PIN = "1234";
@@ -39,6 +41,10 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
         }
         if (COMMAND_SEED.equals(command)) {
             seed(context, intent);
+            return;
+        }
+        if (COMMAND_FORCE_FOREGROUND_SANITY.equals(command)) {
+            forceForegroundSanityCheck(context, intent);
             return;
         }
         fail("Unknown fixture command: " + command);
@@ -104,6 +110,25 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
             result.append(";emergency=").append(String.join(",", codes));
         }
         succeed(result.toString());
+    }
+
+    private void forceForegroundSanityCheck(Context context, Intent intent) {
+        if (!Preferences.isMonitoringRequested(context)) {
+            fail("Monitoring must be requested before forcing a foreground sanity check");
+            return;
+        }
+        Intent serviceIntent = new Intent(context, MonitoringService.class);
+        serviceIntent.setAction(MonitoringService.ACTION_DEBUG_FORCE_FOREGROUND_SANITY);
+        serviceIntent.putExtra(
+                MonitoringService.EXTRA_DEBUG_SANITY_TOKEN,
+                intent.getStringExtra(EXTRA_SANITY_TOKEN)
+        );
+        try {
+            context.startService(serviceIntent);
+            succeed("foreground sanity requested");
+        } catch (RuntimeException exception) {
+            fail("Foreground sanity request failed: " + exception.getClass().getSimpleName());
+        }
     }
 
     private void succeed(String message) {

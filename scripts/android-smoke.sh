@@ -7,6 +7,8 @@ ADB="${ADB:-${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb}"
 PACKAGE="com.dankhole.airlockandroid"
 TARGET_PACKAGE="${TARGET_PACKAGE:-com.google.android.youtube}"
 TARGET_QUERY="${TARGET_QUERY:-YouTube}"
+NAVIGATION_MATRIX="${NAVIGATION_MATRIX:-true}"
+NAVIGATION_ONLY="${NAVIGATION_ONLY:-false}"
 APK="$ROOT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 REPORT_DIR="$ROOT_DIR/app/build/reports/android-smoke/$STAMP"
@@ -69,6 +71,9 @@ ORIGINAL_FONT_SCALE="$(read_setting system font_scale)"
 ORIGINAL_WINDOW_ANIMATION="$(read_setting global window_animation_scale)"
 ORIGINAL_TRANSITION_ANIMATION="$(read_setting global transition_animation_scale)"
 ORIGINAL_ANIMATOR_DURATION="$(read_setting global animator_duration_scale)"
+ORIGINAL_NAVIGATION_OVERLAY="$(adb_e shell cmd overlay list 2>/dev/null \
+    | sed -n 's/^\[x\] \(com\.android\.internal\.systemui\.navbar\.[^[:space:]]*\).*/\1/p' \
+    | head -1 | tr -d '\r')"
 ORIGINAL_OVERRIDE_SIZE="$(adb_e shell wm size | sed -n 's/.*Override size: \([0-9][0-9]*x[0-9][0-9]*\).*/\1/p' | head -1 | tr -d '\r')"
 ORIGINAL_OVERRIDE_DENSITY="$(adb_e shell wm density | sed -n 's/.*Override density: \([0-9][0-9]*\).*/\1/p' | head -1 | tr -d '\r')"
 ORIGINAL_USAGE_OP="default"
@@ -98,6 +103,34 @@ wait_for_id() {
         sleep 0.5
     done
     fail "Timed out waiting for resource ID $id during $CURRENT_SCENARIO"
+}
+
+wait_for_id_absent() {
+    local id="$1"
+    local timeout_seconds="${2:-15}"
+    local attempt
+    for ((attempt = 0; attempt < timeout_seconds * 2; attempt++)); do
+        if dump_ui "wait-absent-$id" 2>/dev/null \
+                && ! grep -q "resource-id=\"$PACKAGE:id/$id\"" "$LATEST_XML"; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    fail "Timed out waiting for resource ID $id to disappear during $CURRENT_SCENARIO"
+}
+
+wait_for_log() {
+    local expected="$1"
+    local timeout_seconds="${2:-10}"
+    local attempt
+    for ((attempt = 0; attempt < timeout_seconds * 5; attempt++)); do
+        if adb_e logcat -d -v brief AirLockMonitor:D '*:S' 2>/dev/null \
+                | grep -Fq "$expected"; then
+            return 0
+        fi
+        sleep 0.2
+    done
+    fail "Timed out waiting for log '$expected' during $CURRENT_SCENARIO"
 }
 
 view_attribute() {
@@ -186,9 +219,104 @@ set_portrait() {
     adb_e shell settings put system user_rotation 0 >/dev/null
 }
 
+set_navigation_overlay() {
+    local overlay="$1"
+    local attempt
+    [[ -n "$overlay" ]] || return 0
+    adb_e shell cmd overlay enable-exclusive --category "$overlay" >/dev/null
+    for ((attempt = 0; attempt < 15; attempt++)); do
+        if adb_e shell cmd overlay list 2>/dev/null \
+                | grep -Fq "[x] $overlay"; then
+            return 0
+        fi
+        sleep 0.2
+    done
+    fail "Timed out enabling navigation overlay $overlay"
+}
+
+assert_blocker_clear_of_navigation_bar() {
+    local bounds bottom
+    bounds="$(view_attribute blocker_root bounds)"
+    if [[ ! "$bounds" =~ ^\[[0-9]+,[0-9]+\]\[[0-9]+,([0-9]+)\]$ ]]; then
+        fail "Could not read blocker bounds during $CURRENT_SCENARIO: $bounds"
+        return 1
+    fi
+    bottom="${BASH_REMATCH[1]}"
+    if ((bottom >= SCREEN_HEIGHT)); then
+        fail "Blocker extends through the navigation region: $bounds on ${SCREEN_WIDTH}x${SCREEN_HEIGHT}"
+    fi
+}
+
+run_blocker_navigation_scenario() {
+    local navigation_overlay="$1"
+    local mode_name="${navigation_overlay##*.}"
+    local sanity_token startup_token home_token
+    [[ -n "$mode_name" ]] || mode_name="current"
+    CURRENT_SCENARIO="blocker-navigation-$mode_name"
+
+    set_navigation_overlay "$navigation_overlay"
+    fixture seed --es target_package "$TARGET_PACKAGE" --ez monitoring true >/dev/null
+    adb_e shell am start -W -n "$PACKAGE/.MainActivity" >/dev/null
+    startup_token="startup-$mode_name-$RANDOM-$RANDOM"
+    fixture force_foreground_sanity --es sanity_token "$startup_token" >/dev/null
+    wait_for_log "debug foreground sanity check completed token=$startup_token" 10
+    adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    wait_for_id blocker_root 20
+    assert_blocker_clear_of_navigation_bar
+
+    adb_e shell input keyevent KEYCODE_APP_SWITCH
+    sanity_token="$mode_name-$RANDOM-$RANDOM"
+    fixture force_foreground_sanity --es sanity_token "$sanity_token" >/dev/null
+    wait_for_log "debug foreground sanity check completed token=$sanity_token" 10
+    wait_for_id_absent blocker_root 10
+    capture_current_artifacts "$CURRENT_SCENARIO-recents"
+
+    adb_e shell input keyevent KEYCODE_HOME
+    home_token="home-$mode_name-$RANDOM-$RANDOM"
+    fixture force_foreground_sanity --es sanity_token "$home_token" >/dev/null
+    wait_for_log "debug foreground sanity check completed token=$home_token" 10
+    wait_for_id_absent blocker_root 10
+    adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    wait_for_id blocker_root 20
+
+    adb_e shell input keyevent KEYCODE_BACK
+    wait_for_id_absent blocker_root 10
+    capture_current_artifacts "$CURRENT_SCENARIO-back"
+}
+
+run_blocker_navigation_matrix() {
+    local navigation_overlay
+    local navigation_overlays=("$ORIGINAL_NAVIGATION_OVERLAY")
+    if [[ "$NAVIGATION_MATRIX" == "true" ]]; then
+        while IFS= read -r navigation_overlay; do
+            [[ -n "$navigation_overlay" ]] || continue
+            if [[ " ${navigation_overlays[*]} " != *" $navigation_overlay "* ]]; then
+                navigation_overlays+=("$navigation_overlay")
+            fi
+        done < <(adb_e shell cmd overlay list 2>/dev/null \
+            | sed -n 's/^\[[x ]\] \(com\.android\.internal\.systemui\.navbar\.[^[:space:]]*\).*/\1/p' \
+            | tr -d '\r' \
+            | grep -E '\.(gestural|threebutton)$' || true)
+    fi
+    for navigation_overlay in "${navigation_overlays[@]}"; do
+        run_blocker_navigation_scenario "$navigation_overlay"
+    done
+    set_navigation_overlay "$ORIGINAL_NAVIGATION_OVERLAY"
+}
+
 capture_artifacts() {
     local name="$1"
     dump_ui "$name" >/dev/null 2>&1 || true
+    adb_e shell screencap -p "$REMOTE_SCREENSHOT" >/dev/null 2>&1 || true
+    adb_e pull "$REMOTE_SCREENSHOT" "$REPORT_DIR/$name.png" >/dev/null 2>&1 || true
+    adb_e logcat -d -v threadtime >"$REPORT_DIR/$name.log" 2>/dev/null || true
+}
+
+capture_current_artifacts() {
+    local name="$1"
+    if [[ -f "$LATEST_XML" ]]; then
+        cp "$LATEST_XML" "$REPORT_DIR/$name.xml"
+    fi
     adb_e shell screencap -p "$REMOTE_SCREENSHOT" >/dev/null 2>&1 || true
     adb_e pull "$REMOTE_SCREENSHOT" "$REPORT_DIR/$name.png" >/dev/null 2>&1 || true
     adb_e logcat -d -v threadtime >"$REPORT_DIR/$name.log" 2>/dev/null || true
@@ -238,6 +366,9 @@ finish() {
     restore_setting global window_animation_scale "$ORIGINAL_WINDOW_ANIMATION"
     restore_setting global transition_animation_scale "$ORIGINAL_TRANSITION_ANIMATION"
     restore_setting global animator_duration_scale "$ORIGINAL_ANIMATOR_DURATION"
+    if [[ -n "$ORIGINAL_NAVIGATION_OVERLAY" ]]; then
+        set_navigation_overlay "$ORIGINAL_NAVIGATION_OVERLAY" >/dev/null 2>&1 || true
+    fi
     if [[ -n "$ORIGINAL_OVERRIDE_SIZE" ]]; then
         adb_e shell wm size "$ORIGINAL_OVERRIDE_SIZE" >/dev/null 2>&1
     else
@@ -288,6 +419,15 @@ if adb_e shell pm grant "$TARGET_PACKAGE" \
     TARGET_NOTIFICATION_MANAGED=true
 fi
 adb_e logcat -c
+
+if [[ "$NAVIGATION_ONLY" == "true" ]]; then
+    adb_e shell appops set --uid "$PACKAGE" GET_USAGE_STATS allow
+    adb_e shell appops set --uid "$PACKAGE" SYSTEM_ALERT_WINDOW allow
+    adb_e shell pm grant "$PACKAGE" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
+    run_blocker_navigation_matrix
+    check_logs
+    exit 0
+fi
 
 CURRENT_SCENARIO="required-setup"
 fixture reset >/dev/null
@@ -375,7 +515,6 @@ launch_main
 sleep 2
 adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 wait_for_id blocker_root 20
-adb_e shell input keyevent 4
 tap_id blocker_unlock
 wait_for_id blocker_error
 assert_id_contains blocker_error REQUIRED
@@ -386,7 +525,6 @@ adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/
 wait_for_id blocker_root 20
 assert_id_contains blocker_minutes 9
 assert_id_contains blocker_approval_code 123
-adb_e shell input keyevent 4
 tap_id blocker_unlock
 wait_for_id blocker_error
 assert_id_contains blocker_error REQUIRED

@@ -54,6 +54,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class MonitoringService extends Service {
     public static final String ACTION_START = "com.dankhole.airlockandroid.START";
     public static final String ACTION_STOP = "com.dankhole.airlockandroid.STOP";
+    static final String ACTION_DEBUG_FORCE_FOREGROUND_SANITY =
+            "com.dankhole.airlockandroid.DEBUG_FORCE_FOREGROUND_SANITY";
+    static final String EXTRA_DEBUG_SANITY_TOKEN = "debug_sanity_token";
 
     static final String CHANNEL_ID = "airlock_monitoring_silent_v2";
     private static final String TAG = "AirLockMonitor";
@@ -121,6 +124,8 @@ public class MonitoringService extends Service {
     private boolean deviceUnlocked;
     private boolean foregroundStatusRecoveryPending;
     private boolean backgroundRestricted;
+    private boolean debugForegroundSanityPending;
+    private String debugForegroundSanityToken;
     private long nextForegroundPromotionAttemptElapsedMs;
     private long lastBackgroundRestrictionCheckElapsedMs;
     private String monitoringIssue = "";
@@ -186,6 +191,16 @@ public class MonitoringService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (isDebuggable()
+                && intent != null
+                && ACTION_DEBUG_FORCE_FOREGROUND_SANITY.equals(intent.getAction())) {
+            debugForegroundSanityPending = true;
+            debugForegroundSanityToken = intent.getStringExtra(EXTRA_DEBUG_SANITY_TOKEN);
+            lastForegroundSanityCheckMs = 0L;
+            handler.removeCallbacks(pollRunnable);
+            handler.post(pollRunnable);
+            return START_STICKY;
+        }
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             intentionallyStopped = true;
             stopMonitoring(true);
@@ -520,6 +535,12 @@ public class MonitoringService extends Service {
         final long queryPreviousEndMs = previousQueryEndMs;
         boolean runSanityCheck = lastForegroundSanityCheckMs == 0L
                 || now - lastForegroundSanityCheckMs >= FOREGROUND_SANITY_CHECK_INTERVAL_MS;
+        boolean debugSanityCheck = isDebuggable()
+                && debugForegroundSanityPending
+                && runSanityCheck;
+        String debugSanityToken = debugSanityCheck
+                ? debugForegroundSanityToken
+                : null;
         String previousForegroundPackage = lastForegroundPackage;
         String blockedPackage = overlayPackageName != null
                 ? overlayPackageName
@@ -552,7 +573,8 @@ public class MonitoringService extends Service {
                     queryId,
                     previousForegroundPackage,
                     selectedPackages,
-                    completedResult
+                    completedResult,
+                    debugSanityToken
             ));
         });
         if (!posted) {
@@ -567,13 +589,18 @@ public class MonitoringService extends Service {
         if (runSanityCheck) {
             lastForegroundSanityCheckMs = now;
         }
+        if (debugSanityCheck) {
+            debugForegroundSanityPending = false;
+            debugForegroundSanityToken = null;
+        }
     }
 
     private void completeForegroundPoll(
             long queryId,
             String previousForegroundPackage,
             Set<String> selectedPackages,
-            ForegroundQueryResult queryResult
+            ForegroundQueryResult queryResult,
+            String debugSanityToken
     ) {
         if (queryId != foregroundQueryId) {
             return;
@@ -686,6 +713,9 @@ public class MonitoringService extends Service {
             debugLog("foreground completion failed: " + exception.getClass().getSimpleName());
         } finally {
             usageLedger.flush(false);
+            if (debugSanityToken != null) {
+                debugLog("debug foreground sanity check completed token=" + debugSanityToken);
+            }
             if (pollHealthy
                     && consecutiveOverlayFailures == 0
                     && !foregroundStatusRecoveryPending) {
@@ -737,7 +767,7 @@ public class MonitoringService extends Service {
 
         UsageEvents.Event event = new UsageEvents.Event();
         String candidate = previousForegroundPackage;
-        boolean sawForegroundEvent = false;
+        boolean sawLifecycleEvent = false;
         boolean overlayInterrupted = false;
         long latestLifecycleEventMs = previousLifecycleEventMs;
         while (events.hasNextEvent()) {
@@ -748,6 +778,7 @@ public class MonitoringService extends Service {
                 continue;
             }
             if (ForegroundEventPolicy.isLifecycleEvent(type)) {
+                sawLifecycleEvent = true;
                 latestLifecycleEventMs = Math.max(latestLifecycleEventMs, event.getTimeStamp());
             }
 
@@ -766,7 +797,6 @@ public class MonitoringService extends Service {
             // A canceled recents gesture can pause an app without resuming a replacement.
             // Keep the last real foreground app until another foreground event names one.
             if (ForegroundEventPolicy.isForegroundEvent(type)) {
-                sawForegroundEvent = true;
                 candidate = eventPackageName;
             } else if (ForegroundEventPolicy.isBackgroundEvent(type)
                     && eventPackageName.equals(candidate)
@@ -779,7 +809,11 @@ public class MonitoringService extends Service {
             }
         }
 
-        if (runSanityCheck || (candidate == null && !sawForegroundEvent)) {
+        if (ForegroundEventPolicy.shouldSeedFromUsageSummary(
+                candidate,
+                sawLifecycleEvent,
+                runSanityCheck
+        )) {
             UsageStats mostRecent = mostRecentlyUsedPackage(usageStatsManager, now);
             if (mostRecent != null
                     && mostRecent.getLastTimeUsed() > latestLifecycleEventMs
@@ -1359,9 +1393,13 @@ public class MonitoringService extends Service {
     }
 
     private void debugLog(String message) {
-        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+        if (isDebuggable()) {
             Log.d(TAG, message);
         }
+    }
+
+    private boolean isDebuggable() {
+        return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     private void updateForegroundNotification() {

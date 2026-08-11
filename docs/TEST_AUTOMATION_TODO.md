@@ -66,6 +66,9 @@ it cannot accidentally drive a connected physical phone.
   PIN; cancel and invalid PIN preserve the previous state.
 - [ ] Foregrounding an over-limit guarded app shows the blocker promptly after
   launcher taps, recents gestures, and rapid app switching.
+- [x] Recents remains blocker-free across the 30-second aggregate sanity check,
+  the blocker stays above the navigation inset, Android Back leaves safely, and
+  the scenario runs under gesture and three-button navigation when supported.
 - [x] Empty and invalid approval codes show an error without dismissing the
   blocker.
 - [x] Requested minutes and approval-code input survive leaving and reopening

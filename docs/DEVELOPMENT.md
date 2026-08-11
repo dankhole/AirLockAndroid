@@ -196,8 +196,24 @@ permissions. Use `scripts/android-smoke.sh --skip-build` only after assembling
 the current debug APK. Set `TARGET_PACKAGE` and `TARGET_QUERY` when the pinned
 emulator does not contain YouTube.
 
+For a focused blocker-navigation regression run during development, use:
+
+```sh
+NAVIGATION_ONLY=true scripts/android-smoke.sh --skip-build
+```
+
+This tests every supported navigation mode, checks the blocker stays clear of
+the navigation inset, verifies Recents and Home remain usable, exercises the
+blocker's Android Back escape, and uses a debug-only service trigger to execute
+the same foreground sanity path immediately while Recents is open. Production
+timing remains unchanged; the test does not wait on the 30-second wall clock.
+It skips unrelated setup, picker, and approval scenarios. Run both the normal
+and focused commands for a release candidate. Set
+`NAVIGATION_MATRIX=false` only to debug the emulator's current navigation mode.
+
 Debug builds alone include `DebugFixtureReceiver` and `DebugBlockerActivity`
-for deterministic state and blocker setup. Neither component is merged into
+for deterministic state, blocker setup, and immediate foreground-sanity test
+triggers. Neither component is merged into
 release builds. Smoke artifacts are written under
 `app/build/reports/android-smoke/`.
 
