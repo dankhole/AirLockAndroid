@@ -32,6 +32,15 @@ reports release `1 (0.1.0)` as available to internal testers. A tester has seen
 a generic Play Store installation error, so delivery on a physical tester
 device is not yet confirmed.
 
+The replacement candidates are
+`releases/Airlock-0.1.1-internal-2.aab` (SHA-256
+`e5a8c5fb42f60373d29cfab087f32453ec83df4749f207011b2fcd032ea9023c`)
+and `releases/Airlock-0.1.1-internal-2.apk` (SHA-256
+`b352702bc65a90d758531cd9bedd7429a0d9bb327a38c04008d27d150b1289a4`).
+Both were built from exact source commit
+`57b95572b02271a4d3c880031dbcd65364a69416`, match their signed Gradle outputs,
+and remain local until distributed through the appropriate test channel.
+
 ## Last Verified Evidence
 
 On August 11, 2026, source through commit `16bd88c` passed:

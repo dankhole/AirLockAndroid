@@ -15,7 +15,7 @@ changes.
 | Release certificate | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
 | Target SDK | 36 |
 | Version | Candidate `versionCode 2`, `versionName 0.1.1`; version 1 is on Internal testing |
-| Signed AAB | Version 1 uploaded; version 2 source and emulator validation passed, with the exact committed artifact pending |
+| Signed AAB | Version 1 uploaded; version 2 built from its exact source commit and verified locally |
 | Privacy policy | GitHub Pages source and in-app URL prepared; Pages must be enabled and the URL checked before rollout |
 | Play Console developer verification | Sufficient to create the app and Internal testing release; monitor any remaining dashboard task |
 | Play App Signing strategy | Enabled; Google Play signs delivered releases |
@@ -42,8 +42,20 @@ Uploaded version-1 AAB SHA-256:
 
 This checksum describes `releases/Airlock-0.1.0-internal-1.aab`, which was
 prepared from commit `2afe9c3` and uploaded as version 1. The version-2
-candidate checksum is recorded only after rebuilding from its exact source
-commit.
+candidate was rebuilt separately from its exact source commit.
+
+Candidate version-2 artifacts from commit
+`57b95572b02271a4d3c880031dbcd65364a69416`:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `releases/Airlock-0.1.1-internal-2.aab` | `e5a8c5fb42f60373d29cfab087f32453ec83df4749f207011b2fcd032ea9023c` |
+| `releases/Airlock-0.1.1-internal-2.apk` | `b352702bc65a90d758531cd9bedd7429a0d9bb327a38c04008d27d150b1289a4` |
+
+The copied files byte-match the signed Gradle outputs. Package inspection
+confirmed `com.dankhole.airlock`, version code 2, version name `0.1.1`, min SDK
+26, and target SDK 36. APK and AAB verification matched the registered upload
+certificate.
 
 ## Create App
 
