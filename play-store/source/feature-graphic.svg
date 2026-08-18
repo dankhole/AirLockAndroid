@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1024" height="500" viewBox="0 0 1024 500">
+  <rect width="1024" height="500" fill="#101418"/>
+  <image x="0" y="0" width="1024" height="500"
+         preserveAspectRatio="xMidYMid slice"
+         xlink:href="feature-goose-source.png"/>
+  <text x="76" y="222" fill="#F5F7F2"
+        font-family="Arial, Helvetica, sans-serif" font-size="88"
+        font-weight="700">Airlock</text>
+  <text x="80" y="284" fill="#C8D0CC"
+        font-family="Arial, Helvetica, sans-serif" font-size="30"
+        font-weight="400">Your accountability goose is on duty!</text>
+</svg>
+

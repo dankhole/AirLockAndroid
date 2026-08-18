@@ -1,0 +1,23 @@
+APP NAME
+Airlock
+
+SHORT DESCRIPTION
+A silly accountability goose that guards distracting apps after daily limits.
+
+FULL DESCRIPTION
+Airlock adds intentional friction between you and distracting apps.
+
+Choose the apps you want to guard and give each one a daily time limit. Airlock counts usage locally on your device. When a selected app reaches its limit, the goose appears with a focused blocking screen.
+
+Need more time? Airlock opens your chosen SMS app with a request for your Keyholder. The reply code is tied to the amount of extra time requested. Airlock does not read or send SMS messages itself.
+
+Goose Duty includes clear permission checks, per-app usage totals, a persistent silent status notification, one-time emergency day passes, and recovery status when Android interrupts monitoring.
+
+Your selected apps, usage totals, limits, phone number, PIN hashes, and access-code state remain on your device. Airlock includes no ads, analytics, trackers, or online account.
+
+Airlock is an accountability aid, not tamper-proof parental-control or device-security software. A device owner can revoke Android access, force-stop the app, clear its data, or uninstall it.
+
+SUPPORT / POLICY
+Privacy policy: https://dankhole.github.io/AirLockAndroid/privacy/
+Support email: ENTER THE MONITORED SUPPORT EMAIL IN PLAY CONSOLE
+
