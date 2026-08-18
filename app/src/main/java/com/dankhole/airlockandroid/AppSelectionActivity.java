@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class AppSelectionActivity extends Activity {
     static final String EXTRA_EDIT_AUTHORIZATION_TOKEN =
-            "com.dankhole.airlockandroid.EDIT_AUTHORIZATION_TOKEN";
+            "com.dankhole.airlock.EDIT_AUTHORIZATION_TOKEN";
 
     private static final String STATE_AUTHORIZATION_SESSION = "authorization_session";
     private static final String STATE_BATCH_PACKAGES = "batch_packages";

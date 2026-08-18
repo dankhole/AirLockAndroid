@@ -45,7 +45,7 @@ target API 36 or higher starting August 31, 2026:
 
 ## Engineering Priority Order
 
-AirLock is useful only while monitoring remains trustworthy over ordinary
+Airlock is useful only while monitoring remains trustworthy over ordinary
 multi-day use. Apply these priorities, in order, when making tradeoffs:
 
 1. Long-running monitoring reliability and automatic recovery.
@@ -120,7 +120,7 @@ Goose-themed visuals are plain Java `View` classes with Canvas drawing, not
 image dependencies. Use `GooseMascotView` with `UiStyle.gooseBannerParams(...)`
 near the top of setup/wizard screens. `GooseCelebrationView` is reserved for
 the successful extra-time unlock animation so that moment feels distinct.
-Follow `docs/PRODUCT_LANGUAGE.md` for the roles of AirLock, the Goose, and the
+Follow `docs/PRODUCT_LANGUAGE.md` for the roles of Airlock, the Goose, and the
 Keyholder and for all user-facing copy.
 
 ## Icon Assets
@@ -133,7 +133,7 @@ repository: <https://github.com/google/material-design-icons>.
 ## Usage Tracking
 
 The main screen's "Today's goose count" section only renders apps that already have
-AirLock limits. Foreground detection and full-day reconciliation run on separate
+Airlock limits. Foreground detection and full-day reconciliation run on separate
 background workers. The service keeps current usage in memory, persists dirty
 totals in one batch every 30 seconds, reconciles against Android UsageStats once
 per minute, and retains seven days of usage keys. Foreground queries and
@@ -159,7 +159,7 @@ Required because monitoring happens while the app is not foregrounded. The servi
 
 Android allows a foreground service to run after Android 13 notification
 permission is denied, exposing it only through the system Active apps surface.
-AirLock deliberately treats visible notifications as a product setup
+Airlock deliberately treats visible notifications as a product setup
 requirement so monitoring and recovery status cannot be hidden from the user.
 Revocation returns the UI to the access gate while an already-running service
 continues best-effort monitoring. Notification readiness checks the runtime
@@ -242,10 +242,10 @@ security review.
 Useful checks after installing a debug build:
 
 ```sh
-adb -e shell dumpsys package com.dankhole.airlockandroid
+adb -e shell dumpsys package com.dankhole.airlock
 adb -e shell dumpsys usagestats
-adb -e shell appops get com.dankhole.airlockandroid
-adb -e shell dumpsys activity services com.dankhole.airlockandroid
+adb -e shell appops get com.dankhole.airlock
+adb -e shell dumpsys activity services com.dankhole.airlock
 ```
 
 Start and stop from the app UI first. Use `adb -e` for emulator work and

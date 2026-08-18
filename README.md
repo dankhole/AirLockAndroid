@@ -1,6 +1,6 @@
-# AirLock Android
+# Airlock Android
 
-AirLock Android is a goose-themed native Android MVP for adding AirLock-style friction to distracting phone apps. Users choose apps, set a daily usage budget, and get a blocking wall after the limit is reached. Extra time requires an approval code requested from a trusted Keyholder.
+Airlock Android is a goose-themed native Android MVP for adding Airlock-style friction to distracting phone apps. Users choose apps, set a daily usage budget, and get a blocking wall after the limit is reached. Extra time requires an approval code requested from a trusted Keyholder.
 
 This repo builds locally with the Gradle wrapper after Android SDK setup.
 
@@ -48,7 +48,7 @@ With command-line tooling:
 
 ## First Device Test
 
-1. Install and open AirLock Goose.
+1. Install and open Airlock.
 2. Complete the dedicated setup screen by granting Usage Access, Display Over
    Other Apps, and goose notifications. The dashboard opens after all three are
    ready.

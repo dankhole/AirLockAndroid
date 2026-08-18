@@ -1,8 +1,8 @@
-# AirLock Android Agent Guide
+# Airlock Android Agent Guide
 
 ## Start Here
 
-AirLock Goose is a local-first Android app that counts usage for user-selected
+Airlock is a local-first Android app that counts usage for user-selected
 apps, shows an overlay after a per-app daily limit, and grants extra time with a
 Keyholder approval code. It is intentional friction, not hard device security.
 
@@ -21,14 +21,16 @@ Before changing code:
 
 - Plain Java Android views only: no AndroidX, Compose, Kotlin, or third-party
   runtime dependencies. JUnit 4 is test-only.
-- Keep `minSdk 26`, package `com.dankhole.airlockandroid`, and the existing
-  signing identity unless the user explicitly approves a migration.
+- Keep `minSdk 26`, application ID `com.dankhole.airlock`, and the existing
+  signing identity unless the user explicitly approves a migration. The Java
+  namespace remains `com.dankhole.airlockandroid`; do not mechanically rename
+  it just to match the Play application ID.
 - Do not add `SEND_SMS`, `READ_SMS`, `RECEIVE_SMS`, `QUERY_ALL_PACKAGES`, or an
   Accessibility Service for the current product.
 - Keep usage, settings, phone number, PIN material, and code state local. Cloud
   backup and device transfer must remain disabled unless a reviewed migration
   changes the privacy model.
-- Never make phone, launcher, Settings, messaging, camera, AirLock, autofill,
+- Never make phone, launcher, Settings, messaging, camera, Airlock, autofill,
   or credential-provider apps blockable. Preserve defense in depth in
   `CriticalApps`, the picker, `Preferences`, and the service.
 - Do not claim uninstall prevention, tamper-proof enforcement, parental-control

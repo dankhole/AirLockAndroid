@@ -4,7 +4,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ADB="${ADB:-${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb}"
-PACKAGE="com.dankhole.airlockandroid"
+PACKAGE="com.dankhole.airlock"
+COMPONENT_NAMESPACE="com.dankhole.airlockandroid"
 TARGET_PACKAGE="${TARGET_PACKAGE:-com.google.android.youtube}"
 TARGET_QUERY="${TARGET_QUERY:-YouTube}"
 NAVIGATION_MATRIX="${NAVIGATION_MATRIX:-true}"
@@ -200,7 +201,7 @@ plus_five_code() {
 fixture() {
     local output
     output="$(adb_e shell am broadcast \
-        -n "$PACKAGE/.DebugFixtureReceiver" \
+        -n "$PACKAGE/$COMPONENT_NAMESPACE.DebugFixtureReceiver" \
         --es command "$1" "${@:2}")"
     if [[ "$output" != *"result=-1"* ]]; then
         fail "Debug fixture failed: $output"
@@ -210,7 +211,7 @@ fixture() {
 }
 
 launch_main() {
-    adb_e shell am start -W -n "$PACKAGE/.MainActivity" >/dev/null
+    adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null
     wait_for_id main_scroll
 }
 
@@ -256,7 +257,7 @@ run_blocker_navigation_scenario() {
 
     set_navigation_overlay "$navigation_overlay"
     fixture seed --es target_package "$TARGET_PACKAGE" --ez monitoring true >/dev/null
-    adb_e shell am start -W -n "$PACKAGE/.MainActivity" >/dev/null
+    adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null
     startup_token="startup-$mode_name-$RANDOM-$RANDOM"
     fixture force_foreground_sanity --es sanity_token "$startup_token" >/dev/null
     wait_for_log "debug foreground sanity check completed token=$startup_token" 10
@@ -435,7 +436,7 @@ adb_e shell appops set --uid "$PACKAGE" GET_USAGE_STATS ignore
 adb_e shell appops set --uid "$PACKAGE" SYSTEM_ALERT_WINDOW ignore
 adb_e shell pm revoke "$PACKAGE" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
 adb_e shell am force-stop "$PACKAGE"
-adb_e shell am start -W -n "$PACKAGE/.MainActivity" >/dev/null
+adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null
 wait_for_id permission_setup_scroll
 assert_id_contains permission_setup_progress "0 of 3"
 assert_id_contains permission_usage_status "NOT DONE"
@@ -446,14 +447,14 @@ capture_artifacts "$CURRENT_SCENARIO-gate"
 
 adb_e shell appops set --uid "$PACKAGE" GET_USAGE_STATS allow
 adb_e shell am force-stop "$PACKAGE"
-adb_e shell am start -W -n "$PACKAGE/.MainActivity" >/dev/null
+adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null
 wait_for_id permission_setup_scroll
 assert_id_contains permission_setup_progress "1 of 3"
 assert_id_contains permission_usage_status DONE
 
 adb_e shell appops set --uid "$PACKAGE" SYSTEM_ALERT_WINDOW allow
 adb_e shell am force-stop "$PACKAGE"
-adb_e shell am start -W -n "$PACKAGE/.MainActivity" >/dev/null
+adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null
 wait_for_id permission_setup_scroll
 assert_id_contains permission_setup_progress "2 of 3"
 tap_id permission_overlay_status
@@ -468,7 +469,7 @@ capture_artifacts "$CURRENT_SCENARIO-dashboard"
 
 adb_e shell appops set --uid "$PACKAGE" SYSTEM_ALERT_WINDOW ignore
 adb_e shell am force-stop "$PACKAGE"
-adb_e shell am start -W -n "$PACKAGE/.MainActivity" >/dev/null
+adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null
 wait_for_id permission_setup_scroll
 tap_id permission_overlay_status
 assert_id_contains permission_overlay_status "NOT DONE"
@@ -546,7 +547,7 @@ expected_approval_code="$(plus_five_code "$request_code")"
 [[ "$approval_code" == "$expected_approval_code" ]] \
     || fail "Approval code $approval_code did not follow the +5 rule for $request_code"
 adb_e shell am force-stop "$PACKAGE"
-adb_e shell am start -W -n "$PACKAGE/.DebugBlockerActivity" \
+adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.DebugBlockerActivity" \
     --es target_package "$TARGET_PACKAGE" --es app_label "$TARGET_QUERY" \
     --ei used_minutes 2 --ei limit_minutes 1 >/dev/null
 wait_for_id blocker_approval_code

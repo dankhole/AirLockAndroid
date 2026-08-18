@@ -52,10 +52,10 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class MonitoringService extends Service {
-    public static final String ACTION_START = "com.dankhole.airlockandroid.START";
-    public static final String ACTION_STOP = "com.dankhole.airlockandroid.STOP";
+    public static final String ACTION_START = "com.dankhole.airlock.START";
+    public static final String ACTION_STOP = "com.dankhole.airlock.STOP";
     static final String ACTION_DEBUG_FORCE_FOREGROUND_SANITY =
-            "com.dankhole.airlockandroid.DEBUG_FORCE_FOREGROUND_SANITY";
+            "com.dankhole.airlock.DEBUG_FORCE_FOREGROUND_SANITY";
     static final String EXTRA_DEBUG_SANITY_TOKEN = "debug_sanity_token";
 
     static final String CHANNEL_ID = "airlock_monitoring_silent_v2";

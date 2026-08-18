@@ -8,7 +8,7 @@ import android.widget.Toast;
 
 final class AppLinks {
     static final String PRIVACY_POLICY_URL =
-            "https://raw.githubusercontent.com/dankhole/AirLockAndroid/master/PRIVACY.md";
+            "https://dankhole.github.io/AirLockAndroid/privacy/";
 
     private AppLinks() {
     }

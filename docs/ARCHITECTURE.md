@@ -80,7 +80,7 @@ usage first, then owns:
 
 Notification visibility is part of the product gate even though Android can
 technically keep a foreground service running without the Android 13 runtime
-notification permission. This prevents AirLock from presenting invisible
+notification permission. This prevents Airlock from presenting invisible
 background monitoring as a fully configured experience. If notification access
 is revoked while Duty is already running, the dashboard returns to the gate but
 the service remains best-effort active; notification visibility does not
@@ -137,7 +137,7 @@ state. The service decides health; the factory only renders it.
 
 ### `CriticalApps`
 
-Builds a short-lived cached set containing AirLock, Android/system surfaces,
+Builds a short-lived cached set containing Airlock, Android/system surfaces,
 home apps, phone/dial handlers, messaging handlers, camera handlers, Settings,
 detected autofill services, and Android 14+ credential-provider services such
 as password managers. The picker refreshes this set after returning from
@@ -232,7 +232,7 @@ release. Legacy single-code keys remain readable only for upgrade compatibility.
 Restarts `MonitoringService` after `BOOT_COMPLETED` or
 `MY_PACKAGE_REPLACED` if monitoring was requested. These are Android-supported
 background foreground-service start exemptions for this service type. This is
-not enough by itself on every OEM; users may also need to set AirLock battery
+not enough by itself on every OEM; users may also need to set Airlock battery
 use to Unrestricted.
 
 ### `MonitoringHealth`
@@ -282,7 +282,7 @@ Known weakness: the request code and requested minutes are visible in the compos
 
 ## Safety Rules
 
-- Do not block the AirLock app itself.
+- Do not block the Airlock app itself.
 - Keep phone/emergency, launcher, settings, messaging, camera, and detected
   password-manager packages unselectable. Extend `CriticalApps` when another
   safety-sensitive handler category is introduced.
@@ -297,14 +297,14 @@ Known weakness: the request code and requested minutes are visible in the compos
 - Multi-window and picture-in-picture may confuse foreground detection.
 - If Usage Access is revoked, monitoring cannot detect apps.
 - If overlay permission is revoked, blocking cannot display.
-- AirLock remains alive in a degraded state and periodically retries when a
+- Airlock remains alive in a degraded state and periodically retries when a
   requirement is temporarily unavailable.
 - Force-stop and Android 13+'s Active apps Stop action kill the process without
   a callback. Android does not let an app guarantee an automatic restart after
-  those explicit user actions; reopening AirLock restores requested duty.
+  those explicit user actions; reopening Airlock restores requested duty.
 - Android's Restricted battery mode can suppress foreground services and boot
   delivery. The app detects the standard restriction and restores foreground
-  status when the user reopens AirLock after removing it, but OEM-specific
+  status when the user reopens Airlock after removing it, but OEM-specific
   auto-start and sleeping-app controls still require device testing.
 
 ## Next Architecture Upgrades

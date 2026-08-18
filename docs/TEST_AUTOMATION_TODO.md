@@ -133,7 +133,7 @@ it cannot accidentally drive a connected physical phone.
 - [ ] Run a 2-hour emulator soak that alternates guarded and unguarded apps and
   verifies blocker recovery, usage growth, notification state, and no crashes.
 - [ ] Export `dumpsys meminfo`, `procstats`, `batterystats`, and relevant
-  AirLock counters before and after the soak for trend comparison.
+  Airlock counters before and after the soak for trend comparison.
 - [ ] Keep the 8-24 hour battery comparison on physical devices; emulator power
   measurements are useful for regression signals, not real battery claims.
 

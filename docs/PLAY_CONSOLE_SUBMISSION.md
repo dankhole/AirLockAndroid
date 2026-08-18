@@ -1,8 +1,8 @@
 # Play Console Submission Draft
 
-Last updated: August 11, 2026
+Last updated: August 18, 2026
 
-This document contains copy-ready values for the first AirLock Goose internal
+This document contains copy-ready values for the first Airlock internal
 test. Re-check them against the shipped build whenever behavior or data handling
 changes.
 
@@ -10,14 +10,15 @@ changes.
 
 | Item | Status |
 | --- | --- |
-| Package name `com.dankhole.airlockandroid` | Registered and verified in Android Developer Console |
+| Play application ID `com.dankhole.airlock` | App created and release certificate accepted in Play Console |
+| Java namespace `com.dankhole.airlockandroid` | Intentionally unchanged; it is not the installed package ID |
 | Release certificate | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
 | Target SDK | 36 |
 | Version | `versionCode 1`, `versionName 0.1.0` |
-| Signed AAB | Existing local copy is stale after `16bd88c`; rebuild before upload |
-| Privacy policy | Published at the current raw GitHub URL and linked in-app; re-check after policy changes |
-| Play Console developer verification | Owner must confirm completion |
-| Play App Signing strategy | Owner must choose before first upload; see `docs/RELEASE.md` |
+| Signed AAB | Built and verified locally on August 18, 2026 for `com.dankhole.airlock`; not yet uploaded |
+| Privacy policy | GitHub Pages source and in-app URL prepared; Pages must be enabled and the URL checked before rollout |
+| Play Console developer verification | Sufficient to create the app and Internal testing release; monitor any remaining dashboard task |
+| Play App Signing strategy | Enabled; Google Play signs delivered releases |
 | Tester list | Owner must provide Google-account email addresses |
 | Support email | Owner must provide a monitored public address |
 | Physical-device release matrix | Not yet recorded as passed |
@@ -27,30 +28,30 @@ changes.
 The privacy policy URL is:
 
 ```text
-https://raw.githubusercontent.com/dankhole/AirLockAndroid/master/PRIVACY.md
+https://dankhole.github.io/AirLockAndroid/privacy/
 ```
 
-Replace this with a branded HTTPS page before public launch if one becomes
-available. Keep the in-app URL and Play Console URL identical.
+GitHub Pages must deploy the repository's `docs` directory before this URL is
+entered in Play Console. Keep the in-app URL and Play Console URL identical.
 
-Historical AAB SHA-256 (do not upload this artifact):
+Current release-candidate AAB SHA-256:
 
 ```text
-3779d53b53eb85f616f89dab939562d030b8daf2a6d16939aa91944c89053a07
+9fbd3e66295acb6f716d5b9b74903e72cf7dd32ef2b243c7706c1dbce38421d4
 ```
 
-This checksum describes the pre-navigation-fix local bundle. Rebuild from the
-exact release candidate, verify its certificate, replace this checksum, and
-only then upload the new bundle.
+This checksum describes both `app/build/outputs/bundle/release/app-release.aab`
+and the upload copy `releases/Airlock-0.1.0-internal-1.aab`, built from the
+current uncommitted release-preparation worktree. Commit the source before
+treating it as a reproducible release record.
 
 ## Create App
 
-- App name: `AirLock Goose`
+- App name: `Airlock`
 - Default language: `English (United States) - en-US`
 - App or game: `App`
 - Free or paid: `Free`
-- Package name: established by the first uploaded bundle as
-  `com.dankhole.airlockandroid`
+- Package name: `com.dankhole.airlock`
 - Category: `Productivity`
 - Tags: use relevant time-management or productivity tags offered by Console
 - Countries for the first test: United States, unless a tester needs another
@@ -65,7 +66,7 @@ primary inbox.
 ### App Name
 
 ```text
-AirLock Goose
+Airlock
 ```
 
 ### Short Description
@@ -77,17 +78,17 @@ A silly accountability goose that guards distracting apps after daily limits.
 ### Full Description
 
 ```text
-AirLock Goose adds intentional friction between you and distracting apps.
+Airlock adds intentional friction between you and distracting apps.
 
-Choose the apps you want to guard and give each one a daily time limit. AirLock Goose counts usage locally on your device. When a selected app reaches its limit, the goose appears with a focused blocking screen.
+Choose the apps you want to guard and give each one a daily time limit. Airlock counts usage locally on your device. When a selected app reaches its limit, the goose appears with a focused blocking screen.
 
-Need more time? AirLock opens your chosen SMS app with a request for your Keyholder. The reply code is tied to the amount of extra time requested. AirLock does not read or send SMS messages itself.
+Need more time? Airlock opens your chosen SMS app with a request for your Keyholder. The reply code is tied to the amount of extra time requested. Airlock does not read or send SMS messages itself.
 
 Goose Duty includes clear permission checks, per-app usage totals, a persistent silent status notification, one-time emergency day passes, and recovery status when Android interrupts monitoring.
 
-Your selected apps, usage totals, limits, phone number, PIN hashes, and access-code state remain on your device. AirLock includes no ads, analytics, trackers, or online account.
+Your selected apps, usage totals, limits, phone number, PIN hashes, and access-code state remain on your device. Airlock includes no ads, analytics, trackers, or online account.
 
-AirLock Goose is an accountability aid, not tamper-proof parental-control or device-security software. A device owner can revoke Android access, force-stop the app, clear its data, or uninstall it.
+Airlock is an accountability aid, not tamper-proof parental-control or device-security software. A device owner can revoke Android access, force-stop the app, clear its data, or uninstall it.
 ```
 
 ### Internal Release Notes
@@ -101,8 +102,8 @@ First internal test build! Please test first-run access setup, per-app limits, G
 1. Create a Google-account email list or Google Group under **Test and release >
    Testing > Internal testing > Testers**.
 2. Create a release and upload `app-release.aab`.
-3. Configure Play App Signing before completing the first release. See the key
-   decision in `docs/RELEASE.md`; do not regenerate the local release key.
+3. Confirm Play App Signing remains enabled and do not regenerate the local
+   upload key.
 4. Complete the `specialUse` foreground-service declaration and demonstration
    video below.
 5. Use release name `0.1.0 internal 1` only if version code 1 has never been
@@ -138,7 +139,7 @@ Select that all functionality is available without login, membership, or
 pre-existing credentials. Suggested reviewer note:
 
 ```text
-AirLock Goose has no online account or login. The reviewer creates a local Master PIN and enters a test Keyholder phone number during setup. Usage Access, Display Over Other Apps, and notification access are requested through Android settings because they are core to app-limit monitoring and blocking.
+Airlock has no online account or login. The reviewer creates a local Master PIN and enters a test Keyholder phone number during setup. Usage Access, Display Over Other Apps, and notification access are requested through Android settings because they are core to app-limit monitoring and blocking.
 ```
 
 ### Target Audience
@@ -173,7 +174,7 @@ collect or share user data as those terms are defined by the Data safety form:
 
 - App inventory, usage events, settings, phone number, and code state are
   processed and stored on device.
-- No SDK or AirLock server receives data.
+- No SDK or Airlock server receives data.
 - The SMS-app handoff occurs only after the user taps the text action and is a
   user-initiated transfer the user expects.
 
@@ -194,7 +195,7 @@ their requested minutes, and expiry remain temporarily in app-private storage.
 Functionality description:
 
 ```text
-When the user explicitly turns on Goose Duty, AirLock Goose runs a foreground service with an ongoing silent notification. It checks which app is in the foreground, counts usage only for apps selected by the user, and shows the blocking overlay when a selected app reaches its configured daily limit. The user can stop Goose Duty from the app with the local Master PIN.
+When the user explicitly turns on Goose Duty, Airlock runs a foreground service with an ongoing silent notification. It checks which app is in the foreground, counts usage only for apps selected by the user, and shows the blocking overlay when a selected app reaches its configured daily limit. The user can stop Goose Duty from the app with the local Master PIN.
 ```
 
 Impact if startup is deferred:
@@ -206,7 +207,7 @@ Foreground app changes and selected-app usage may not be detected promptly, allo
 Impact if interrupted:
 
 ```text
-Usage reconciliation and blocking are delayed until Android restarts the service or the user opens AirLock Goose. The service persists local state, restarts after supported lifecycle events, and keeps recovery status visible in the ongoing notification.
+Usage reconciliation and blocking are delayed until Android restarts the service or the user opens Airlock. The service persists local state, restarts after supported lifecycle events, and keeps recovery status visible in the ongoing notification.
 ```
 
 Video checklist:
@@ -216,8 +217,8 @@ Video checklist:
 3. Set a test Keyholder number and Master PIN.
 4. Select a harmless test app and set a one-minute limit.
 5. Turn on Goose Duty and show the silent ongoing notification.
-6. Open the selected app after its limit and show the AirLock blocking overlay.
-7. Return to AirLock and stop Goose Duty with the Master PIN.
+6. Open the selected app after its limit and show the Airlock blocking overlay.
+7. Return to Airlock and stop Goose Duty with the Master PIN.
 
 Upload the video as an accessible unlisted YouTube video or other link accepted
 by Play Console. It must show the actual Android release behavior.

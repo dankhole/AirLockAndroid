@@ -20,7 +20,7 @@ tests.
 | [`TEST_AUTOMATION_TODO.md`](TEST_AUTOMATION_TODO.md) | Remaining automation backlog and cadence | Test infrastructure or CI work |
 | [`RELEASE.md`](RELEASE.md) | Signing, artifact creation, direct APK distribution, and Play workflow | Building or distributing a release |
 | [`PLAY_CONSOLE_SUBMISSION.md`](PLAY_CONSOLE_SUBMISSION.md) | Current Play listing/declaration draft and external owner actions | Play Console submission |
-| [`../PRIVACY.md`](../PRIVACY.md) | Public data-handling disclosure | Storage, permissions, data transfer, backup, or Play Data safety |
+| [`../PRIVACY.md`](../PRIVACY.md) and [`privacy/index.md`](privacy/index.md) | Public data-handling disclosure and hosted Play policy | Storage, permissions, data transfer, backup, or Play Data safety |
 
 ## Authority And Maintenance
 
@@ -36,7 +36,8 @@ tests.
 - Update one canonical document and link to it instead of duplicating detailed
   tables across files. `RELIABILITY.md` owns polling/recovery numbers;
   `DESIGN.md` owns UI/accessibility rules; `RELEASE.md` owns signing steps;
-  `PRIVACY.md` owns public data claims.
+  `PRIVACY.md` owns public data claims. Keep the hosted
+  `privacy/index.md` mirror synchronized with it.
 - Promote consequential user feedback and repeated agent mistakes into the
   narrowest durable rule, test, or source-of-truth document. Do not preserve a
   conversation transcript when a concise invariant and evidence link suffice.

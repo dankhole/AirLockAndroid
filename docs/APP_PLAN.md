@@ -1,10 +1,10 @@
-# AirLock Goose Product Plan
+# Airlock Product Plan
 
 Last updated: August 11, 2026
 
 ## Purpose
 
-AirLock Goose adds intentional friction before using distracting Android apps
+Airlock adds intentional friction before using distracting Android apps
 after a user-configured daily limit. It is a private accountability aid for an
 adult managing their own device, not hard parental control or device security.
 
@@ -26,7 +26,7 @@ The MVP currently includes:
   exclusions and search.
 - A master PIN required to start/stop Goose Duty, change the PIN, replace
   emergency codes, and edit limits while Duty is active.
-- A Keyholder phone number and user-initiated SMS compose intent; AirLock never
+- A Keyholder phone number and user-initiated SMS compose intent; Airlock never
   reads or sends SMS directly.
 - Guarded-app-only usage totals with explicit active, off, paused, and unhealthy
   enforcement states.
@@ -48,7 +48,7 @@ user-facing story.
 ## Deliberate Internal-Test Rule
 
 The first testing release uses a six-digit request code and a deterministic
-approval code produced by adding 5 to each digit modulo 10. AirLock stores the
+approval code produced by adding 5 to each digit modulo 10. Airlock stores the
 approval value, requested minutes, and a 10-minute expiry locally so more than
 one request can be pending and each grant is independent of the editable form.
 
@@ -62,7 +62,7 @@ described as secure authentication or production-grade accountability.
 The primary user is an adult who wants help interrupting social media, video,
 games, shopping, adult content, or another distraction loop. Do not market the
 current build as a child-safety product. A device owner can revoke access,
-force-stop, clear, or uninstall AirLock, and OEM background controls can delay
+force-stop, clear, or uninstall Airlock, and OEM background controls can delay
 monitoring.
 
 ## Non-Goals For This MVP
@@ -77,7 +77,7 @@ monitoring.
 
 ## Product And Safety Invariants
 
-- Never allow AirLock, launchers, phone/emergency, Settings, messaging, camera,
+- Never allow Airlock, launchers, phone/emergency, Settings, messaging, camera,
   autofill, or credential-provider apps to become blocked.
 - Keep unmet requirements visible and name the exact recovery action. Never
   equate a saved Duty toggle with a healthy running service.

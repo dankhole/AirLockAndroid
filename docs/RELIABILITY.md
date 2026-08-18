@@ -4,12 +4,12 @@ Last updated: August 11, 2026
 
 ## Reliability Contract
 
-AirLock provides intentional blocking friction through Usage Access and an
+Airlock provides intentional blocking friction through Usage Access and an
 application overlay. It is not device-owner software and cannot guarantee
 enforcement after the user force-stops it, revokes required special access, or
 places it under manufacturer-specific background restrictions.
 
-Within those Android limits, AirLock should:
+Within those Android limits, Airlock should:
 
 - Keep the user's duty intent until a PIN-authorized stop.
 - Report actual service health instead of equating a saved toggle with a live
@@ -40,8 +40,8 @@ recorded. Do not turn an emulator pass into a device-reliability claim.
 | Stuck foreground query | Ten-second main-thread watchdog | Use at most two process-wide workers with no queue; reject additional work and retry every 30 seconds until a worker returns or the process restarts |
 | Overlay attach failure | `WindowManager.addView` exception | Exponential retry from one to 30 seconds |
 | Screen off or keyguard visible | Screen/user-present broadcasts plus state check | Flush usage, stop querying, resume immediately after unlock |
-| Android background mode is Restricted | `ActivityManager.isBackgroundRestricted()` | Show a required warning, continue best-effort checks while alive, and re-promote the service when AirLock is reopened after the restriction is removed |
-| Android 13+ Active apps Stop or force-stop | No callback; later visible through `ApplicationExitInfo` | User must reopen AirLock; requested duty starts again |
+| Android background mode is Restricted | `ActivityManager.isBackgroundRestricted()` | Show a required warning, continue best-effort checks while alive, and re-promote the service when Airlock is reopened after the restriction is removed |
+| Android 13+ Active apps Stop or force-stop | No callback; later visible through `ApplicationExitInfo` | User must reopen Airlock; requested duty starts again |
 
 ## Efficiency Boundaries
 
@@ -57,7 +57,7 @@ recorded. Do not turn an emulator pass into a device-reliability claim.
 - Android background-restriction state: checked at most once every 30 seconds
   during routine polling and immediately on an explicit service start.
 - Foreground re-promotion after a battery restriction: immediately when
-  AirLock is opened, with background attempts no more than once every 30
+  Airlock is opened, with background attempts no more than once every 30
   seconds while the existing service remains alive.
 - Foreground query failure: at most two active worker calls process-wide and no
   waiting query queue, including across service recreation in the same process.
@@ -104,16 +104,16 @@ cannot trap all navigation.
 Useful device checks:
 
 ```sh
-adb -e shell dumpsys activity services com.dankhole.airlockandroid
-adb -e shell dumpsys activity exit-info com.dankhole.airlockandroid
-adb -e shell appops get com.dankhole.airlockandroid
+adb -e shell dumpsys activity services com.dankhole.airlock
+adb -e shell dumpsys activity exit-info com.dankhole.airlock
+adb -e shell appops get com.dankhole.airlock
 adb -e shell dumpsys usagestats
 adb -e shell dumpsys deviceidle whitelist
 ```
 
 Debug builds log foreground transitions, recovery windows, query timeouts,
 overlay attachment failures, and aggregate candidate seeding under
-`AirLockMonitor`. They do not log access codes, phone numbers, or app usage
+`AirlockMonitor`. They do not log access codes, phone numbers, or app usage
 totals. `NAVIGATION_ONLY=true scripts/android-smoke.sh --skip-build` uses a
 debug-only immediate trigger for the real sanity path; production polling
 intervals remain unchanged.

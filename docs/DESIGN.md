@@ -2,14 +2,14 @@
 
 Last reviewed: August 11, 2026
 
-This document is the source of truth for AirLock Goose's visual hierarchy,
+This document is the source of truth for Airlock's visual hierarchy,
 interaction styling, accessibility baseline, and system-area behavior. Product
 roles and exact voice live in `PRODUCT_LANGUAGE.md`; reusable implementation
 belongs in `UiStyle.java`.
 
 ## Design Intent
 
-AirLock Goose should feel playful but operational. The dark interface reduces
+Airlock should feel playful but operational. The dark interface reduces
 the previous white/blue wall, while green identifies normal forward actions,
 amber identifies attention, and red identifies requirements or destructive
 actions. A user must be able to understand readiness, errors, and enforcement
@@ -27,7 +27,7 @@ Compose, Kotlin, or third-party runtime dependencies.
 - Usage Access, Display Over Other Apps, and visible silent notifications each
   show numbered purpose copy, explicit `DONE` or `NOT DONE` text, and one action.
 - The dashboard remains hidden until all three are ready. Revoking any one and
-  returning to AirLock shows this screen again without deleting saved setup.
+  returning to Airlock shows this screen again without deleting saved setup.
 - Battery restriction is a dashboard reliability warning, not one of the three
   portable Android permission gates.
 

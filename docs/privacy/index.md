@@ -1,4 +1,8 @@
-# Airlock Privacy Policy
+---
+layout: page
+title: Airlock Privacy Policy
+permalink: /privacy/
+---
 
 Effective date: August 18, 2026
 

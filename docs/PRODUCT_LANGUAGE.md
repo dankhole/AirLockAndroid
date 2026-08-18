@@ -1,4 +1,4 @@
-# AirLock Goose Product Language
+# Airlock Product Language
 
 Last updated: August 11, 2026
 
@@ -6,7 +6,7 @@ This document defines the characters, roles, and vocabulary used throughout the 
 
 ## Core Concept
 
-AirLock Goose turns a screen-time promise into a playful interaction. The Goose is both the character enforcing the promise and the user's on-screen stand-in when a limited app is blocked. That is intentional: the Goose guards the limit, asks for more time, and is let loose when the request is approved.
+Airlock turns a screen-time promise into a playful interaction. The Goose is both the character enforcing the promise and the user's on-screen stand-in when a limited app is blocked. That is intentional: the Goose guards the limit, asks for more time, and is let loose when the request is approved.
 
 The person receiving the request is not the Goose. That person is the Keyholder.
 
@@ -14,10 +14,10 @@ The person receiving the request is not the Goose. That person is the Keyholder.
 
 | Name | Role | Can do |
 | --- | --- | --- |
-| AirLock Goose | The product name | Measure selected-app usage, store limits, coordinate blocking and approval |
+| Airlock | The product name | Measure selected-app usage, store limits, coordinate blocking and approval |
 | the Goose | Mascot, blocker, and stand-in for the user | Guard apps, count time, ask for extra time, be let loose |
 | the Keyholder | Trusted person outside the app | Receive a request text, decide whether to approve it, return an approval code |
-| the user | Person using the limited phone | Configure AirLock with the Keyholder, use apps, and enter returned approval codes |
+| the user | Person using the limited phone | Configure Airlock with the Keyholder, use apps, and enter returned approval codes |
 
 The Keyholder may also know or set the master PIN, but the product must not imply that every Keyholder necessarily does. The master PIN and approval-code flow are related protections with separate jobs.
 
@@ -35,7 +35,7 @@ Emergency codes are pre-authorized recovery access for cases where the user genu
 
 ## Required Vocabulary
 
-- Product name: `AirLock Goose`
+- Product name: `Airlock`
 - Monitoring mode: `Goose duty`
 - Trusted approval person: `Keyholder`
 - Request action: `Text the Keyholder`
@@ -43,7 +43,7 @@ Emergency codes are pre-authorized recovery access for cases where the user genu
 - Successful unlock action: `Loose the Goose`
 - Successful state: `The goose is loose`
 
-Use `AirLock` only when describing the underlying app or system behavior in technical or permission copy. Use `the goose` when the UI is speaking through the mascot.
+Use `Airlock` only when describing the underlying app or system behavior in technical or permission copy. Use `the goose` when the UI is speaking through the mascot.
 
 ## Voice
 
@@ -62,7 +62,7 @@ Avoid:
 - `Text the Goose` because the Goose is making the request, not receiving it.
 - `Goose phone number` because the number belongs to the Keyholder.
 - `The Goose approved it` because approval comes from the Keyholder.
-- `AirLock approved your request` because AirLock validates the returned code but does not make the human decision.
+- `Airlock approved your request` because Airlock validates the returned code but does not make the human decision.
 - Claims such as `cannot be bypassed` or `parental-control secure`; the current overlay is intentional friction, not device-owner enforcement.
 
 ## Approval Flow
@@ -71,9 +71,9 @@ The blocking screen should tell one coherent story:
 
 1. The goose has reached the daily limit.
 2. The goose chooses how many extra minutes to request.
-3. AirLock opens a text to the Keyholder with the request code.
+3. Airlock opens a text to the Keyholder with the request code.
 4. The Keyholder decides whether to approve the request and sends back an approval code.
-5. The user enters that code in AirLock.
+5. The user enters that code in Airlock.
 6. The goose is let loose for exactly the approved request duration.
 
 The requested-minutes field remains editable after a request and both numeric

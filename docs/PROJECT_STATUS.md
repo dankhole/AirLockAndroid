@@ -1,10 +1,10 @@
 # Project Status
 
-Last updated: August 11, 2026
+Last updated: August 18, 2026
 
 ## Current Stage
 
-AirLock Goose is an internal-testing candidate, not a release-verified product.
+Airlock is an internal-testing candidate, not a release-verified product.
 The native Java MVP, reliability hardening, dark Goose UI, debug smoke harness,
 release signing, privacy disclosure, and Play submission draft are implemented.
 Physical-device release qualification and Play Console owner actions remain.
@@ -16,18 +16,20 @@ last reviewed repository state; it is not permission to discard newer work.
 
 | Item | Current value |
 | --- | --- |
-| Package | `com.dankhole.airlockandroid` |
+| Play application ID | `com.dankhole.airlock` |
+| Java namespace | `com.dankhole.airlockandroid` |
 | Version | `versionCode 1`, `versionName 0.1.0` |
 | SDK | min 26, compile/target 36 |
 | Runtime stack | Platform Java views; no AndroidX, Compose, Kotlin, or third-party runtime dependency |
 | Release certificate SHA-256 | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
-| Developer verification | Package/certificate registered and verified in Android Developer Console |
-| Play Console verification | External owner state; confirm in Console before upload |
+| Developer verification | New Play package accepted with the existing release certificate; old sideload package remains a separate registration |
+| Play App Signing | Enabled; Google Play signs delivered releases |
 
-Local release APK/AAB copies under `releases/` are Git-ignored. The existing
-copies predate the navigation-lockout fix and are stale. Rebuild after all
-current source changes, then update the checksum in
-[`PLAY_CONSOLE_SUBMISSION.md`](PLAY_CONSOLE_SUBMISSION.md) before uploading.
+The current upload artifact is
+`releases/Airlock-0.1.0-internal-1.aab`; its checksum is recorded in
+[`PLAY_CONSOLE_SUBMISSION.md`](PLAY_CONSOLE_SUBMISSION.md). It was copied from
+the verified signed output under `app/build/outputs`, was built from an
+uncommitted release-preparation worktree, and has not been uploaded.
 
 ## Last Verified Evidence
 
@@ -48,9 +50,18 @@ The complete broad smoke runner was also attempted but did not finish: its
 app-limit-wizard rotation step intermittently fails to restore a dumpable
 portrait hierarchy on the Android 17 emulator. No product crash was observed,
 but the broad runner is not a green release signal until that harness race is
-fixed. The prior signed release assembly and AAB certificate verification were
-performed before `16bd88c`; current release artifacts must be rebuilt and
-reverified. No complete physical-device release record exists yet.
+fixed. The signed artifact from that period is obsolete. No complete
+physical-device release record exists yet.
+
+On August 18, 2026, after migrating the Play application ID to
+`com.dankhole.airlock` and the visible title to `Airlock`, the batched Gradle
+validation passed 35 unit tests, debug lint with zero findings, debug/release
+assembly, and release bundle generation. Artifact inspection confirmed version
+`0.1.0` (`versionCode 1`), target SDK 36, title `Airlock`, the expected Java
+component names, and local certificate SHA-256 ending `80:33:9E:7B`. The AAB
+SHA-256 is `9fbd3e66295acb6f716d5b9b74903e72cf7dd32ef2b243c7706c1dbce38421d4`.
+The package-migration emulator smoke run was stopped before completion at the
+owner's direction and is not release evidence.
 
 ## Implemented Product Contract
 
@@ -92,10 +103,9 @@ and a migration away from the deterministic rule.
    run both the broad and focused emulator paths from the release candidate.
 2. Complete the physical-device matrix in `TEST_PLAN.md`, including 48-72 hour
    reliability and battery checks on a Pixel and a current Samsung.
-3. Resolve the Play App Signing choice before the first upload: enroll the
-   existing key for direct/Play update compatibility, or accept that
-   Google-generated Play signing requires uninstalling when switching channels.
-4. Confirm Play Console developer verification, tester accounts, support email,
+3. Upload the newly built `com.dankhole.airlock` AAB to Internal testing and
+   confirm the app-signing and upload certificate roles under App integrity.
+4. Confirm tester accounts, support email,
    and complete the `specialUse` foreground-service declaration/video before
    the first Play rollout.
 5. Increment `versionCode` if a different bundle has already been uploaded,
@@ -122,7 +132,7 @@ and a migration away from the deterministic rule.
 - Master-PIN, approval, and emergency-code entry are not attempt-throttled. The
   app remains intentional friction; address rate limits with the real auth and
   wider-release hardening work instead of implying brute-force resistance.
-- Store graphics, public support email, Play App Signing enrollment, and the
+- Store graphics, public support email, and the
   foreground-service demonstration video are owner/release tasks.
 - Sideloaded APKs may trigger an unknown-source/Play Protect warning even when
   correctly signed and developer-verified; that warning is not proof that the
