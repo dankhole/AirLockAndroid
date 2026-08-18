@@ -207,13 +207,16 @@ NAVIGATION_ONLY=true scripts/android-smoke.sh --skip-build
 ```
 
 This tests every supported navigation mode, checks the blocker stays clear of
-the navigation inset, verifies Recents and Home remain usable, exercises the
-blocker's Android Back escape, and uses a debug-only service trigger to execute
-the same foreground sanity path immediately while Recents is open. Production
-timing remains unchanged; the test does not wait on the 30-second wall clock.
+the navigation inset, verifies the normal polling path removes it from Recents,
+Home, and a directly opened unblocked app, exercises the blocker's Android Back
+escape, and then uses a debug-only service trigger to execute the aggregate
+foreground sanity path while Recents is open. Production timing remains
+unchanged; the test does not wait on the 30-second wall clock.
 It skips unrelated setup, picker, and approval scenarios. Run both the normal
 and focused commands for a release candidate. Set
 `NAVIGATION_MATRIX=false` only to debug the emulator's current navigation mode.
+Set `RELEASE_VALIDATION=true` on the normal command to run the focused matrix
+first and the broad flow afterward in one emulator invocation.
 
 Known current harness limitation: on the Android 17/API 37 emulator, the broad
 runner can fail at the app-limit wizard rotation step because `uiautomator dump`

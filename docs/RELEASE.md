@@ -62,11 +62,10 @@ The registered release certificate SHA-256 is:
 ```sh
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug \
   :app:assembleRelease :app:bundleRelease
-scripts/android-smoke.sh --skip-build
-NAVIGATION_ONLY=true scripts/android-smoke.sh --skip-build
+RELEASE_VALIDATION=true scripts/android-smoke.sh --skip-build
 ```
 
-The smoke commands require a suitable running emulator. If the broad runner
+The smoke command requires a suitable running emulator. If the broad runner
 hits the documented Android 17 rotation harness race, do not mark the automated
 release gate green; capture the artifacts, triage it, and complete the
 corresponding physical-device wizard/rotation flow.

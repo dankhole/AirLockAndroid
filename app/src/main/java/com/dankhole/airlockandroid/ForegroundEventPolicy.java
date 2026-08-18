@@ -11,6 +11,14 @@ final class ForegroundEventPolicy {
     private ForegroundEventPolicy() {
     }
 
+    static CandidateState unknownCandidate() {
+        return new CandidateState(null, false);
+    }
+
+    static CandidateState knownCandidate(String packageName) {
+        return new CandidateState(packageName, true);
+    }
+
     static boolean isForegroundEvent(int type) {
         return isForegroundEvent(type, Build.VERSION.SDK_INT);
     }
@@ -56,15 +64,44 @@ final class ForegroundEventPolicy {
                 && (packageName == null || transientPackages.contains(packageName));
     }
 
+    static CandidateState applyLifecycleEvent(
+            CandidateState state,
+            int type,
+            String packageName,
+            int sdkInt
+    ) {
+        if (packageName == null || !isLifecycleEvent(type, sdkInt)) {
+            return state;
+        }
+        if (isForegroundEvent(type, sdkInt)) {
+            return knownCandidate(packageName);
+        }
+        if (!state.known || samePackage(state.packageName, packageName)) {
+            // A background event proves the old candidate is no longer safe to cover.
+            // Wait for a real foreground event instead of guessing which app resumes.
+            return knownCandidate(null);
+        }
+        return state;
+    }
+
     static boolean samePackage(String left, String right) {
         return left == null ? right == null : left.equals(right);
     }
 
     static boolean shouldSeedFromUsageSummary(
-            String candidate,
-            boolean sawLifecycleEvent,
+            CandidateState state,
             boolean runSanityCheck
     ) {
-        return runSanityCheck && candidate == null && !sawLifecycleEvent;
+        return runSanityCheck && !state.known;
+    }
+
+    static final class CandidateState {
+        final String packageName;
+        final boolean known;
+
+        private CandidateState(String packageName, boolean known) {
+            this.packageName = packageName;
+            this.known = known;
+        }
     }
 }

@@ -10,6 +10,7 @@ TARGET_PACKAGE="${TARGET_PACKAGE:-com.google.android.youtube}"
 TARGET_QUERY="${TARGET_QUERY:-YouTube}"
 NAVIGATION_MATRIX="${NAVIGATION_MATRIX:-true}"
 NAVIGATION_ONLY="${NAVIGATION_ONLY:-false}"
+RELEASE_VALIDATION="${RELEASE_VALIDATION:-false}"
 APK="$ROOT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 REPORT_DIR="$ROOT_DIR/app/build/reports/android-smoke/$STAMP"
@@ -266,17 +267,24 @@ run_blocker_navigation_scenario() {
     assert_blocker_clear_of_navigation_bar
 
     adb_e shell input keyevent KEYCODE_APP_SWITCH
+    wait_for_id_absent blocker_root 5
     sanity_token="$mode_name-$RANDOM-$RANDOM"
     fixture force_foreground_sanity --es sanity_token "$sanity_token" >/dev/null
     wait_for_log "debug foreground sanity check completed token=$sanity_token" 10
-    wait_for_id_absent blocker_root 10
+    wait_for_id_absent blocker_root 5
     capture_current_artifacts "$CURRENT_SCENARIO-recents"
 
     adb_e shell input keyevent KEYCODE_HOME
+    wait_for_id_absent blocker_root 5
     home_token="home-$mode_name-$RANDOM-$RANDOM"
     fixture force_foreground_sanity --es sanity_token "$home_token" >/dev/null
     wait_for_log "debug foreground sanity check completed token=$home_token" 10
-    wait_for_id_absent blocker_root 10
+    wait_for_id_absent blocker_root 5
+    adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    wait_for_id blocker_root 20
+
+    adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null
+    wait_for_id_absent blocker_root 5
     adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
     wait_for_id blocker_root 20
 
@@ -428,6 +436,15 @@ if [[ "$NAVIGATION_ONLY" == "true" ]]; then
     run_blocker_navigation_matrix
     check_logs
     exit 0
+fi
+
+if [[ "$RELEASE_VALIDATION" == "true" ]]; then
+    adb_e shell appops set --uid "$PACKAGE" GET_USAGE_STATS allow
+    adb_e shell appops set --uid "$PACKAGE" SYSTEM_ALERT_WINDOW allow
+    adb_e shell pm grant "$PACKAGE" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
+    run_blocker_navigation_matrix
+    check_logs
+    adb_e logcat -c
 fi
 
 CURRENT_SCENARIO="required-setup"

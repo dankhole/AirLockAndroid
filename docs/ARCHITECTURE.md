@@ -165,11 +165,14 @@ UsageEvents overlap so delayed events are not permanently skipped. Android 15+
 queries filter to lifecycle event types. A newly observed launcher or system
 surface starts a bounded gesture-recovery window that polls at 200 ms for up to
 three seconds. Recovery for an already-blocked app can continue at 500 ms
-through 15 seconds before returning to normal cadence. A low-frequency
-UsageStats sanity check runs every 30 seconds but may seed only an unknown
-candidate when the event query saw no lifecycle event. Aggregate `lastTimeUsed`
-must never replace a known lifecycle candidate, especially launcher, Recents,
-or System UI; doing so previously reattached the blocker over system navigation.
+through 15 seconds before returning to normal cadence. Poll starts stay on that
+cadence instead of adding Binder query duration after every interval. A
+`PAUSED` or `STOPPED` event for the current candidate immediately creates a
+known transition state and removes its overlay; only a later foreground event
+can name the next candidate. A low-frequency UsageStats sanity check runs every
+30 seconds but may seed only the service's initial, never-observed state. It
+cannot replace a lifecycle candidate or an explicit transition state,
+especially around launcher, Recents, or System UI.
 
 UsageStats work pauses while the screen is off or the keyguard is showing and
 resumes immediately on screen-on/unlock. Foreground queries have a ten-second

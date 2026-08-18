@@ -4,7 +4,8 @@ Last updated: August 18, 2026
 
 ## Current Stage
 
-Airlock is an internal-testing candidate, not a release-verified product.
+Airlock is active on the Google Play Internal testing track, not a
+release-verified product.
 The native Java MVP, reliability hardening, dark Goose UI, debug smoke harness,
 release signing, privacy disclosure, and Play submission draft are implemented.
 Physical-device release qualification and Play Console owner actions remain.
@@ -18,18 +19,18 @@ last reviewed repository state; it is not permission to discard newer work.
 | --- | --- |
 | Play application ID | `com.dankhole.airlock` |
 | Java namespace | `com.dankhole.airlockandroid` |
-| Version | `versionCode 1`, `versionName 0.1.0` |
+| Version | Candidate `versionCode 2`, `versionName 0.1.1`; version 1 is on Internal testing |
 | SDK | min 26, compile/target 36 |
 | Runtime stack | Platform Java views; no AndroidX, Compose, Kotlin, or third-party runtime dependency |
 | Release certificate SHA-256 | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
 | Developer verification | New Play package accepted with the existing release certificate; old sideload package remains a separate registration |
 | Play App Signing | Enabled; Google Play signs delivered releases |
 
-The current upload artifact is
-`releases/Airlock-0.1.0-internal-1.aab`; its checksum is recorded in
-[`PLAY_CONSOLE_SUBMISSION.md`](PLAY_CONSOLE_SUBMISSION.md). It was copied from
-the verified signed output under `app/build/outputs`, was built from an
-uncommitted release-preparation worktree, and has not been uploaded.
+The uploaded artifact is `releases/Airlock-0.1.0-internal-1.aab`; its checksum
+is recorded in [`PLAY_CONSOLE_SUBMISSION.md`](PLAY_CONSOLE_SUBMISSION.md). Play
+reports release `1 (0.1.0)` as available to internal testers. A tester has seen
+a generic Play Store installation error, so delivery on a physical tester
+device is not yet confirmed.
 
 ## Last Verified Evidence
 
@@ -63,6 +64,17 @@ SHA-256 is `9fbd3e66295acb6f716d5b9b74903e72cf7dd32ef2b243c7706c1dbce38421d4`.
 The package-migration emulator smoke run was stopped before completion at the
 owner's direction and is not release evidence.
 
+Later on August 18, the `0.1.1` overlay candidate passed 40 unit tests, debug
+lint with zero code findings, debug/release assembly, release bundle generation,
+and one consolidated Android 17 emulator run of both the broad flow and focused
+navigation matrix. Gesture and three-button navigation both removed the blocker
+through the normal foreground-event path in Recents, Home, and a directly
+opened unguarded app, then restored it only after the guarded app actually
+resumed. The broad rotation step also passed in this run. APK inspection and
+APK/AAB signature verification matched version code 2 and the registered
+certificate. This is emulator evidence only; the physical-device matrix is
+still required.
+
 ## Implemented Product Contract
 
 - Dedicated three-step access gate for Usage Access, overlay access, and visible
@@ -71,9 +83,10 @@ owner's direction and is not release evidence.
   off, paused, recovering, and active enforcement, and exposes settings below.
 - Two-step app picker and per-app limits with critical-app exclusions and
   master-PIN authorization while Duty is active.
-- Foreground-service monitoring with overlapping UsageEvents, gesture recovery,
-  periodic UsageStats reconciliation, bounded workers, batched persistence,
-  health diagnostics, boot/update restart, and screen-off suspension.
+- Foreground-service monitoring with overlapping UsageEvents, explicit
+  foreground/background transition state, gesture recovery, startup-only
+  UsageStats seeding, bounded workers, batched persistence, health diagnostics,
+  boot/update restart, and screen-off suspension.
 - Full-screen dark blocker that does not auto-open the keyboard, retains both
   numeric fields across temporary hide/reopen, supports multiple pending
   requests, reports exact granted minutes, plays a Goose celebration, leaves
@@ -99,26 +112,24 @@ and a migration away from the deterministic rule.
 
 ## Next Sequence
 
-1. Fix or replace the Android 17 rotation step in the broad smoke runner, then
-   run both the broad and focused emulator paths from the release candidate.
-2. Complete the physical-device matrix in `TEST_PLAN.md`, including 48-72 hour
+1. Complete the physical-device matrix in `TEST_PLAN.md`, including the
+   Recents/app-switch timing checks and 48-72 hour
    reliability and battery checks on a Pixel and a current Samsung.
-3. Upload the newly built `com.dankhole.airlock` AAB to Internal testing and
-   confirm the app-signing and upload certificate roles under App integrity.
-4. Confirm tester accounts, support email,
+2. Diagnose the current tester installation error and confirm a clean install
+   from the Internal testing opt-in link on a physical device.
+3. Confirm remaining tester accounts, support email,
    and complete the `specialUse` foreground-service declaration/video before
    the first Play rollout.
-5. Increment `versionCode` if a different bundle has already been uploaded,
-   rebuild from the exact release commit, verify signing and checksum, and roll
-   out to the Internal testing track. Do not upload the current stale local AAB.
-6. Collect reliability and UX feedback before implementing real approval auth.
+4. Upload the verified version-2 bundle through the Internal testing track and
+   confirm Play-delivered installation.
+5. Collect reliability and UX feedback before implementing real approval auth.
 
 ## Known Release Gaps
 
 - No CI; local JVM/build/lint and the batched emulator smoke script are the
   automated gates.
-- The broad emulator smoke runner currently has an Android 17 rotation/UI-dump
-  race. The focused blocker-navigation matrix passes independently.
+- The broad emulator smoke runner has intermittently shown an Android 17
+  rotation/UI-dump race, although the consolidated candidate run passed it.
 - The complete physical-device release matrix has not been recorded as passed.
 - Large-font, landscape, tablet, TalkBack heading/navigation, and physical
   cutout behavior are not yet recorded as passed across the core flows.
@@ -132,8 +143,8 @@ and a migration away from the deterministic rule.
 - Master-PIN, approval, and emergency-code entry are not attempt-throttled. The
   app remains intentional friction; address rate limits with the real auth and
   wider-release hardening work instead of implying brute-force resistance.
-- Store graphics, public support email, and the
-  foreground-service demonstration video are owner/release tasks.
+- Play-ready graphics and listing copy are under `play-store/`. The public
+  support email and foreground-service demonstration video remain owner tasks.
 - Sideloaded APKs may trigger an unknown-source/Play Protect warning even when
   correctly signed and developer-verified; that warning is not proof that the
   APK is unsigned.

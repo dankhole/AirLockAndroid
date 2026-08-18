@@ -14,8 +14,8 @@ changes.
 | Java namespace `com.dankhole.airlockandroid` | Intentionally unchanged; it is not the installed package ID |
 | Release certificate | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
 | Target SDK | 36 |
-| Version | `versionCode 1`, `versionName 0.1.0` |
-| Signed AAB | Built and verified locally on August 18, 2026 for `com.dankhole.airlock`; not yet uploaded |
+| Version | Candidate `versionCode 2`, `versionName 0.1.1`; version 1 is on Internal testing |
+| Signed AAB | Version 1 uploaded; version 2 source and emulator validation passed, with the exact committed artifact pending |
 | Privacy policy | GitHub Pages source and in-app URL prepared; Pages must be enabled and the URL checked before rollout |
 | Play Console developer verification | Sufficient to create the app and Internal testing release; monitor any remaining dashboard task |
 | Play App Signing strategy | Enabled; Google Play signs delivered releases |
@@ -23,7 +23,7 @@ changes.
 | Support email | Owner must provide a monitored public address |
 | Physical-device release matrix | Not yet recorded as passed |
 | Foreground-service declaration/video | Must be completed for the target-36 app before first Play rollout |
-| Store graphics | Required before a public listing; not required to start an internal-only test |
+| Store graphics | Upload-ready icon, feature graphic, and four phone screenshots are under `play-store/` |
 
 The privacy policy URL is:
 
@@ -34,16 +34,16 @@ https://dankhole.github.io/AirLockAndroid/privacy/
 GitHub Pages must deploy the repository's `docs` directory before this URL is
 entered in Play Console. Keep the in-app URL and Play Console URL identical.
 
-Current release-candidate AAB SHA-256:
+Uploaded version-1 AAB SHA-256:
 
 ```text
 9fbd3e66295acb6f716d5b9b74903e72cf7dd32ef2b243c7706c1dbce38421d4
 ```
 
-This checksum describes both `app/build/outputs/bundle/release/app-release.aab`
-and the upload copy `releases/Airlock-0.1.0-internal-1.aab`, built from the
-current uncommitted release-preparation worktree. Commit the source before
-treating it as a reproducible release record.
+This checksum describes `releases/Airlock-0.1.0-internal-1.aab`, which was
+prepared from commit `2afe9c3` and uploaded as version 1. The version-2
+candidate checksum is recorded only after rebuilding from its exact source
+commit.
 
 ## Create App
 
@@ -94,7 +94,7 @@ Airlock is an accountability aid, not tamper-proof parental-control or device-se
 ### Internal Release Notes
 
 ```text
-First internal test build! Please test first-run access setup, per-app limits, Goose Duty, today's usage totals, the blocking screen, extra-time requests and reply codes, emergency codes, reboot recovery, and rapid gesture switching between apps.
+Improves blocker timing and navigation behavior. Please verify that the blocker appears promptly on guarded apps, disappears in Recents/Home and unguarded apps, returns after reopening a guarded app, and still preserves unfinished request fields.
 ```
 
 ## Internal Test Track
@@ -106,8 +106,8 @@ First internal test build! Please test first-run access setup, per-app limits, G
    upload key.
 4. Complete the `specialUse` foreground-service declaration and demonstration
    video below.
-5. Use release name `0.1.0 internal 1` only if version code 1 has never been
-   uploaded; otherwise increment and rebuild.
+5. For this candidate, use release name `0.1.1 internal 2` after verifying the
+   version-2 artifact and its recorded checksum.
 6. Review any Console warnings, then start rollout to Internal testing.
 7. Copy the opt-in link and open it while signed into an allow-listed tester
    account.
@@ -223,11 +223,15 @@ Video checklist:
 Upload the video as an accessible unlisted YouTube video or other link accepted
 by Play Console. It must show the actual Android release behavior.
 
-## Preview Assets Before Wider Release
+## Preview Assets
+
+Upload-ready files and copy are in [`../play-store/`](../play-store/). The
+`Airlock-Play-Listing.zip` bundle is only for convenient transfer; upload the
+individual PNG files to their matching Play Console fields.
 
 - 512 x 512 PNG Play Store icon, at most 1 MB
 - 1024 x 500 feature graphic
-- At least two truthful phone screenshots without debug fixtures or test-only UI
+- Four 1080 x 1920 truthful phone screenshots without test-only UI
 - Optional short demonstration video
 
 Keep the dark green Goose visual system consistent, center important feature

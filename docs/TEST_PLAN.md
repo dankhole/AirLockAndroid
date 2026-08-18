@@ -17,6 +17,7 @@ Confirm the installed package reports `targetSdk=36`.
 
 The local unit suite verifies edit-authorization expiry, process-local editor
 sessions, bounded query execution, foreground event classification,
+background-to-empty transitions and resume-only blocker restoration,
 approval-code duration policy, atomic approval redemption and rollback with
 multiple pending requests, three-code emergency-batch replacement,
 notification visibility policy, and monitoring-exit recovery classification.
@@ -119,17 +120,21 @@ Expected result: a blocked app never becomes interactive after a gesture or app 
 3. Partially swipe up toward recents, then cancel the gesture back into the blocked app.
 4. Confirm the overlay is visible again in well under one second and the app behind it cannot be tapped.
 5. Open recents fully and confirm Airlock does not cover the recents screen or prevent selecting another app.
-6. Remain in Recents for at least 35 seconds and confirm the blocker does not
+6. Scroll between task cards without selecting one and confirm the blocker does
+   not reappear while Recents remains foreground.
+7. Remain in Recents for at least 35 seconds and confirm the blocker does not
    reattach after the aggregate foreground sanity check.
-7. Dismiss the blocked app's task, go Home, and confirm Recents, Home, and the
+8. Dismiss the blocked app's task, go Home, and confirm Recents, Home, and the
    launcher remain usable.
-8. Return to the blocked app and confirm the overlay is rebuilt and still
+9. Return to the blocked app and confirm the overlay is rebuilt and still
    contains any unfinished request minutes or approval code.
-9. With the keyboard closed, press Android Back from the blocker and confirm it
+10. With the keyboard closed, press Android Back from the blocker and confirm it
    performs the same safe exit as `Leave App!` rather than trapping navigation.
-10. Repeat while the number keyboard is open and confirm the first Back closes
+11. Repeat while the number keyboard is open and confirm the first Back closes
     the keyboard and a following Back leaves the guarded app.
-11. Repeat steps 5-10 with gesture navigation and three-button navigation.
+12. From the blocker, switch directly to an unblocked app and confirm the
+    blocker is removed without covering the new app.
+13. Repeat steps 5-12 with gesture navigation and three-button navigation.
 
 ### Extra-Time Code
 

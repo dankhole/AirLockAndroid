@@ -35,8 +35,8 @@ recorded. Do not turn an emulator pass into a device-reliability claim.
 | App update | `MY_PACKAGE_REPLACED` | Start duty if it was requested |
 | Usage Access revoked or temporarily unavailable | AppOps check and query result | Keep service/notification alive; retry every 30 seconds |
 | Overlay access revoked | Settings check | Hide blocker, show required state, retry every 30 seconds |
-| Delayed UsageEvents | Ten-second overlapping query window | Reprocess recent lifecycle events without double-counting elapsed time |
-| Unknown foreground after service creation | 30-second aggregate sanity check | Seed an empty candidate only when no lifecycle event supplied one; aggregate stats never override a known launcher, System UI, or app candidate |
+| Delayed UsageEvents | Ten-second overlapping query window | Clear a backgrounded candidate immediately, poll the transition window quickly, and reprocess recent lifecycle events without double-counting elapsed time |
+| Unknown foreground after service creation | 30-second aggregate sanity check | Seed only a never-observed initial candidate; aggregate stats never override a known launcher, System UI, app, or explicit background transition |
 | Stuck foreground query | Ten-second main-thread watchdog | Use at most two process-wide workers with no queue; reject additional work and retry every 30 seconds until a worker returns or the process restarts |
 | Overlay attach failure | `WindowManager.addView` exception | Exponential retry from one to 30 seconds |
 | Screen off or keyguard visible | Screen/user-present broadcasts plus state check | Flush usage, stop querying, resume immediately after unlock |
@@ -45,8 +45,9 @@ recorded. Do not turn an emulator pass into a device-reliability claim.
 
 ## Efficiency Boundaries
 
-- Normal foreground query: once per second while the device is interactive and
-  unlocked.
+- Normal foreground query: starts once per second while the device is
+  interactive and unlocked; Binder query duration is included in that cadence
+  rather than added after it.
 - Gesture recovery: 200 ms for at most three seconds, then at most 500 ms
   through 15 seconds only for an already-blocked app.
 - Full-day usage reconciliation: once per minute while interactive and
@@ -85,18 +86,22 @@ investigating blocker latency; gesture-switch regressions belong in the event
 overlap/recovery path unless device evidence shows otherwise.
 
 `UsageEvents` activity lifecycle transitions are the authoritative foreground
-signal once a candidate exists. `queryUsageStats()` is interval-aggregated and
-is used only to seed an unknown candidate during a bounded sanity check. It must
-never replace a known launcher or Recents candidate, because doing so can attach
-the blocker to a system-navigation surface after the guarded app has left the
-foreground.
+signal once any lifecycle state exists. A foreground event names the candidate;
+a matching `PAUSED` or `STOPPED` event clears it until another foreground event
+arrives. This explicit empty transition is different from having no startup
+information. `queryUsageStats()` is interval-aggregated and may seed only the
+latter during a bounded sanity check. It must never replace a known launcher,
+Recents, app, or empty transition state, because doing so can attach the blocker
+after the guarded app has left the foreground.
 
-The five-minute sticky-blocker record is only a recovery hint for canceled
-Recents/launcher transitions and temporary overlay interruption. It does not
-authorize drawing over a known system surface. When Home, Recents, launcher, or
-System UI is the lifecycle candidate, the overlay must be removed while the
-service polls briefly for a return to the guarded app. Back on a focused blocker
-must also provide the same Home escape as `Leave App!` so a focusable overlay
+The five-minute sticky-blocker record retains form state and identifies which
+blocked package may need rebuilding after a temporary interruption. It never
+supplies foreground authority. When the blocked app backgrounds, or Home,
+Recents, launcher, or System UI is the lifecycle candidate, the overlay must be
+removed while the service polls briefly for an actual return event. Query
+failure or timeout also removes the overlay and reports unhealthy monitoring
+rather than leaving a stale system-wide window attached. Back on a focused
+blocker must provide the same Home escape as `Leave App!` so a focusable overlay
 cannot trap all navigation.
 
 ## Diagnostics
