@@ -117,6 +117,11 @@ release readiness, run [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) on a physical
 Pixel and Samsung device; emulator success does not validate multi-day
 reliability or battery impact.
 
+After validation, shut down every emulator and test, smoke-runner, log-tail, or
+development process started for the task. Verify those processes have exited
+before handing work back. Do not stop an emulator or shared background process
+that was already running before the task.
+
 ## Code Review Rules
 
 - Flag any path that can show Duty as healthy when service/access is unhealthy.

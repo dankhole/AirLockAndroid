@@ -76,19 +76,32 @@ and weakening active configuration must keep the current master-PIN gates.
 
 - The blocker is serious enough to interrupt use, but it is one focused card,
   not a dense settings screen.
-- Order remains: app/usage summary, requested minutes, `Text the Keyholder!`,
-  approval code, `Loose the Goose!`, optional emergency help, and `Leave App!`.
+- The initial blocker is a home state, not a form. It shows the blocked app and
+  usage summary, active-request status when applicable, and clear choices for
+  approval entry, a new request, emergency access, or leaving the app.
+- Inputs live on focused sub-screens: requested minutes, ordinary approval, and
+  emergency day pass are never presented together. Each sub-screen includes an
+  explicit `Back to blocker options` action; Android Back retains its safe-exit
+  behavior.
+- When one or more requests are active, their waiting status appears before the
+  choices and `Enter approval code` becomes the primary action. `Make another
+  request` must explain that earlier requests remain valid and that every reply
+  grants the minutes captured by its own request.
+- Pending, replacement, and emergency consequences use short labeled status
+  rows rather than paragraph copy. Action cards use a short title and one-line
+  supporting text centered within the action, while structured status rows and
+  field labels remain left-aligned for scanning. Natural wrapping remains
+  available for large fonts and narrower devices.
 - The overlay never opens the keyboard automatically. Explicitly tapping an
   input may focus it; rebuilding or restoring the overlay must focus the root
   and keep the keyboard hidden.
-- Both numeric fields, current validation text, last requested amount, and the
-  emergency disclosure survive temporary hide/reopen for the same package.
+- The current sub-screen, both ordinary numeric fields, emergency-code entry,
+  and per-screen validation survive temporary hide/reopen for the same package.
 - Requested minutes stay editable. Each generated request persists its own
   minutes and expiry, so several approvals may be in flight and redemption
   never reads the current form value.
 - Ordinary request and approval values render as exactly four digits, including
-  leading zeroes. The shared approval field must continue to allow eight digits
-  when the user explicitly opens emergency access.
+  leading zeroes. Emergency access uses a separate eight-digit field.
 - Empty or invalid codes show inline text and keep the blocker visible.
 - Back with the keyboard closed performs the same safe exit as `Leave App!`.
   Recents, Home, and system navigation must never remain covered by a stale

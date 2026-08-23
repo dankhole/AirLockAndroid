@@ -34,9 +34,9 @@ The MVP currently includes:
   enforcement states.
 - A foreground monitoring service with boot/update restart, health reporting,
   bounded recovery, gesture-switch detection, and conservative persistence.
-- A dark, safe-area-aware Goose UI and full-screen blocker that retains both
-  inputs, stays readable on narrow phones, and does not open the keyboard until
-  the user touches an input.
+- A dark, safe-area-aware Goose UI and full-screen blocker with a decision-first
+  home, focused request/approval/emergency forms, retained input state, and no
+  automatic keyboard opening.
 - A navigation-safe blocker that clears for Home and Recents, keeps system
   controls reachable, and treats Android Back as an explicit safe exit.
 - Multiple pending extra-time requests. Each approval grants the exact minutes

@@ -350,6 +350,86 @@ public class ApprovalRequestTest {
         );
     }
 
+    @Test
+    public void pendingSummaryDescribesOneActiveRequest() {
+        TestSharedPreferences preferences = readyPreferences();
+        Preferences.createRequestCode(
+                preferences,
+                PACKAGE_NAME,
+                17,
+                NOW_MS,
+                REQUEST_4321_OFFSET,
+                false
+        );
+
+        Preferences.PendingApprovalSummary summary = Preferences.pendingApprovalSummary(
+                preferences,
+                PACKAGE_NAME,
+                NOW_MS + 60_000L
+        );
+
+        assertTrue(summary.hasRequests());
+        assertEquals(1, summary.count);
+        assertEquals(17, summary.singleMinutes);
+        assertEquals(9, summary.singleRemainingMinutes);
+    }
+
+    @Test
+    public void pendingSummaryCountsMultipleRequestsWithoutGuessingOneDuration() {
+        TestSharedPreferences preferences = readyPreferences();
+        Preferences.createRequestCode(
+                preferences,
+                PACKAGE_NAME,
+                5,
+                NOW_MS,
+                REQUEST_4321_OFFSET,
+                false
+        );
+        Preferences.createRequestCode(
+                preferences,
+                PACKAGE_NAME,
+                12,
+                NOW_MS,
+                REQUEST_4321_OFFSET + 1,
+                false
+        );
+
+        Preferences.PendingApprovalSummary summary = Preferences.pendingApprovalSummary(
+                preferences,
+                PACKAGE_NAME,
+                NOW_MS
+        );
+
+        assertEquals(2, summary.count);
+        assertEquals(-1, summary.singleMinutes);
+        assertEquals(-1, summary.singleRemainingMinutes);
+    }
+
+    @Test
+    public void pendingSummaryDropsExpiredRequests() {
+        TestSharedPreferences preferences = readyPreferences();
+        Preferences.createRequestCode(
+                preferences,
+                PACKAGE_NAME,
+                17,
+                NOW_MS,
+                REQUEST_4321_OFFSET,
+                false
+        );
+
+        Preferences.PendingApprovalSummary summary = Preferences.pendingApprovalSummary(
+                preferences,
+                PACKAGE_NAME,
+                NOW_MS + 600_001L
+        );
+
+        assertFalse(summary.hasRequests());
+        assertTrue(preferences.getStringSet(
+                approvalCodesKey(),
+                Collections.emptySet()
+        ).isEmpty());
+    }
+
     private TestSharedPreferences readyPreferences() {
         TestSharedPreferences preferences = new TestSharedPreferences();
         assertTrue(Preferences.setMasterPin(preferences, MASTER_PIN));

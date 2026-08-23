@@ -471,6 +471,58 @@ final class Preferences {
         return "";
     }
 
+    static PendingApprovalSummary pendingApprovalSummary(Context context, String packageName) {
+        return pendingApprovalSummary(
+                prefs(context),
+                packageName,
+                System.currentTimeMillis()
+        );
+    }
+
+    static PendingApprovalSummary pendingApprovalSummary(
+            SharedPreferences preferences,
+            String packageName,
+            long now
+    ) {
+        cleanExpiredApprovalCodes(preferences, packageName, now);
+
+        int count = 0;
+        int singleMinutes = -1;
+        long singleExpiry = 0L;
+        for (String approvalCode : pendingApprovalCodes(preferences, packageName)) {
+            long expiry = preferences.getLong(
+                    approvalExpiryKey(packageName, approvalCode),
+                    0L
+            );
+            int minutes = preferences.getInt(
+                    approvalMinutesKey(packageName, approvalCode),
+                    -1
+            );
+            if (expiry <= now || minutes <= 0) {
+                continue;
+            }
+            count++;
+            singleMinutes = minutes;
+            singleExpiry = expiry;
+        }
+
+        String legacyCode = preferences.getString(APPROVAL_CODE_PREFIX + packageName, "");
+        long legacyExpiry = preferences.getLong(APPROVAL_CODE_EXPIRY_PREFIX + packageName, 0L);
+        int legacyMinutes = preferences.getInt(APPROVAL_CODE_MINUTES_PREFIX + packageName, -1);
+        if (!legacyCode.isEmpty() && legacyExpiry > now && legacyMinutes > 0) {
+            count++;
+            singleMinutes = legacyMinutes;
+            singleExpiry = legacyExpiry;
+        }
+
+        if (count != 1) {
+            return new PendingApprovalSummary(count, -1, -1);
+        }
+        long remainingMs = Math.max(1L, singleExpiry - now);
+        int remainingMinutes = (int) Math.max(1L, (remainingMs + 59_999L) / 60_000L);
+        return new PendingApprovalSummary(count, singleMinutes, remainingMinutes);
+    }
+
     @SuppressLint("ApplySharedPref")
     static synchronized int redeemApprovalCodeAndGrantMinutes(
             Context context,
@@ -690,6 +742,22 @@ final class Preferences {
 
     private static String approvalMinutesKey(String packageName, String approvalCode) {
         return APPROVAL_CODE_MINUTES_PREFIX + packageName + "_" + approvalCode;
+    }
+
+    static final class PendingApprovalSummary {
+        final int count;
+        final int singleMinutes;
+        final int singleRemainingMinutes;
+
+        PendingApprovalSummary(int count, int singleMinutes, int singleRemainingMinutes) {
+            this.count = Math.max(0, count);
+            this.singleMinutes = singleMinutes;
+            this.singleRemainingMinutes = singleRemainingMinutes;
+        }
+
+        boolean hasRequests() {
+            return count > 0;
+        }
     }
 
     private static String limitKey(String packageName) {

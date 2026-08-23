@@ -87,12 +87,18 @@ only after explicit input interaction or the explicit text-request action.
 Rebuilding the blocker after another app was foregrounded restores root focus
 and keeps the keyboard hidden.
 
-Recommended overlay labels:
+The blocker home must state when one or more requests are waiting. When a new
+request is started while another is active, say plainly that the earlier reply
+still works and grants the minutes in its own request text. Do not call the new
+request a replacement or imply that it cancels an earlier one.
 
-1. `Ask for minutes!`
-2. `Text the Keyholder!`
-3. `Enter approval code!`
-4. `Let the goose loose!`
+Recommended blocker navigation labels:
+
+1. `Ask for extra time` or `Make another request`
+2. `Create request & open text`
+3. `Enter approval code`
+4. `Loose the Goose!`
+5. `Emergency day pass`
 
 Recommended SMS structure:
 

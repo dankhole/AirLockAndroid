@@ -8,6 +8,10 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.os.Build;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.StyleSpan;
 import android.view.DisplayCutout;
 import android.view.Gravity;
 import android.view.View;
@@ -287,24 +291,14 @@ final class UiStyle {
     }
 
     static void setStatus(TextView textView, int status) {
-        int textColor = COLOR_TEXT_SECONDARY;
-        int background = COLOR_SURFACE_ALT;
-        int outline = COLOR_OUTLINE;
-        if (status == STATUS_READY) {
-            textColor = COLOR_READY;
-            background = COLOR_READY_SOFT;
-            outline = COLOR_READY;
-        } else if (status == STATUS_REQUIRED) {
-            textColor = COLOR_DANGER;
-            background = COLOR_DANGER_SOFT;
-            outline = COLOR_DANGER;
-        } else if (status == STATUS_WARNING) {
-            textColor = COLOR_WARNING;
-            background = COLOR_WARNING_SOFT;
-            outline = COLOR_WARNING;
-        }
-        textView.setTextColor(textColor);
-        textView.setBackground(rounded(textView.getContext(), background, 8, outline, 1));
+        textView.setTextColor(statusTextColor(status));
+        textView.setBackground(rounded(
+                textView.getContext(),
+                statusBackgroundColor(status),
+                8,
+                statusOutlineColor(status),
+                1
+        ));
     }
 
     static TextView badge(Context context, String text, int status) {
@@ -333,6 +327,52 @@ final class UiStyle {
         card.setPadding(dp(context, 18), dp(context, 18), dp(context, 18), dp(context, 18));
         card.setBackground(rounded(context, COLOR_OVERLAY_SURFACE, 8, COLOR_OUTLINE, 1));
         return card;
+    }
+
+    static LinearLayout overlayStatusCard(Context context, int status) {
+        LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(
+                dp(context, 12),
+                dp(context, 10),
+                dp(context, 12),
+                dp(context, 10)
+        );
+        card.setBackground(rounded(
+                context,
+                statusBackgroundColor(status),
+                8,
+                statusOutlineColor(status),
+                1
+        ));
+        return card;
+    }
+
+    static TextView overlayStatusTitle(Context context, String text, int status) {
+        TextView textView = new TextView(context);
+        textView.setText(text);
+        textView.setTextSize(13);
+        textView.setTextColor(statusTextColor(status));
+        textView.setTypeface(Typeface.DEFAULT_BOLD);
+        return textView;
+    }
+
+    static TextView overlayStatusValue(Context context, String text) {
+        TextView textView = new TextView(context);
+        textView.setText(text);
+        textView.setTextSize(16);
+        textView.setTextColor(COLOR_TEXT_INVERSE);
+        textView.setTypeface(Typeface.DEFAULT_BOLD);
+        return textView;
+    }
+
+    static TextView overlayStatusDetail(Context context, String text) {
+        TextView textView = new TextView(context);
+        textView.setText(text);
+        textView.setTextSize(14);
+        textView.setTextColor(COLOR_TEXT_SECONDARY);
+        textView.setLineSpacing(dp(context, 1), 1f);
+        return textView;
     }
 
     static TextView overlayTitle(Context context, String text) {
@@ -419,6 +459,39 @@ final class UiStyle {
                 COLOR_DISABLED_SURFACE,
                 0
         ));
+        return button;
+    }
+
+    static Button overlayActionButton(
+            Context context,
+            String title,
+            String body,
+            boolean primary
+    ) {
+        Button button = baseButton(context, actionButtonText(title, body));
+        button.setTextColor(buttonTextColors(COLOR_TEXT_INVERSE, COLOR_TEXT_DISABLED));
+        button.setBackground(buttonBackground(
+                context,
+                primary ? COLOR_PRIMARY : COLOR_PRIMARY_DEEP,
+                primary ? COLOR_PRIMARY_DEEP : COLOR_PRIMARY_PRESSED,
+                COLOR_DISABLED_SURFACE,
+                0
+        ));
+        styleOverlayActionButton(context, button);
+        return button;
+    }
+
+    static Button overlayQuietActionButton(Context context, String title, String body) {
+        Button button = baseButton(context, actionButtonText(title, body));
+        button.setTextColor(buttonTextColors(COLOR_TEXT_SECONDARY, COLOR_TEXT_DISABLED));
+        button.setBackground(buttonBackground(
+                context,
+                COLOR_SURFACE_ALT,
+                COLOR_DISABLED_SURFACE,
+                COLOR_DISABLED_SURFACE,
+                COLOR_OUTLINE
+        ));
+        styleOverlayActionButton(context, button);
         return button;
     }
 
@@ -518,6 +591,10 @@ final class UiStyle {
     }
 
     private static Button baseButton(Context context, String text) {
+        return baseButton(context, (CharSequence) text);
+    }
+
+    private static Button baseButton(Context context, CharSequence text) {
         Button button = new Button(context);
         button.setText(text);
         button.setAllCaps(false);
@@ -530,6 +607,44 @@ final class UiStyle {
         button.setStateListAnimator(null);
         button.setElevation(0);
         return button;
+    }
+
+    private static SpannableString actionButtonText(String title, String body) {
+        String combined = title + "\n" + body;
+        SpannableString styled = new SpannableString(combined);
+        styled.setSpan(
+                new StyleSpan(Typeface.BOLD),
+                0,
+                title.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+        styled.setSpan(
+                new StyleSpan(Typeface.NORMAL),
+                title.length() + 1,
+                combined.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+        styled.setSpan(
+                new RelativeSizeSpan(0.88f),
+                title.length() + 1,
+                combined.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+        return styled;
+    }
+
+    private static void styleOverlayActionButton(Context context, Button button) {
+        button.setTypeface(Typeface.DEFAULT);
+        button.setGravity(Gravity.CENTER);
+        button.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+        button.setMinHeight(dp(context, 76));
+        button.setPadding(
+                dp(context, 16),
+                dp(context, 10),
+                dp(context, 16),
+                dp(context, 10)
+        );
+        button.setLineSpacing(dp(context, 2), 1f);
     }
 
     private static View systemBarScrim(Context context) {
@@ -565,6 +680,45 @@ final class UiStyle {
                 },
                 new int[]{disabledColor, enabledColor}
         );
+    }
+
+    private static int statusTextColor(int status) {
+        if (status == STATUS_READY) {
+            return COLOR_READY;
+        }
+        if (status == STATUS_REQUIRED) {
+            return COLOR_DANGER;
+        }
+        if (status == STATUS_WARNING) {
+            return COLOR_WARNING;
+        }
+        return COLOR_TEXT_SECONDARY;
+    }
+
+    private static int statusBackgroundColor(int status) {
+        if (status == STATUS_READY) {
+            return COLOR_READY_SOFT;
+        }
+        if (status == STATUS_REQUIRED) {
+            return COLOR_DANGER_SOFT;
+        }
+        if (status == STATUS_WARNING) {
+            return COLOR_WARNING_SOFT;
+        }
+        return COLOR_SURFACE_ALT;
+    }
+
+    private static int statusOutlineColor(int status) {
+        if (status == STATUS_READY) {
+            return COLOR_READY;
+        }
+        if (status == STATUS_REQUIRED) {
+            return COLOR_DANGER;
+        }
+        if (status == STATUS_WARNING) {
+            return COLOR_WARNING;
+        }
+        return COLOR_OUTLINE;
     }
 
     private static StateListDrawable buttonBackground(

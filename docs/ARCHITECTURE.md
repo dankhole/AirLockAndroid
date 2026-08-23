@@ -107,11 +107,14 @@ authorization decision.
 Owns blocker form rendering, per-app transient form state, validation,
 accessibility announcements, and the unlock celebration. `MonitoringService`
 retains enforcement and lifecycle ownership through a narrow listener
-contract. Emergency-code instructions are hidden behind a secondary reveal so
-the ordinary request flow remains focused. Initial attachment focuses the
-window root and hides the keyboard; the keyboard opens only after explicit
-input interaction. Requested minutes, approval entry, errors, and emergency
-disclosure state survive temporary overlay removal for the same package. Back
+contract. The controller renders a blocker home and separate request,
+approval-entry, and emergency-day-pass sub-screens so only one decision or form
+is visible at a time. It reads a metadata-only pending-request summary from
+`Preferences` to make active requests and their saved durations visible without
+exposing stored approval values. Initial attachment focuses the window root and
+hides the keyboard; the keyboard opens only after explicit input interaction.
+Current sub-screen, requested minutes, approval and emergency entries, and
+per-screen errors survive temporary overlay removal for the same package. Back
 with the keyboard closed routes to the same Home exit as `Leave App!`; Recents,
 Home, and navigation surfaces must remain usable while the blocker is hidden.
 

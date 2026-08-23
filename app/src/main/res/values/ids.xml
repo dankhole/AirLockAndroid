@@ -62,13 +62,18 @@
     <item name="blocker_title" type="id" />
     <item name="blocker_summary" type="id" />
     <item name="blocker_request_status" type="id" />
+    <item name="blocker_enter_approval" type="id" />
+    <item name="blocker_new_request" type="id" />
+    <item name="blocker_emergency_option" type="id" />
+    <item name="blocker_flow_back" type="id" />
     <item name="blocker_minutes" type="id" />
     <item name="blocker_text_keyholder" type="id" />
     <item name="blocker_approval_code" type="id" />
     <item name="blocker_error" type="id" />
     <item name="blocker_unlock" type="id" />
     <item name="blocker_emergency_hint" type="id" />
-    <item name="blocker_emergency_toggle" type="id" />
+    <item name="blocker_emergency_code" type="id" />
+    <item name="blocker_emergency_submit" type="id" />
     <item name="blocker_leave" type="id" />
     <item name="blocker_celebration" type="id" />
 

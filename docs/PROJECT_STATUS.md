@@ -32,17 +32,13 @@ reports release `1 (0.1.0)` as available to internal testers. A tester has seen
 a generic Play Store installation error, so delivery on a physical tester
 device is not yet confirmed.
 
-The previously built replacement candidates are
+The current replacement candidates are
 `releases/Airlock-0.1.1-internal-2.aab` (SHA-256
-`e5a8c5fb42f60373d29cfab087f32453ec83df4749f207011b2fcd032ea9023c`)
+`5b69eee3d289866a1dddc5582e8c22e0f3a4588488297e61b8ad800c789b7ac5`)
 and `releases/Airlock-0.1.1-internal-2.apk` (SHA-256
-`b352702bc65a90d758531cd9bedd7429a0d9bb327a38c04008d27d150b1289a4`).
-Both were built from exact source commit
-`57b95572b02271a4d3c880031dbcd65364a69416`, match their signed Gradle outputs,
-and remain local. They predate the four-digit approval change and are now
-obsolete. Current release outputs have been compiled only under `app/build/` for
-validation; no replacement candidate has been copied to `releases/` or
-distributed.
+`4fea3ed5dc49608caf910dee6aa77df2a94ef03d3cbea06fa171da89933eb31e`).
+They include the four-digit approval flow and decision-first blocker UI, match
+their signed Gradle outputs, and remain local pending upload or distribution.
 
 ## Last Verified Evidence
 
@@ -99,6 +95,23 @@ navigation modes. The report is under
 `app/build/reports/android-smoke/20260823-120055`. This remains emulator
 evidence; physical-device qualification is still required.
 
+Later on August 23, the blocker decision-flow overhaul passed 60 JVM tests,
+debug assembly, and debug lint. The complete Android 17 Pixel 8 emulator smoke
+suite passed setup, real-service blocking, retained request/approval state,
+active-request messaging, exact-duration redemption and celebration, and both
+navigation modes. Its report is under
+`app/build/reports/android-smoke/20260823-150158`. A final typography-only
+refinement then passed the same Gradle batch and was reviewed through fresh
+captures of the four blocker states under
+`app/build/reports/blocker-ui-review`. This remains emulator evidence.
+
+The final centered action-card refinement then passed 60 JVM tests, debug lint,
+debug and release assembly, and release bundle generation. Artifact inspection
+confirmed package `com.dankhole.airlock`, version code 2 (`0.1.1`), min SDK 26,
+target SDK 36, and the registered release certificate. The signed APK and AAB
+were copied to `releases/` with the checksums recorded above; physical-device
+qualification is still required before treating them as release-verified.
+
 ## Implemented Product Contract
 
 - Dedicated three-step access gate for Usage Access, overlay access, and visible
@@ -111,11 +124,12 @@ evidence; physical-device qualification is still required.
   foreground/background transition state, gesture recovery, startup-only
   UsageStats seeding, bounded workers, batched persistence, health diagnostics,
   boot/update restart, and screen-off suspension.
-- Full-screen dark blocker that does not auto-open the keyboard, retains both
-  numeric fields across temporary hide/reopen, supports multiple pending
-  requests, reports exact granted minutes, plays a Goose celebration, leaves
-  safely on Back, and cannot be reattached over known Home/Recents state by the
-  aggregate foreground sanity check.
+- Full-screen dark blocker with a decision-first home and separate request,
+  approval, and emergency forms. It makes active requests and additive new
+  requests explicit, does not auto-open the keyboard, retains flow/input state
+  across temporary hide/reopen, reports exact granted minutes, plays a Goose
+  celebration, leaves safely on Back, and cannot be reattached over known
+  Home/Recents state by the aggregate foreground sanity check.
 - Four-digit requests and replies with a shared four-digit Master/Keyholder PIN
   other than `0000`.
   The platform-agnostic multiplication rule is implemented, but current debug

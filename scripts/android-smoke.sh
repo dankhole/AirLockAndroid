@@ -527,29 +527,44 @@ set_portrait
 capture_artifacts "$CURRENT_SCENARIO"
 
 CURRENT_SCENARIO="live-blocker"
-fixture seed --es target_package "$TARGET_PACKAGE" --ez monitoring true >/dev/null
+fixture seed --es target_package "$TARGET_PACKAGE" \
+    --ei request_minutes 7 --ez monitoring true >/dev/null
 adb_e shell am force-stop "$PACKAGE"
 launch_main
 sleep 2
 adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 wait_for_id blocker_root 20
+wait_for_id blocker_request_status
+assert_id_contains blocker_request_status "WAITING FOR KEYHOLDER"
+capture_artifacts "blocker-home-pending"
+tap_id blocker_enter_approval
+wait_for_id blocker_approval_code
+capture_artifacts "blocker-approval-entry"
 tap_id blocker_unlock
 wait_for_id blocker_error
 assert_id_contains blocker_error REQUIRED
-type_id blocker_minutes 9
 type_id blocker_approval_code 123
+tap_id blocker_flow_back
+tap_id blocker_new_request
+wait_for_id blocker_minutes
+capture_artifacts "blocker-new-request"
+type_id blocker_minutes 9
 adb_e shell input keyevent 3
 adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 wait_for_id blocker_root 20
 assert_id_contains blocker_minutes 9
+tap_id blocker_flow_back
+tap_id blocker_enter_approval
+wait_for_id blocker_approval_code
 assert_id_contains blocker_approval_code 123
 tap_id blocker_unlock
 wait_for_id blocker_error
 assert_id_contains blocker_error REQUIRED
-tap_id blocker_emergency_toggle
+tap_id blocker_flow_back
+tap_id blocker_emergency_option
 wait_for_id blocker_emergency_hint
 assert_id_contains blocker_emergency_hint 24
-capture_artifacts "$CURRENT_SCENARIO"
+capture_artifacts "blocker-emergency-day-pass"
 
 CURRENT_SCENARIO="approval-duration-and-celebration"
 fixture_output="$(fixture seed --es target_package "$TARGET_PACKAGE" \
@@ -567,6 +582,8 @@ adb_e shell am force-stop "$PACKAGE"
 adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.DebugBlockerActivity" \
     --es target_package "$TARGET_PACKAGE" --es app_label "$TARGET_QUERY" \
     --ei used_minutes 2 --ei limit_minutes 1 >/dev/null
+wait_for_id blocker_enter_approval
+tap_id blocker_enter_approval
 wait_for_id blocker_approval_code
 type_id blocker_approval_code "$expected_approval_code"
 tap_id blocker_unlock
