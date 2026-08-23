@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: August 18, 2026
+Last updated: August 23, 2026
 
 ## Current Stage
 
@@ -32,14 +32,17 @@ reports release `1 (0.1.0)` as available to internal testers. A tester has seen
 a generic Play Store installation error, so delivery on a physical tester
 device is not yet confirmed.
 
-The replacement candidates are
+The previously built replacement candidates are
 `releases/Airlock-0.1.1-internal-2.aab` (SHA-256
 `e5a8c5fb42f60373d29cfab087f32453ec83df4749f207011b2fcd032ea9023c`)
 and `releases/Airlock-0.1.1-internal-2.apk` (SHA-256
 `b352702bc65a90d758531cd9bedd7429a0d9bb327a38c04008d27d150b1289a4`).
 Both were built from exact source commit
 `57b95572b02271a4d3c880031dbcd65364a69416`, match their signed Gradle outputs,
-and remain local until distributed through the appropriate test channel.
+and remain local. They predate the four-digit approval change and are now
+obsolete. Current release outputs have been compiled only under `app/build/` for
+validation; no replacement candidate has been copied to `releases/` or
+distributed.
 
 ## Last Verified Evidence
 
@@ -84,6 +87,18 @@ APK/AAB signature verification matched version code 2 and the registered
 certificate. This is emulator evidence only; the physical-device matrix is
 still required.
 
+On August 23, the four-digit platform-agnostic approval change passed all 57
+JVM tests, debug lint, debug and release assembly, and release bundle
+generation. Inspection of generated build inputs confirmed both variants set
+`PLUS_FIVE_APPROVAL_OVERRIDE=true` and package `INTERNAL TEST OVERRIDE` SMS
+copy while Airlock remains on Internal testing; the PIN-calculated path is
+covered directly by unit tests. The complete broad
+Android 17 Pixel 8 emulator smoke suite then
+passed, including setup, blocker approval, retained state, rotation, and both
+navigation modes. The report is under
+`app/build/reports/android-smoke/20260823-120055`. This remains emulator
+evidence; physical-device qualification is still required.
+
 ## Implemented Product Contract
 
 - Dedicated three-step access gate for Usage Access, overlay access, and visible
@@ -101,23 +116,35 @@ still required.
   requests, reports exact granted minutes, plays a Goose celebration, leaves
   safely on Back, and cannot be reattached over known Home/Recents state by the
   aggregate foreground sanity check.
+- Four-digit requests and replies with a shared four-digit Master/Keyholder PIN
+  other than `0000`.
+  The platform-agnostic multiplication rule is implemented, but current debug
+  and signed Internal-testing releases intentionally accept the labeled `+5`
+  test override. Pending requests keep their original minutes for 10 minutes,
+  and changing the PIN revokes them.
 - Three hashed one-time emergency codes per replacement batch; one code pauses
   blocking for 24 hours while keeping Duty requested.
 - Guarded-app-only usage totals, local-only storage, disabled backup/transfer,
   no analytics/ads/backend, and user-initiated SMS compose with no SMS permission.
 
-## Deliberate Test-Release Compromise
+## Local Approval Model And Test Override
 
-The first friend/internal test uses a transparent deterministic approval rule:
-add 5 to every request-code digit modulo 10. A generated approval code is saved
-locally with its requested minutes and a 10-minute expiry, so multiple requests
-can remain in flight and changing the form cannot change an existing grant.
+The implemented offline calculation requires no Keyholder app, browser,
+account, or backend: multiply the four-digit request by the shared four-digit
+Master PIN, discard the product's final two digits, and return the last four
+digits left, including leading zeroes. The Master PIN may not be `0000` because
+that would map every request to the same reply. Airlock stores a locally derived
+lookup rather than the plaintext PIN and keeps each pending result with its
+original minutes and a 10-minute expiry. Request values may recur after expiry
+or redemption; generation skips reply values that would collide with another
+active request for the same app.
 
-This is test plumbing, not strong accountability or authentication. Do not add
-complex hardening around it. After the testing release proves the core Android
-flow, design the real Keyholder authorization path, likely a backend or
-companion app with server-generated one-time approvals, rate limits, expiry,
-and a migration away from the deterministic rule.
+This is a deterrent, not strong authentication. A person who controls the
+device, knows the PIN, or collects enough examples can bypass it. During
+Internal testing, both debug and release builds intentionally replace the PIN
+calculation with the per-digit `+5` rule. Their SMS copy labels the override;
+switching the signed release to the PIN calculation remains an explicit later
+decision.
 
 ## Next Sequence
 
@@ -131,7 +158,9 @@ and a migration away from the deterministic rule.
    the first Play rollout.
 4. Upload the verified version-2 bundle through the Internal testing track and
    confirm Play-delivered installation.
-5. Collect reliability and UX feedback before implementing real approval auth.
+5. Collect reliability, approval-flow, and deterrence feedback, then explicitly
+   decide when to retire the signed-release `+5` override and qualify the
+   shared-PIN calculation.
 
 ## Known Release Gaps
 
@@ -150,8 +179,8 @@ and a migration away from the deterministic rule.
 - Keyholder validation currently accepts exactly 10 digits, so international
   phone-number support is not implemented.
 - Master-PIN, approval, and emergency-code entry are not attempt-throttled. The
-  app remains intentional friction; address rate limits with the real auth and
-  wider-release hardening work instead of implying brute-force resistance.
+  app remains intentional friction; add throttling only if testing justifies
+  the usability cost, without implying brute-force resistance.
 - Play-ready graphics and listing copy are under `play-store/`. The public
   support email and foreground-service demonstration video remain owner tasks.
 - Sideloaded APKs may trigger an unknown-source/Play Protect warning even when

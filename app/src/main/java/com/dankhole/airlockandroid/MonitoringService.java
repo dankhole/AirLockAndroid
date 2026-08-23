@@ -338,6 +338,9 @@ public class MonitoringService extends Service {
         if (!Preferences.hasMasterPin(this)) {
             return getString(R.string.monitoring_requirement_pin);
         }
+        if (!Preferences.isApprovalCalculatorReady(this)) {
+            return getString(R.string.monitoring_requirement_pin_update);
+        }
         if (!Preferences.hasLimitedApps(this)) {
             return getString(R.string.monitoring_requirement_apps);
         }
@@ -1360,6 +1363,10 @@ public class MonitoringService extends Service {
             Toast.makeText(this, R.string.sms_keyholder_required, Toast.LENGTH_LONG).show();
             return false;
         }
+        if (!Preferences.isApprovalCalculatorReady(this)) {
+            Toast.makeText(this, R.string.sms_approval_setup_required, Toast.LENGTH_LONG).show();
+            return false;
+        }
 
         String requestCode = Preferences.createRequestCode(this, packageName, requestedMinutes);
         if (requestCode.isEmpty()) {
@@ -1370,8 +1377,11 @@ public class MonitoringService extends Service {
             ).show();
             return false;
         }
+        int messageResource = BuildConfig.PLUS_FIVE_APPROVAL_OVERRIDE
+                ? R.plurals.sms_request_body_testing_override
+                : R.plurals.sms_request_body;
         String message = getResources().getQuantityString(
-                R.plurals.sms_request_body,
+                messageResource,
                 requestedMinutes,
                 requestedMinutes,
                 appLabel(packageName),

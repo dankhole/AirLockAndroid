@@ -179,7 +179,7 @@ public class MainActivity extends Activity {
     private void restoreDisclosureState(Bundle savedInstanceState) {
         if (savedInstanceState == null) {
             accountabilityExpanded = !Preferences.hasAccountabilityNumber(this);
-            masterPinExpanded = !Preferences.hasMasterPin(this);
+            masterPinExpanded = !Preferences.isApprovalCalculatorReady(this);
             return;
         }
         diagnosticsExpanded = savedInstanceState.getBoolean(
@@ -196,7 +196,7 @@ public class MainActivity extends Activity {
         );
         masterPinExpanded = savedInstanceState.getBoolean(
                 STATE_MASTER_PIN_EXPANDED,
-                !Preferences.hasMasterPin(this)
+                !Preferences.isApprovalCalculatorReady(this)
         );
         emergencyExpanded = savedInstanceState.getBoolean(
                 STATE_EMERGENCY_EXPANDED,
@@ -419,7 +419,9 @@ public class MainActivity extends Activity {
     private LinearLayout buildMasterPinCard() {
         LinearLayout card = sectionCard(
                 getString(R.string.section_master_pin),
-                getString(R.string.section_master_pin_helper)
+                getString(BuildConfig.PLUS_FIVE_APPROVAL_OVERRIDE
+                        ? R.string.section_master_pin_helper_testing_override
+                        : R.string.section_master_pin_helper)
         );
 
         masterPinRequiredText = UiStyle.statusText(this);
@@ -437,6 +439,9 @@ public class MainActivity extends Activity {
 
         TextView newPinLabel = UiStyle.fieldLabel(this, getString(R.string.new_master_pin_label));
         newPinInput = pinInput(getString(R.string.new_pin_hint));
+        newPinInput.setFilters(new InputFilter[]{
+                new InputFilter.LengthFilter(ApprovalCodePolicy.CODE_LENGTH)
+        });
         newPinInput.setId(R.id.main_master_pin_new);
         newPinLabel.setLabelFor(newPinInput.getId());
         masterPinEditor.addView(newPinLabel, UiStyle.fullWidth(this, 6));
@@ -444,6 +449,9 @@ public class MainActivity extends Activity {
 
         TextView confirmPinLabel = UiStyle.fieldLabel(this, getString(R.string.confirm_master_pin_label));
         confirmPinInput = pinInput(getString(R.string.confirm_pin_hint));
+        confirmPinInput.setFilters(new InputFilter[]{
+                new InputFilter.LengthFilter(ApprovalCodePolicy.CODE_LENGTH)
+        });
         confirmPinInput.setId(R.id.main_master_pin_confirm);
         confirmPinLabel.setLabelFor(confirmPinInput.getId());
         masterPinEditor.addView(confirmPinLabel, UiStyle.fullWidth(this, 6));
@@ -664,7 +672,7 @@ public class MainActivity extends Activity {
             }
             promptForMasterPin(
                     getString(R.string.start_duty_prompt),
-                    this::startMonitoring,
+                    this::startMonitoringAfterPinVerified,
                     () -> setMonitoringSwitchChecked(false)
             );
         } else {
@@ -758,7 +766,10 @@ public class MainActivity extends Activity {
             return;
         }
 
-        Preferences.setMasterPin(this, newPin);
+        if (!Preferences.setMasterPin(this, newPin)) {
+            Toast.makeText(this, R.string.pin_save_failed, Toast.LENGTH_LONG).show();
+            return;
+        }
         masterPinExpanded = false;
         currentPinInput.setText("");
         newPinInput.setText("");
@@ -928,15 +939,7 @@ public class MainActivity extends Activity {
     }
 
     private boolean isValidPin(String pin) {
-        if (pin.length() < 4) {
-            return false;
-        }
-        for (int i = 0; i < pin.length(); i++) {
-            if (!Character.isDigit(pin.charAt(i))) {
-                return false;
-            }
-        }
-        return true;
+        return ApprovalCodePolicy.isValidMasterPin(pin);
     }
 
     private void refresh() {
@@ -953,9 +956,15 @@ public class MainActivity extends Activity {
         dashboardContent.setVisibility(requiredAccessReady ? View.VISIBLE : View.GONE);
         boolean hasAccountabilityNumber = hasAccountabilityNumber();
         boolean hasMasterPin = Preferences.hasMasterPin(this);
+        boolean approvalCalculatorReady = Preferences.isApprovalCalculatorReady(this);
+        boolean masterPinReady = hasMasterPin && approvalCalculatorReady;
         Set<String> selectedPackages = Preferences.selectedPackages(this);
         boolean hasLimitedApps = !selectedPackages.isEmpty();
-        boolean readyToMonitor = usage && overlay && hasAccountabilityNumber && hasMasterPin && hasLimitedApps;
+        boolean readyToMonitor = usage
+                && overlay
+                && hasAccountabilityNumber
+                && masterPinReady
+                && hasLimitedApps;
         boolean enabled = Preferences.isMonitoringRequested(this);
         boolean serviceRunning = MonitoringHealth.isServiceRunning();
         boolean backgroundRestricted = AndroidPermissions.isBackgroundRestricted(this);
@@ -983,7 +992,7 @@ public class MainActivity extends Activity {
                             usage,
                             overlay,
                             hasAccountabilityNumber,
-                            hasMasterPin,
+                            masterPinReady,
                             hasLimitedApps
                     )
             );
@@ -1164,15 +1173,23 @@ public class MainActivity extends Activity {
                 : R.string.set_master_pin_emphasis);
         setRequirement(
                 masterPinRequiredText,
-                hasMasterPin,
-                getString(hasMasterPin
+                masterPinReady,
+                getString(masterPinReady
                         ? R.string.master_pin_ready_title
+                        : hasMasterPin
+                        ? R.string.master_pin_update_title
                         : R.string.master_pin_required_title),
-                hasMasterPin
-                        ? getString(R.string.master_pin_ready_detail)
+                masterPinReady
+                        ? getString(
+                                BuildConfig.PLUS_FIVE_APPROVAL_OVERRIDE
+                                        ? R.string.master_pin_ready_detail_testing_override
+                                        : R.string.master_pin_ready_detail
+                        )
+                        : hasMasterPin
+                        ? getString(R.string.master_pin_update_detail)
                         : getString(R.string.master_pin_required_detail)
         );
-        if (!hasMasterPin) {
+        if (!masterPinReady) {
             masterPinExpanded = true;
         }
         updateDisclosure(
@@ -1182,7 +1199,7 @@ public class MainActivity extends Activity {
                 R.string.change_master_pin,
                 R.string.cancel_pin_change
         );
-        masterPinEditorButton.setVisibility(hasMasterPin ? View.VISIBLE : View.GONE);
+        masterPinEditorButton.setVisibility(masterPinReady ? View.VISIBLE : View.GONE);
 
         int emergencyCodesRemaining = Preferences.emergencyCodesRemaining(this);
         if (emergencyPaused) {
@@ -1274,7 +1291,7 @@ public class MainActivity extends Activity {
                     usage,
                     overlay,
                     hasAccountabilityNumber,
-                    hasMasterPin,
+                    masterPinReady,
                     hasLimitedApps
                     )
             ));
@@ -1300,7 +1317,7 @@ public class MainActivity extends Activity {
                     usage,
                     overlay,
                     hasAccountabilityNumber,
-                    hasMasterPin,
+                    masterPinReady,
                     hasLimitedApps
                     )
             ));
@@ -1445,6 +1462,21 @@ public class MainActivity extends Activity {
             ).show();
         }
         refresh();
+    }
+
+    private void startMonitoringAfterPinVerified() {
+        if (!Preferences.isApprovalCalculatorReady(this)) {
+            Toast.makeText(
+                    this,
+                    R.string.master_pin_update_before_duty,
+                    Toast.LENGTH_LONG
+            ).show();
+            masterPinExpanded = true;
+            setMonitoringSwitchChecked(false);
+            refresh();
+            return;
+        }
+        startMonitoring();
     }
 
     private void ensureEnabledServiceRunning() {

@@ -1,6 +1,6 @@
 # Test Plan
 
-Last updated: August 11, 2026
+Last updated: August 23, 2026
 
 ## Static Checks
 
@@ -19,8 +19,11 @@ The local unit suite verifies edit-authorization expiry, process-local editor
 sessions, bounded query execution, foreground event classification,
 background-to-empty transitions and resume-only blocker restoration,
 approval-code duration policy, atomic approval redemption and rollback with
-multiple pending requests, three-code emergency-batch replacement,
-notification visibility policy, and monitoring-exit recovery classification.
+multiple pending requests, four-digit multiplication and leading-zero behavior,
+PIN-derived lookup creation, active-collision avoidance, expired-request reuse,
+PIN-change invalidation, the `+5` test override, three-code emergency-batch
+replacement, notification visibility policy, and monitoring-exit recovery
+classification.
 
 See `docs/TEST_AUTOMATION_TODO.md` for the staged work to automate this manual
 matrix without running a full emulator pass after every small change.
@@ -102,7 +105,9 @@ Expected result: app limits persist.
 Expected result: selected app is blocked after its daily budget is exhausted.
 
 1. Set daily limit to `1`.
-2. Set a Keyholder phone number and master PIN.
+2. Set a Keyholder phone number and exact four-digit Master PIN. Confirm shorter
+   and longer values and `0000` are rejected, and the setup copy says the
+   Keyholder uses this same PIN.
 3. Start goose duty with the master PIN.
 4. Open the test app.
 5. Wait at least 65 seconds.
@@ -144,18 +149,28 @@ Expected result: valid approval code removes the overlay for the minutes request
 2. Trigger the blocking overlay.
 3. Enter requested extra minutes, such as `1`.
 4. Tap `Text the Keyholder!`.
-5. Confirm the SMS compose screen says `The Goose is asking for X minutes of extra time`, identifies the app, and includes the numeric request code.
+5. Confirm the SMS compose screen says `The Goose is asking for X minutes of extra time`, identifies the app, and includes an exactly four-digit numeric request code, including a leading zero when generated.
 6. Return to the overlay and confirm the requested minutes field is still populated and editable.
 7. Change the requested minutes and tap `Text the Keyholder!` again.
-8. For this internal-test build, derive each approval by adding 5 to every
-   request-code digit modulo 10. Confirm either valid approval grants the
-   minutes requested when that specific code was generated.
-9. Enter a partial approval code, leave the overlay, return, and confirm the approval code entry is still populated.
-10. Enter an incorrect approval code and confirm it is rejected.
-11. Confirm emergency instructions are hidden by default, reveal them with
+8. In the current signed Internal-testing release, confirm the SMS labels
+   `INTERNAL TEST OVERRIDE`, add 5 to each request digit modulo 10 (`4321`
+   becomes `9876`), and confirm either valid approval grants the minutes
+   requested when that specific code was generated.
+9. Separately in a debug build, confirm the SMS labels `INTERNAL TEST OVERRIDE`
+   and the build uses the same `+5` reply. Unit tests must continue covering the
+   disabled shared-PIN calculation and verifying that the two modes reject one
+   another's result. Before retiring the override, build a candidate with it
+   disabled and verify request `4321` with PIN `6789` produces and accepts only
+   `3352`.
+10. Enter a partial approval code, leave the overlay, return, and confirm the approval code entry is still populated.
+11. Enter an incorrect approval code and confirm it is rejected.
+12. Confirm emergency instructions are hidden by default, reveal them with
     `Use emergency code`, then hide them again without losing either input.
-12. Enter a valid approval code, tap `Loose the Goose!`, and confirm the goose animation plays before the overlay disappears with `The goose is loose for X minutes!`.
-13. Keep the blocked app foregrounded and confirm the overlay returns after the extra time expires.
+13. Enter a valid approval code, tap `Loose the Goose!`, and confirm the goose animation plays before the overlay disappears with `The goose is loose for X minutes!`.
+14. Change the Master PIN and immediately confirm every still-pending reply is
+    rejected. Generate a new request and confirm it follows the active mode:
+    the current `+5` override, or the new PIN in an override-disabled build.
+15. Keep the blocked app foregrounded and confirm the overlay returns after the extra time expires.
 
 ### Responsive And Accessible UI
 

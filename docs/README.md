@@ -1,6 +1,6 @@
 # Documentation Map
 
-Last reviewed: August 11, 2026
+Last reviewed: August 23, 2026
 
 Use this directory as the repository knowledge base. `AGENTS.md` is the short
 entry point; these files hold the deeper product and engineering context. Read

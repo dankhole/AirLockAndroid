@@ -75,14 +75,17 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
         boolean phoneSaved = preferences.edit()
                 .putString(Preferences.KEY_ACCOUNTABILITY_NUMBER, FIXTURE_PHONE_NUMBER)
                 .commit();
-        Preferences.setMasterPin(context, FIXTURE_MASTER_PIN);
+        boolean pinSaved = Preferences.setMasterPin(context, FIXTURE_MASTER_PIN);
         Set<String> packages = Collections.singleton(targetPackage);
         Preferences.saveLimitForPackages(context, packages, limitMinutes);
         Map<String, Long> usage = new HashMap<>();
         usage.put(targetPackage, usedMinutes * 60_000L);
         Preferences.saveUsageForDayMs(context, Preferences.currentUsageDay(), usage);
         boolean monitoringSaved = Preferences.setMonitoringRequested(context, monitoring);
-        if (!phoneSaved || !monitoringSaved || !Preferences.hasLimitedApps(context)) {
+        if (!phoneSaved
+                || !pinSaved
+                || !monitoringSaved
+                || !Preferences.hasLimitedApps(context)) {
             fail("Fixture state could not be saved for " + targetPackage);
             return;
         }
@@ -99,7 +102,7 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
             }
             result.append(";request=").append(requestCode)
                     .append(";approval=")
-                    .append(Preferences.approvalCodeForRequest(requestCode));
+                    .append(Preferences.configuredApprovalCodeForRequest(context, requestCode));
         }
         if (createEmergencyCodes) {
             List<String> codes = Preferences.replaceEmergencyCodes(context);

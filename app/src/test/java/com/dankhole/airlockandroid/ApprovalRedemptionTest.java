@@ -12,8 +12,8 @@ import java.util.Set;
 
 public class ApprovalRedemptionTest {
     private static final String PACKAGE_NAME = "example.blocked";
-    private static final String APPROVAL_CODE = "654321";
-    private static final String SECOND_APPROVAL_CODE = "111111";
+    private static final String APPROVAL_CODE = "6543";
+    private static final String SECOND_APPROVAL_CODE = "1111";
     private static final long NOW_MS = 1_000L;
 
     @Test
@@ -91,7 +91,7 @@ public class ApprovalRedemptionTest {
         int result = Preferences.redeemApprovalCodeAndGrantMinutes(
                 preferences,
                 PACKAGE_NAME,
-                "000000",
+                "0000",
                 NOW_MS
         );
 

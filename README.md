@@ -9,7 +9,8 @@ This repo builds locally with the Gradle wrapper after Android SDK setup.
 - Native Android Java, no AndroidX, no Compose, no third-party dependencies.
 - App picker for launchable installed apps with per-app daily limits.
 - Preset Keyholder phone number.
-- Local master override PIN for changing monitoring state and active app limits.
+- Shared four-digit Master/Keyholder PIN for Duty controls and ordinary
+  approval calculations.
 - Foreground monitoring service.
 - Usage Access based foreground-app detection.
 - Goose-themed overlay blocking screen after the selected app exceeds its limit.
@@ -54,7 +55,8 @@ With command-line tooling:
    ready.
 3. Enter:
    - Keyholder phone number: a test number you control
-   - Master override PIN: at least four digits
+   - Master PIN: exactly four digits other than `0000` (share this same PIN
+     with the Keyholder)
 4. Tap `Set Goose Limits!`, choose one non-critical app, continue, and set daily limit to `1`.
 5. Turn on Goose Duty and enter the master PIN.
 6. Open the selected app and keep it foregrounded for over one minute.
@@ -80,10 +82,12 @@ Start with [the documentation map](docs/README.md) and
 
 ## Current Limitations
 
-- The internal-test approval code is a transparent per-digit `+5` transform of
-  the request code. Requested minutes are stored against that pending code for
-  10 minutes. This proves the Android flow but is not production-grade
-  accountability; a backend or Keyholder companion app is the next auth phase.
+- The current internal-test approval code is a transparent per-digit `+5`
+  transform of the four-digit request code. The platform-agnostic shared-PIN
+  calculation is implemented behind the same build flag that selects its copy.
+  Requested minutes are stored against each pending code for 10 minutes. Both
+  rules are deterrents rather than secure authentication; stronger
+  authorization remains a later accountability phase.
 - Overlay blocking is friction, not hard security. A determined user can revoke special permissions, force-stop, or uninstall the app.
 - The foreground app detector polls recent UsageEvents on a background thread. Full usage reconciliation runs separately once per minute, and OEM battery management can still affect reliability.
 - No settings-change delay, unlock caps, audit trail, or backend SMS provider yet.

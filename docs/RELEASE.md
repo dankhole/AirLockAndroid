@@ -1,6 +1,6 @@
 # Release Guide
 
-Last updated: August 18, 2026
+Last updated: August 23, 2026
 
 This guide covers the two supported ways to share Airlock builds:
 
@@ -112,16 +112,25 @@ developer-verified APK and is not proof that the artifact is unsigned.
 1. Install Airlock.
 2. Grant Usage Access for Airlock.
 3. Grant Display Over Other Apps access.
-4. Set a Keyholder number and Master PIN.
+4. Set a Keyholder number and four-digit Master PIN other than `0000`; give that
+   same PIN to the Keyholder.
 5. Select a non-critical app and set a one-minute daily limit.
 6. Start Goose Duty, open the selected app, and confirm the blocking overlay
    appears after the limit.
 7. Exercise the extra-time request and approval-code flow.
 
-For the first internal test, the Keyholder reply code is produced by adding 5
-to each request-code digit modulo 10. Example: request `123456` becomes approval
-`678901`. The mapping is transparent test plumbing; it is not the planned real
-authorization mechanism.
+For the current signed Internal-testing release, add 5 to each request digit and
+wrap after 9. Example: request `4321` becomes approval `9876`. The SMS labels
+this `INTERNAL TEST OVERRIDE`; it is deliberate test plumbing, not secure
+authentication.
+
+The shared-PIN calculation is already implemented for the later
+platform-agnostic flow: multiply the four-digit request by the four-digit Master
+PIN, remove the product's last two digits, and send the last four digits left,
+preserving leading zeroes. Request `4321` with PIN `6789` would produce
+`29335269`, then approval `3352`. It is not accepted while the internal override
+is enabled. Before retiring `+5`, disable the release flag—which selects both
+behavior and copy—then qualify that path through `docs/TEST_PLAN.md`.
 
 ## Google Play Internal Testing
 

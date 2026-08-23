@@ -1,6 +1,6 @@
 # Airlock Product Plan
 
-Last updated: August 11, 2026
+Last updated: August 23, 2026
 
 ## Purpose
 
@@ -25,7 +25,9 @@ The MVP currently includes:
 - A two-step app-selection and per-app-limit wizard with safety-critical app
   exclusions and search.
 - A master PIN required to start/stop Goose Duty, change the PIN, replace
-  emergency codes, and edit limits while Duty is active.
+  emergency codes, and edit limits while Duty is active. The same exact
+  four-digit PIN other than `0000` is held by the Keyholder for ordinary
+  approval calculations.
 - A Keyholder phone number and user-initiated SMS compose intent; Airlock never
   reads or sends SMS directly.
 - Guarded-app-only usage totals with explicit active, off, paused, and unhealthy
@@ -39,23 +41,42 @@ The MVP currently includes:
   controls reachable, and treats Android Back as an explicit safe exit.
 - Multiple pending extra-time requests. Each approval grants the exact minutes
   saved when its request was created, even if the form changes later.
+- Four-digit request and approval codes. The platform-agnostic PIN calculation
+  is implemented, while current debug and signed Internal-testing builds keep
+  the simpler per-digit `+5` override enabled.
 - Three one-time emergency codes per replacement batch. Replacing a batch
   revokes the old one; each valid code pauses all blocking for 24 hours.
 
 See `docs/ARCHITECTURE.md` for mechanics and `docs/PRODUCT_LANGUAGE.md` for the
 user-facing story.
 
-## Deliberate Internal-Test Rule
+## Platform-Agnostic Approval Rule And Internal Override
 
-The first testing release uses a six-digit request code and a deterministic
-approval code produced by adding 5 to each digit modulo 10. Airlock stores the
-approval value, requested minutes, and a 10-minute expiry locally so more than
-one request can be pending and each grant is independent of the editable form.
+The implemented platform-agnostic flow uses exactly four digits for the request,
+shared Master/Keyholder PIN, and approval. For request `4321` and PIN `6789`,
+the product is `29335269`; discarding its last two digits and taking the last
+four digits left produces approval `3352`. Leading zeroes are significant.
 
-This is intentionally transparent test plumbing. It validates monitoring,
-blocking, SMS handoff, return navigation, local one-time redemption, and unlock
-UX before investing in a real remote authorization system. It must not be
-described as secure authentication or production-grade accountability.
+Airlock precomputes the 10,000 possible approval results when the PIN is set,
+then stores that PIN-derived lookup locally alongside the salted PIN hash. It
+never stores the plaintext PIN. `0000` is excluded because it would make every
+PIN-calculated reply identical. Changing the PIN revokes pending ordinary
+approvals. Each pending approval stores its requested minutes and a 10-minute
+expiry so requests can coexist and remain independent of the editable form.
+Request values may recur after their pending records expire or are redeemed;
+only collisions with currently pending replies are skipped.
+
+This deliberately simple calculation removes the need for a Keyholder app,
+browser, account, or backend. It is human-scale friction, not cryptographic
+authorization: someone who observes enough examples or controls the device can
+bypass it. Product copy and store claims must preserve that distinction.
+
+While Airlock remains on the Play Internal testing track, debug and release
+builds replace the PIN-calculated result with the older per-digit `+5`
+transform. Their composed SMS labels that rule as a test override. The normal
+calculation remains implemented and covered by pure unit tests, but is not the
+accepted reply in current internal builds. Retiring the override is an explicit
+post-test decision, not an automatic consequence of assembling a release APK.
 
 ## Target User And Claims
 
@@ -95,23 +116,20 @@ monitoring.
 - Finish the physical Pixel/Samsung matrix and multi-day reliability run.
 - Resolve Play App Signing, Play verification, tester list, support email, and
   foreground-service declaration tasks.
-- Release the current `+5` build to friends through Play Internal testing and,
-  where useful, a correctly signed direct APK.
-- Collect reliability, battery, setup clarity, and blocker-return feedback.
+- Release the four-digit internal-test build, with its labeled `+5` override,
+  to friends through Play Internal testing and, where useful, a correctly
+  signed direct APK.
+- Collect reliability, battery, setup clarity, approval-flow usability, and
+  blocker-return feedback.
+- After Internal testing, explicitly decide when to disable the override and
+  qualify the shared-PIN calculation in a new signed candidate.
 
-### 2. Real Keyholder Authorization
-
-- Choose a backend SMS provider or Keyholder companion app.
-- Generate approvals outside the limited device.
-- Bind app, minutes, expiry, request identity, and one-time redemption to the
-  authorization record.
-- Add rate limits, attempt throttling, delivery/retry UX, privacy/security
-  review, and migration away from the deterministic test rule.
-
-### 3. Accountability Hardening
+### 2. Accountability Hardening
 
 - Optional delayed setting reductions, cooldowns, daily grant caps, and a local
   audit trail.
+- Consider attempt throttling only if testing shows it improves deterrence
+  without presenting the local calculation as a security boundary.
 - Better timezone/midnight handling and broader OEM evidence.
 - Consider Device Owner only for a separate family/enterprise deployment; do
   not quietly turn the consumer app into device-management software.

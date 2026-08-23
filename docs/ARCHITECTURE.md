@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: August 11, 2026
+Last updated: August 23, 2026
 
 ## Runtime Flow
 
@@ -57,7 +57,7 @@ debug smoke runner or physical-device plan.
 
 | Lifetime | State | Owner |
 | --- | --- | --- |
-| Installation-persistent | Duty intent, limits, usage totals, Keyholder number, PIN/hash material, pending approvals, unlock deadlines, emergency codes/pause, health history | `Preferences` / app-private `SharedPreferences` |
+| Installation-persistent | Duty intent, limits, usage totals, Keyholder number, PIN hash and derived approval table, pending approvals, unlock deadlines, emergency codes/pause, health history | `Preferences` / app-private `SharedPreferences` |
 | Process-local | Service-running truth, foreground candidate, bounded worker state, sticky blocker recovery, retained blocker fields, app-editor authorization sessions | `MonitoringHealth`, `MonitoringService`, `BlockerOverlayController`, `EditAuthorization` |
 | Android-derived | Access grants, foreground lifecycle events, aggregate usage, keyguard/display state, background restriction, process-exit reason | Platform services through the narrow owners above |
 
@@ -75,7 +75,7 @@ usage first, then owns:
 - Permission shortcuts.
 - Monitoring on/off state.
 - Keyholder phone number.
-- Master override PIN setup.
+- Shared Master/Keyholder PIN setup with exactly four digits other than `0000`.
 - Navigation to app limit setup.
 
 Notification visibility is part of the product gate even though Android can
@@ -156,7 +156,8 @@ A foreground service with a persistent notification. It is the runtime core of t
 - Runs full-day UsageStats reconciliation once per minute on a separate background thread.
 - Adds elapsed milliseconds to an in-memory day/package counter and bulk-persists dirty totals every 30 seconds.
 - Displays a `TYPE_APPLICATION_OVERLAY` view when a selected app is over limit.
-- Generates numeric request codes and validates short-lived approval codes.
+- Generates four-digit request codes and validates short-lived four-digit
+  approval codes.
 - Accepts hashed one-time emergency codes and suppresses blocking during an active 24-hour pause.
 - Publishes a throttled health heartbeat and a visible recovery reason.
 
@@ -195,6 +196,7 @@ Small helper around `SharedPreferences`. Current keys:
 - `accountability_number`
 - `master_pin_hash`
 - `master_pin_salt`
+- `master_approval_table_v1`
 - `emergency_code_salt`
 - `emergency_code_hashes`
 - `emergency_pause_until`
@@ -221,14 +223,31 @@ composer opens. Redemption removes the one-time approval metadata and writes
 the package unlock deadline in one committed preference transaction, so a
 process cannot persist only half of the grant.
 
-For the internal-test build, the request is six digits and the approval value
-adds 5 to each digit modulo 10. Every generated approval value is stored in a
-per-package pending set with the requested minutes and a 10-minute expiry.
-Several requests can coexist and can be redeemed out of order. The current
-minutes field is never consulted during redemption. Pending approval values are
-temporary app-private records, not salted hashes; the deterministic transform
-will be replaced by the real authorization design after the first testing
-release. Legacy single-code keys remain readable only for upgrade compatibility.
+The platform-agnostic approval rule implemented behind the current test
+override is
+`floor((request * Master PIN) / 100) mod 10000`, formatted to four digits. The
+SMS describes the same operation in human terms: multiply the two four-digit
+numbers, discard the product's last two digits, and return the last four digits
+left, adding leading zeroes. Example: request `4321` and PIN `6789` produce
+`29335269`, then approval `3352`.
+
+The app must validate a reply without keeping the plaintext PIN. When a
+four-digit PIN other than `0000` is saved, `Preferences` derives the approval
+for all 10,000 requests and persists the resulting fixed-width table beside the
+salted PIN hash. Request values may recur after redemption or expiry; generation
+only skips candidates whose reply would collide with a currently pending reply
+for that package. Changing the PIN atomically replaces the hash and table and
+revokes all pending ordinary approvals. An upgraded install with an existing
+valid four-digit PIN creates the table after the next successful PIN
+verification; a legacy PIN of another length or `0000` must be changed before
+Duty can be healthy.
+
+Every generated approval value is stored in a per-package pending set with the
+requested minutes and a 10-minute expiry. Several requests can coexist and can
+be redeemed out of order. The current minutes field is never consulted during
+redemption. Pending approval values and the PIN-derived lookup are app-private
+records, not cryptographic authorization. Legacy single-code keys remain
+readable only for upgrade compatibility.
 
 ### `BootReceiver`
 
@@ -250,14 +269,22 @@ not treated as proof that the service is alive. Only an explicit PIN-authorized
 stop clears that intent; missing access or transient Android failures leave it
 set so the service can recover.
 
-### Debug-Only Test Surface
+### Test Surfaces And Internal Approval Override
 
 The debug manifest alone exports `DebugFixtureReceiver` and
 `DebugBlockerActivity`. They seed deterministic local state, render the real
 blocker controller, and can ask an already-running debug service to execute the
 production foreground-sanity path immediately with a log token. Release builds
-contain neither exported component. Keep fixture capabilities in the debug
-source set and never add a release bypass for test speed.
+contain neither exported component.
+
+While Airlock remains on Internal testing, both debug and release build types
+set `PLUS_FIVE_APPROVAL_OVERRIDE=true`, replacing the PIN-calculated result with
+the per-digit `+5` transform. Main resources contain copy for both modes, and
+the same BuildConfig flag selects the accepted result, SMS instructions, and
+Master-PIN helper. Current test copy says `INTERNAL TEST OVERRIDE`. This release
+override is temporary product configuration, not an exported debug component.
+Retiring it for signed releases requires changing only the release flag; the
+behavior and all related copy switch together.
 
 ## Android API Choices
 
@@ -281,7 +308,13 @@ Accessibility can become useful later for blocking specific in-app surfaces like
 
 The MVP uses `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. That opens the user's messaging app and avoids direct SMS permissions.
 
-Known weakness: the request code and requested minutes are visible in the compose screen. The local approval code is derived from the request code, and the approved duration is stored against that pending approval code. A stronger production version should generate and deliver the approval code server-side, or use a Keyholder companion app.
+The request code and requested minutes are intentionally visible in the compose
+screen. After the internal override is retired, the Keyholder combines the
+request with the shared PIN by hand, so no app, browser, account, or backend is
+required. The current internal build instead uses its labeled `+5` test rule.
+Neither calculation is cryptographic authentication; a device owner or someone
+who observes enough examples may infer or bypass it. Airlock promises
+accountable friction, not resistance to a determined attacker.
 
 ## Safety Rules
 
@@ -318,8 +351,9 @@ Known weakness: the request code and requested minutes are visible in the compos
 - Inject clocks and foreground/usage sources at narrow policy boundaries for
   deterministic midnight, expiry, delayed-event, and recovery tests.
 - Add setting-change delay for weakening limits.
-- Add unlock attempt throttling.
-- Replace the deterministic internal-test approval transform with a backend or
-  Keyholder companion flow using server-generated, one-time authorization.
+- Consider unlock attempt throttling only after measuring whether the added
+  friction improves the intended behavior.
+- Retire the signed-release `+5` override after Internal testing, then qualify
+  the PIN-calculated SMS and redemption flow as one coherent release change.
 - Add platform device instrumentation when the project permits an appropriate
   runner without changing the no-AndroidX production constraint.

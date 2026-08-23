@@ -1,6 +1,6 @@
 # Play Console Submission Draft
 
-Last updated: August 18, 2026
+Last updated: August 23, 2026
 
 This document contains copy-ready values for the first Airlock internal
 test. Re-check them against the shipped build whenever behavior or data handling
@@ -106,7 +106,7 @@ Airlock is an accountability aid, not tamper-proof parental-control or device-se
 ### Internal Release Notes
 
 ```text
-Improves blocker timing and navigation behavior. Please verify that the blocker appears promptly on guarded apps, disappears in Recents/Home and unguarded apps, returns after reopening a guarded app, and still preserves unfinished request fields.
+Adds four-digit Keyholder request and reply codes. This Internal test still uses the labeled +5 reply override; please verify blocker timing, Recents/Home behavior, and retained request fields.
 ```
 
 ## Internal Test Track
@@ -118,18 +118,21 @@ Improves blocker timing and navigation behavior. Please verify that the blocker 
    upload key.
 4. Complete the `specialUse` foreground-service declaration and demonstration
    video below.
-5. For this candidate, use release name `0.1.1 internal 2` after verifying the
-   version-2 artifact and its recorded checksum.
+5. Rebuild and verify the version-2 artifact from the current source before
+   using release name `0.1.1 internal 2`. The previously recorded version-2
+   artifact predates this behavior and must not be uploaded.
 6. Review any Console warnings, then start rollout to Internal testing.
 7. Copy the opt-in link and open it while signed into an allow-listed tester
    account.
 8. Install from Google Play and run the physical-device scenarios in
    `docs/TEST_PLAN.md`.
 
-Give internal testers the temporary reply-code rule: add 5 to each request-code
-digit modulo 10. Do not present this rule as secure authentication; the internal
-track is validating the Android product flow before real Keyholder auth is
-built.
+Give internal testers the current reply rule: add 5 to each digit of the
+four-digit request and wrap after 9 (`4321` becomes `9876`). The signed build's
+SMS labels this `INTERNAL TEST OVERRIDE`. Explain that it is test plumbing and
+deliberate friction rather than secure authentication. The shared-PIN
+multiplication path is implemented but remains disabled until a later explicit
+release change.
 
 Internal testing supports up to 100 testers and has no 12-tester/14-day access
 requirement. For a new personal account, moving toward production later requires
@@ -195,9 +198,11 @@ instead of copying this draft blindly. Any future backend, crash reporter,
 analytics SDK, advertising SDK, cloud backup, or companion app changes the
 answer.
 
-The current local security detail must also remain accurate: master PINs and
-emergency codes are salted hashes, while pending internal-test approval values,
-their requested minutes, and expiry remain temporarily in app-private storage.
+The current local storage detail must also remain accurate: the plaintext
+Master PIN is not stored, but its salted hash and a PIN-derived table of
+four-digit approval results are app-private. Pending approval values, requested
+minutes, and expiry remain temporarily. Emergency codes remain salted hashes.
+The approval calculation is a deterrent, not secure authentication.
 
 ## Foreground Service Declaration
 

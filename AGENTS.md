@@ -48,9 +48,17 @@ Before changing code:
 - The blocker opens without the keyboard. Requested minutes and approval entry
   survive temporary hide/reopen. Multiple requests may be pending; each grant
   uses the minutes saved when its request was generated, not the current field.
-- The current internal-test approval rule is the deterministic per-digit `+5`
-  transform with a 10-minute local record. Treat it as temporary test plumbing;
-  the next accountability phase replaces it with real authorization.
+- Request codes and ordinary approval codes are exactly four digits. The shared
+  Master/Keyholder PIN is four digits other than `0000`. PIN-based approvals use
+  `floor((request * PIN) / 100) mod 10000`, rendered with leading zeroes; the SMS
+  explains this as dropping the product's last two digits and returning the
+  last four digits left. This is intentional friction, not secure
+  authentication. While the product remains on Internal testing, both debug and
+  release builds use the per-digit `+5` transform as an explicit testing
+  override. The PIN calculation remains implemented and unit-tested behind that
+  flag. The same build flag selects the accepted calculation and its explanatory
+  copy, so retiring the override requires changing that flag only. Pending
+  records expire after 10 minutes.
 - Emergency access is exactly three random one-time 8-digit codes per batch.
   Replacing a batch revokes all old codes; only salted hashes persist. One code
   pauses all blocking for 24 hours without turning duty off.

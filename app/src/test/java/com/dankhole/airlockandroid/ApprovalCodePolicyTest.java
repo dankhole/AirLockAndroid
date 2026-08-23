@@ -1,13 +1,54 @@
 package com.dankhole.airlockandroid;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
 public class ApprovalCodePolicyTest {
     @Test
-    public void approvalCodeTransformsEveryRequestDigit() {
-        assertEquals("567890", ApprovalCodePolicy.approvalCodeForNormalizedRequest("012345"));
+    public void approvalCodeUsesMiddleFourDigitsOfProduct() {
+        assertEquals("3352", ApprovalCodePolicy.approvalCodeForRequestAndPin("4321", "6789"));
+    }
+
+    @Test
+    public void approvalCodePreservesLeadingZeroes() {
+        assertEquals("0066", ApprovalCodePolicy.approvalCodeForRequestAndPin("1234", "5678"));
+        assertEquals("0010", ApprovalCodePolicy.approvalCodeForRequestAndPin("1000", "0001"));
+    }
+
+    @Test
+    public void approvalCodeRequiresFourAsciiDigits() {
+        assertFalse(ApprovalCodePolicy.isValidMasterPin("0000"));
+        assertTrue(ApprovalCodePolicy.isValidRequestCode("0000"));
+        assertTrue(ApprovalCodePolicy.isValidRequestCode("9999"));
+        assertFalse(ApprovalCodePolicy.isValidMasterPin("123"));
+        assertFalse(ApprovalCodePolicy.isValidMasterPin("12345"));
+        assertFalse(ApprovalCodePolicy.isValidMasterPin("12a4"));
+        assertFalse(ApprovalCodePolicy.isValidMasterPin("١٢٣٤"));
+        assertFalse(ApprovalCodePolicy.isValidRequestCode("999"));
+        assertEquals("0000", ApprovalCodePolicy.approvalCodeForRequestAndPin("0000", "6789"));
+        assertEquals("", ApprovalCodePolicy.approvalCodeForRequestAndPin("1234", "0000"));
+    }
+
+    @Test
+    public void approvalTableMatchesDirectCalculation() {
+        String table = ApprovalCodePolicy.approvalTableForPin("6789");
+
+        assertEquals(ApprovalCodePolicy.APPROVAL_TABLE_LENGTH, table.length());
+        assertTrue(ApprovalCodePolicy.isValidApprovalTable(table));
+        assertEquals("3352", ApprovalCodePolicy.approvalCodeFromTable(table, "4321"));
+        assertEquals(
+                ApprovalCodePolicy.approvalCodeForRequestAndPin("9999", "6789"),
+                ApprovalCodePolicy.approvalCodeFromTable(table, "9999")
+        );
+    }
+
+    @Test
+    public void plusFiveTestingOverrideStillTransformsEachDigit() {
+        assertEquals("6789", ApprovalCodePolicy.testingApprovalCodeForRequest("1234"));
+        assertEquals("5678", ApprovalCodePolicy.testingApprovalCodeForRequest("0123"));
     }
 
     @Test

@@ -1,6 +1,6 @@
 # Airlock Product Language
 
-Last updated: August 11, 2026
+Last updated: August 23, 2026
 
 This document defines the characters, roles, and vocabulary used throughout the app. New UI copy, notifications, SMS text, screenshots, and documentation should follow it.
 
@@ -16,10 +16,13 @@ The person receiving the request is not the Goose. That person is the Keyholder.
 | --- | --- | --- |
 | Airlock | The product name | Measure selected-app usage, store limits, coordinate blocking and approval |
 | the Goose | Mascot, blocker, and stand-in for the user | Guard apps, count time, ask for extra time, be let loose |
-| the Keyholder | Trusted person outside the app | Receive a request text, decide whether to approve it, return an approval code |
+| the Keyholder | Trusted person outside the app | Hold the shared Master PIN, receive a request text, decide whether to approve it, and calculate the reply |
 | the user | Person using the limited phone | Configure Airlock with the Keyholder, use apps, and enter returned approval codes |
 
-The Keyholder may also know or set the master PIN, but the product must not imply that every Keyholder necessarily does. The master PIN and approval-code flow are related protections with separate jobs.
+The Keyholder must hold the same exact four-digit PIN (other than `0000`) called
+the Master PIN in Airlock. That one PIN authorizes Duty/settings actions in the
+app and is the number used outside the app to calculate ordinary approval
+replies. Do not invent a separate `Keyholder PIN` in copy or settings.
 
 ## Emergency Day Pass
 
@@ -93,15 +96,28 @@ Recommended overlay labels:
 
 Recommended SMS structure:
 
-`The Goose is asking for 10 minutes of extra time in YouTube! Request code: 123456. If approved, send back the approval code for this Goose request.`
+`The Goose is asking for 10 minutes of extra time in YouTube! Request code: 4321. To approve, multiply the request code by the 4-digit Master PIN, drop the product's last 2 digits, then send the last 4 digits left (add leading zeroes).`
 
-The SMS may identify the requested app, duration, and request code. It must never include the locally derived approval code.
+The SMS may identify the requested app, duration, request code, and calculation
+instructions. It must never include the Master PIN or the locally derived
+approval code.
 
-For the first internal test only, the Keyholder derives the approval code by
-adding 5 to each request-code digit modulo 10. Do not describe that transparent
-rule as secure approval. User-facing copy can call it an approval code because
-it exercises the intended interaction, but release and engineering docs must
-identify it as temporary test plumbing pending real Keyholder authorization.
+Post-internal release copy will describe the platform-agnostic calculation
+directly. The request and reply are each exactly four digits; the shared Master
+PIN is four digits other than `0000`. The rule is
+`floor((request * PIN) / 100) mod 10000`; in conversational copy, multiply,
+drop the product's last two digits, then return the last four digits left with
+leading zeroes. For example, request `4321` with PIN `6789` produces approval
+`3352`.
+
+This is intentional friction, not secure approval. Do not call it encrypted,
+unbreakable, brute-force resistant, or suitable for parental control. During
+Internal testing, debug and signed release builds retain the old per-digit `+5`
+rule as a testing override. Their SMS and Master-PIN helper must say `INTERNAL
+TEST OVERRIDE` and explain that the override, rather than the PIN, calculates
+current test replies. One build flag selects both accepted behavior and all
+calculation instructions, so they switch to the PIN calculation together when
+the override is retired.
 
 ## Implementation Note
 

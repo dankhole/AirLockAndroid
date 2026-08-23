@@ -1,6 +1,6 @@
 # UI And Accessibility Design
 
-Last reviewed: August 11, 2026
+Last reviewed: August 23, 2026
 
 This document is the source of truth for Airlock's visual hierarchy,
 interaction styling, accessibility baseline, and system-area behavior. Product
@@ -64,6 +64,9 @@ and weakening active configuration must keep the current master-PIN gates.
 
 ### Master PIN Prompts
 
+- Setup and replacement require exactly four numeric digits other than `0000`.
+  The setup helper explains that the Keyholder uses this same PIN for ordinary
+  approvals.
 - Authorization remains a compact platform dialog with a clear title, short
   reason, one secure numeric field, and Cancel/Continue actions.
 - Do not duplicate the dashboard's full PIN setup form inside an authorization
@@ -83,6 +86,9 @@ and weakening active configuration must keep the current master-PIN gates.
 - Requested minutes stay editable. Each generated request persists its own
   minutes and expiry, so several approvals may be in flight and redemption
   never reads the current form value.
+- Ordinary request and approval values render as exactly four digits, including
+  leading zeroes. The shared approval field must continue to allow eight digits
+  when the user explicitly opens emergency access.
 - Empty or invalid codes show inline text and keep the blocker visible.
 - Back with the keyboard closed performs the same safe exit as `Leave App!`.
   Recents, Home, and system navigation must never remain covered by a stale

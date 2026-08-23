@@ -1,6 +1,6 @@
 # Development Guide
 
-Last updated: August 11, 2026
+Last updated: August 23, 2026
 
 ## Status
 
@@ -172,7 +172,8 @@ Run `./gradlew :app:testDebugUnitTest` for the fast local suite. The tests cover
 one-use app-limit authorization and expiry, configuration-safe process-local
 editor sessions, process-local token loss, bounded
 foreground-query concurrency, approval-code duration policy, atomic approval
-redemption with multiple pending requests, three-code emergency-batch
+redemption with multiple pending requests, four-digit PIN calculation and
+lookup generation, test-override isolation, three-code emergency-batch
 replacement and revocation, foreground lifecycle classification, failed-write restoration,
 notification visibility policy, and monitoring-exit recovery classification.
 These tests do not require an emulator. Batch the device scenarios in
@@ -196,7 +197,10 @@ refuses to target physical devices. It builds and installs the debug APK,
 resets app-private fixture state, exercises setup gating, picker recreation,
 live service blocking, retained blocker input, invalid codes, and the current
 request-code `+5` approval rule, then restores emulator settings and app-op
-permissions. Use `scripts/android-smoke.sh --skip-build` only after assembling
+permissions. During Internal testing, signed release builds use the same `+5`
+result with `INTERNAL TEST OVERRIDE` SMS copy. The PIN-based multiplication path
+remains covered by unit tests but is not active in either current build type. Use
+`scripts/android-smoke.sh --skip-build` only after assembling
 the current debug APK. Set `TARGET_PACKAGE` and `TARGET_QUERY` when the pinned
 emulator does not contain YouTube.
 
@@ -234,8 +238,9 @@ release builds. Smoke artifacts are written under
 
 ### Local Data And Backup
 
-App limits, usage totals, the Keyholder number, PIN material, approval-code
-state, and emergency-code hashes stay in app-private storage. Android cloud
+App limits, usage totals, the Keyholder number, the salted PIN hash and
+PIN-derived approval lookup, pending approval state, and emergency-code hashes
+stay in app-private storage. Android cloud
 backup and device-to-device transfer are disabled for this data in both legacy
 and current backup rules. Do not enable backup without a data migration and
 security review.
@@ -276,5 +281,9 @@ Start and stop from the app UI first. Use `adb -e` for emulator work and
 The authoritative release checklist and current external blockers live in
 `docs/RELEASE.md`, `docs/PLAY_CONSOLE_SUBMISSION.md`, and
 `docs/PROJECT_STATUS.md`. Keep signing credentials outside Git, verify critical
-app exclusions on the release device matrix, and do not treat the transparent
-`+5` approval rule as production authentication.
+app exclusions on the release device matrix, and do not treat either the
+transparent four-digit approval calculation or the per-digit `+5` path as
+secure authentication. The `+5` path intentionally remains enabled in signed
+release builds only while Airlock is on Internal testing. Retiring it requires
+setting the release BuildConfig flag false; that same flag selects the accepted
+calculation and all explanatory copy.

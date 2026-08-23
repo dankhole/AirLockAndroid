@@ -74,8 +74,8 @@
     <string name="blocker_minutes_label">Extra minutes</string>
     <string name="blocker_minutes_hint">Extra minutes</string>
     <string name="blocker_text_keyholder">Text the Keyholder!</string>
-    <string name="blocker_code_label">Approval code</string>
-    <string name="blocker_code_hint">Approval code</string>
+    <string name="blocker_code_label">4-digit approval code</string>
+    <string name="blocker_code_hint">4-digit approval code</string>
     <string name="blocker_unlock">Loose the Goose!</string>
     <string name="blocker_hide_emergency">Hide emergency option</string>
     <string name="blocker_use_emergency">Use emergency code</string>
@@ -188,13 +188,14 @@
     <string name="change_keyholder_number">Change Keyholder number</string>
     <string name="done_keyholder_number">Done editing Keyholder</string>
     <string name="section_master_pin">Master PIN</string>
-    <string name="section_master_pin_helper">The goose asks for this PIN before starting, stopping, or changing duty!</string>
+    <string name="section_master_pin_helper">This 4-digit PIN (other than 0000) controls Goose Duty and is the same PIN the Keyholder uses to calculate approval codes.</string>
+    <string name="section_master_pin_helper_testing_override">This 4-digit PIN (other than 0000) controls Goose Duty and remains the shared Keyholder PIN. Approval texts use the INTERNAL TEST OVERRIDE instead during Internal testing.</string>
     <string name="current_master_pin_label">Current master PIN</string>
     <string name="current_pin_hint">Current PIN</string>
     <string name="new_master_pin_label">New master PIN</string>
-    <string name="new_pin_hint">New PIN</string>
+    <string name="new_pin_hint">New 4-digit PIN</string>
     <string name="confirm_master_pin_label">Confirm new master PIN</string>
-    <string name="confirm_pin_hint">Confirm new PIN</string>
+    <string name="confirm_pin_hint">Confirm 4-digit PIN</string>
     <string name="set_master_pin">Set Master PIN</string>
     <string name="set_master_pin_emphasis">Set Master PIN!</string>
     <string name="change_master_pin">Change master PIN</string>
@@ -227,12 +228,13 @@
 
     <string name="pin_current_required">Current PIN required</string>
     <string name="pin_current_required_toast">The goose needs the current master PIN!</string>
-    <string name="pin_minimum_error">Use at least 4 digits</string>
-    <string name="pin_minimum_toast">Give the goose a new PIN with at least 4 digits!</string>
+    <string name="pin_minimum_error">Use 4 digits other than 0000</string>
+    <string name="pin_minimum_toast">Give the goose a 4-digit PIN other than 0000!</string>
     <string name="pin_mismatch_error">PINs do not match</string>
     <string name="pin_mismatch_toast">The goose needs the same PIN twice!</string>
     <string name="pin_changed_toast">Master PIN changed!</string>
     <string name="pin_set_toast">Master PIN set!</string>
+    <string name="pin_save_failed">The Master PIN could not be saved. Try again!</string>
     <string name="emergency_replace_title">Replace emergency codes?</string>
     <string name="emergency_replace_message">This creates three new one-time codes and immediately revokes every unused old code.</string>
     <string name="emergency_replace_action">Replace Codes</string>
@@ -296,8 +298,12 @@
     <string name="phone_length_error">Enter 10 digits</string>
     <string name="master_pin_ready_title">READY: Master PIN set!</string>
     <string name="master_pin_required_title">REQUIRED BEFORE GOOSE DUTY: Master PIN missing!</string>
-    <string name="master_pin_ready_detail">The goose checks this PIN before changing duty or replacing the PIN!</string>
-    <string name="master_pin_required_detail">Set a PIN of at least 4 digits before goose duty can start!</string>
+    <string name="master_pin_update_title">UPDATE REQUIRED: Set a 4-digit Master PIN!</string>
+    <string name="master_pin_ready_detail">The same 4-digit PIN (other than 0000) controls Goose Duty and lets the Keyholder calculate approval codes without an app or website.</string>
+    <string name="master_pin_ready_detail_testing_override">The 4-digit Master PIN is ready. Approval texts use the INTERNAL TEST OVERRIDE instead of the PIN during Internal testing.</string>
+    <string name="master_pin_required_detail">Have the Keyholder set a 4-digit PIN other than 0000 before Goose Duty starts.</string>
+    <string name="master_pin_update_detail">Re-enter the current PIN, then choose a 4-digit PIN other than 0000 to enable the new approval calculation.</string>
+    <string name="master_pin_update_before_duty">Update the Master PIN to 4 digits other than 0000 before starting Goose Duty.</string>
     <string name="emergency_active_status">ACTIVE: All goose blocking is paused until %1$s.\nUnused emergency codes remaining: %2$d</string>
     <plurals name="emergency_codes_remaining">
         <item quantity="one">%1$d unused emergency code remains. Each pauses all blocking for 24 hours.</item>
@@ -322,14 +328,14 @@
     <string name="missing_usage">Grant Usage Access before the goose can move forward!</string>
     <string name="missing_overlay">Grant Display Over Other Apps before the goose can pop up!</string>
     <string name="missing_keyholder">Add the Keyholder phone number!</string>
-    <string name="missing_master_pin">Set the master PIN!</string>
+    <string name="missing_master_pin">Set or update the 4-digit Master PIN!</string>
     <string name="missing_app_limit">Save at least one goose limit!</string>
     <string name="missing_unknown">Finish the goose checklist!</string>
     <string name="prerequisite_usage_toast">Grant Usage Access before the goose continues!</string>
     <string name="prerequisite_overlay_toast">Grant Display Over Other Apps before goose duty!</string>
     <string name="prerequisite_keyholder_error">Required before goose duty</string>
     <string name="prerequisite_keyholder_toast">Add the Keyholder phone number before starting duty!</string>
-    <string name="prerequisite_pin_toast">Set a master PIN before goose duty!</string>
+    <string name="prerequisite_pin_toast">Set or update the 4-digit Master PIN before Goose Duty!</string>
     <string name="prerequisite_limit_toast">Set at least one goose limit before duty!</string>
     <string name="duty_save_failed">Airlock could not save goose duty. Try again!</string>
     <string name="duty_start_blocked">Android blocked goose duty from starting. Check Airlock battery settings!</string>
@@ -344,6 +350,7 @@
     <string name="monitoring_requirement_overlay">Display Over Other Apps is off. Open Airlock to restore blocking!</string>
     <string name="monitoring_requirement_keyholder">The Keyholder number is missing. Open Airlock to finish setup!</string>
     <string name="monitoring_requirement_pin">The master PIN is missing. Open Airlock to finish setup!</string>
+    <string name="monitoring_requirement_pin_update">The Master PIN must be updated to 4 digits other than 0000. Open Airlock to restore Goose Duty!</string>
     <string name="monitoring_requirement_apps">No guarded apps are configured. Open Airlock to add a limit!</string>
     <string name="monitoring_issue_waiting">Monitoring is waiting to recover.</string>
     <string name="monitoring_issue_stalled">Android usage tracking is stalled. The goose will keep retrying!</string>
@@ -354,10 +361,15 @@
         <item quantity="other">The goose is loose for %1$d minutes!</item>
     </plurals>
     <string name="sms_keyholder_required">Add the Keyholder\'s 10-digit phone number first!</string>
+    <string name="sms_approval_setup_required">Update the Master PIN to 4 digits other than 0000 before asking for approval.</string>
     <string name="sms_request_save_failed">The goose could not save this request! Try again!</string>
     <plurals name="sms_request_body">
-        <item quantity="one">The Goose is asking for %1$d minute of extra time in %2$s! Request code: %3$s. If approved, send back the approval code for this Goose request.</item>
-        <item quantity="other">The Goose is asking for %1$d minutes of extra time in %2$s! Request code: %3$s. If approved, send back the approval code for this Goose request.</item>
+        <item quantity="one">The Goose is asking for %1$d minute of extra time in %2$s! Request code: %3$s. To approve, multiply the request code by the 4-digit Master PIN, drop the product\'s last 2 digits, then send the last 4 digits left (add leading zeroes).</item>
+        <item quantity="other">The Goose is asking for %1$d minutes of extra time in %2$s! Request code: %3$s. To approve, multiply the request code by the 4-digit Master PIN, drop the product\'s last 2 digits, then send the last 4 digits left (add leading zeroes).</item>
+    </plurals>
+    <plurals name="sms_request_body_testing_override">
+        <item quantity="one">The Goose is asking for %1$d minute of extra time in %2$s! Request code: %3$s. INTERNAL TEST OVERRIDE: add 5 to each request digit, wrapping after 9, then send the resulting 4-digit approval code.</item>
+        <item quantity="other">The Goose is asking for %1$d minutes of extra time in %2$s! Request code: %3$s. INTERNAL TEST OVERRIDE: add 5 to each request digit, wrapping after 9, then send the resulting 4-digit approval code.</item>
     </plurals>
     <string name="sms_app_missing">No SMS app found!</string>
     <string name="monitoring_start_failed_default">Android did not allow monitoring to start.</string>

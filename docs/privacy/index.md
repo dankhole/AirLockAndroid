@@ -4,7 +4,7 @@ title: Airlock Privacy Policy
 permalink: /privacy/
 ---
 
-Effective date: August 18, 2026
+Effective date: August 23, 2026
 
 Airlock is a local-first app blocker. This policy explains what the app
 accesses, what it stores, and when information leaves the app.
@@ -26,7 +26,8 @@ usage history, or settings to an Airlock server.
 - Daily usage counters for selected apps.
 - Per-app daily limits.
 - Keyholder phone number.
-- Master PIN hash and salt.
+- Master PIN hash, salt, and a PIN-derived approval lookup table. The plaintext
+  PIN is not stored.
 - Temporary unlock expiration timestamps.
 - Short-lived approval codes and their requested extra-minute duration.
 - Salted hashes of one-time emergency codes and the active emergency-pause
@@ -66,12 +67,16 @@ separate deletion request.
 
 ## Security
 
-Master PINs and emergency codes are stored as salted hashes rather than
-plaintext. Ordinary approval codes are short-lived values stored in app-private
-storage with their requested minutes and expiration so Airlock can validate
-more than one pending request; they expire after 10 minutes or are removed when
-used. No local-only design can prevent a device owner from clearing app storage,
-revoking Android access, or uninstalling the app.
+The plaintext Master PIN is not stored. Airlock stores its salted hash and a
+locally derived table of the approval result for each possible four-digit
+request so replies can be checked without an app, website, or server. Emergency
+codes are stored as salted hashes.
+Ordinary approval codes are short-lived values stored in app-private storage
+with their requested minutes and expiration so Airlock can validate more than
+one pending request; they expire after 10 minutes or are removed when used.
+The simple approval calculation is intended as a behavioral deterrent, not
+secure authentication. No local-only design can prevent a device owner from
+clearing app storage, revoking Android access, or uninstalling the app.
 
 ## Children
 

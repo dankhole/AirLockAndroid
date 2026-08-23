@@ -28,6 +28,7 @@ final class Preferences {
     static final String KEY_ACCOUNTABILITY_NUMBER = "accountability_number";
     static final String KEY_MASTER_PIN_HASH = "master_pin_hash";
     static final String KEY_MASTER_PIN_SALT = "master_pin_salt";
+    static final String KEY_MASTER_APPROVAL_TABLE = "master_approval_table_v1";
     static final String KEY_NOTIFICATION_PERMISSION_REQUESTED =
             "notification_permission_requested";
 
@@ -160,16 +161,29 @@ final class Preferences {
                 && preferences.contains(KEY_MASTER_PIN_SALT);
     }
 
-    static void setMasterPin(Context context, String pin) {
+    static boolean setMasterPin(Context context, String pin) {
+        return setMasterPin(prefs(context), pin);
+    }
+
+    static boolean setMasterPin(SharedPreferences preferences, String pin) {
+        if (!ApprovalCodePolicy.isValidMasterPin(pin)) {
+            return false;
+        }
         String salt = randomHex(16);
-        prefs(context).edit()
+        String approvalTable = ApprovalCodePolicy.approvalTableForPin(pin);
+        SharedPreferences.Editor editor = preferences.edit()
                 .putString(KEY_MASTER_PIN_SALT, salt)
                 .putString(KEY_MASTER_PIN_HASH, hashPin(salt, pin))
-                .apply();
+                .putString(KEY_MASTER_APPROVAL_TABLE, approvalTable);
+        removePendingApprovalState(preferences, editor);
+        return editor.commit();
     }
 
     static boolean verifyMasterPin(Context context, String pin) {
-        SharedPreferences preferences = prefs(context);
+        return verifyMasterPin(prefs(context), pin);
+    }
+
+    static boolean verifyMasterPin(SharedPreferences preferences, String pin) {
         String salt = preferences.getString(KEY_MASTER_PIN_SALT, "");
         String expected = preferences.getString(KEY_MASTER_PIN_HASH, "");
         if (salt.isEmpty() || expected.isEmpty() || pin == null) {
@@ -177,7 +191,23 @@ final class Preferences {
         }
         byte[] expectedBytes = expected.getBytes(StandardCharsets.UTF_8);
         byte[] actualBytes = hashPin(salt, pin).getBytes(StandardCharsets.UTF_8);
-        return MessageDigest.isEqual(expectedBytes, actualBytes);
+        boolean verified = MessageDigest.isEqual(expectedBytes, actualBytes);
+        if (verified
+                && ApprovalCodePolicy.isValidMasterPin(pin)
+                && !isApprovalCalculatorReady(preferences)) {
+            installApprovalTable(preferences, pin);
+        }
+        return verified;
+    }
+
+    static boolean isApprovalCalculatorReady(Context context) {
+        return isApprovalCalculatorReady(prefs(context));
+    }
+
+    static boolean isApprovalCalculatorReady(SharedPreferences preferences) {
+        return ApprovalCodePolicy.isValidApprovalTable(
+                preferences.getString(KEY_MASTER_APPROVAL_TABLE, "")
+        );
     }
 
     @SuppressLint("ApplySharedPref")
@@ -373,18 +403,56 @@ final class Preferences {
 
     @SuppressLint("ApplySharedPref")
     static String createRequestCode(Context context, String packageName, int requestedMinutes) {
-        SharedPreferences preferences = prefs(context);
-        long now = System.currentTimeMillis();
+        return createRequestCode(
+                prefs(context),
+                packageName,
+                requestedMinutes,
+                System.currentTimeMillis(),
+                RANDOM.nextInt(ApprovalCodePolicy.REQUEST_CODE_COUNT),
+                BuildConfig.PLUS_FIVE_APPROVAL_OVERRIDE
+        );
+    }
+
+    static String createRequestCode(
+            SharedPreferences preferences,
+            String packageName,
+            int requestedMinutes,
+            long now,
+            int requestStartOffset,
+            boolean usePlusFiveTestingOverride
+    ) {
         cleanExpiredApprovalCodes(preferences, packageName, now);
+        String approvalTable = preferences.getString(KEY_MASTER_APPROVAL_TABLE, "");
+        if (!ApprovalCodePolicy.isValidApprovalTable(approvalTable)) {
+            return "";
+        }
+
         int safeMinutes = Math.max(1, requestedMinutes);
-        String requestCode;
-        String approvalCode;
+        String requestCode = "";
+        String approvalCode = "";
         Set<String> approvalCodes = pendingApprovalCodes(preferences, packageName);
         Set<String> originalApprovalCodes = new HashSet<>(approvalCodes);
-        do {
-            requestCode = String.format(Locale.US, "%06d", RANDOM.nextInt(1_000_000));
-            approvalCode = approvalCodeForRequest(requestCode);
-        } while (approvalCodes.contains(approvalCode));
+
+        int start = Math.floorMod(requestStartOffset, ApprovalCodePolicy.REQUEST_CODE_COUNT);
+        for (int offset = 0; offset < ApprovalCodePolicy.REQUEST_CODE_COUNT; offset++) {
+            int requestValue = ApprovalCodePolicy.REQUEST_CODE_MIN
+                    + (start + offset) % ApprovalCodePolicy.REQUEST_CODE_COUNT;
+            String candidateRequest = String.format(Locale.US, "%04d", requestValue);
+            String candidateApproval = approvalCodeForRequest(
+                    approvalTable,
+                    candidateRequest,
+                    usePlusFiveTestingOverride
+            );
+            if (candidateApproval.isEmpty() || approvalCodes.contains(candidateApproval)) {
+                continue;
+            }
+            requestCode = candidateRequest;
+            approvalCode = candidateApproval;
+            break;
+        }
+        if (requestCode.isEmpty()) {
+            return "";
+        }
 
         approvalCodes.add(approvalCode);
         boolean saved = preferences.edit()
@@ -574,9 +642,24 @@ final class Preferences {
         return new HashSet<>(stored);
     }
 
-    static String approvalCodeForRequest(String requestCode) {
+    static String configuredApprovalCodeForRequest(Context context, String requestCode) {
+        SharedPreferences preferences = prefs(context);
         String normalized = normalizeCode(requestCode);
-        return ApprovalCodePolicy.approvalCodeForNormalizedRequest(normalized);
+        return approvalCodeForRequest(
+                preferences.getString(KEY_MASTER_APPROVAL_TABLE, ""),
+                normalized,
+                BuildConfig.PLUS_FIVE_APPROVAL_OVERRIDE
+        );
+    }
+
+    private static String approvalCodeForRequest(
+            String approvalTable,
+            String requestCode,
+            boolean usePlusFiveTestingOverride
+    ) {
+        return usePlusFiveTestingOverride
+                ? ApprovalCodePolicy.testingApprovalCodeForRequest(requestCode)
+                : ApprovalCodePolicy.approvalCodeFromTable(approvalTable, requestCode);
     }
 
     private static String normalizeCode(String code) {
@@ -624,6 +707,32 @@ final class Preferences {
             return toHex(bytes);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    private static boolean installApprovalTable(
+            SharedPreferences preferences,
+            String pin
+    ) {
+        String approvalTable = ApprovalCodePolicy.approvalTableForPin(pin);
+        if (!ApprovalCodePolicy.isValidApprovalTable(approvalTable)) {
+            return false;
+        }
+        SharedPreferences.Editor editor = preferences.edit()
+                .putString(KEY_MASTER_APPROVAL_TABLE, approvalTable);
+        removePendingApprovalState(preferences, editor);
+        return editor.commit();
+    }
+
+    private static void removePendingApprovalState(
+            SharedPreferences preferences,
+            SharedPreferences.Editor editor
+    ) {
+        for (String key : preferences.getAll().keySet()) {
+            if (key.startsWith(APPROVAL_CODES_PREFIX)
+                    || key.startsWith(APPROVAL_CODE_PREFIX)) {
+                editor.remove(key);
+            }
         }
     }
 
