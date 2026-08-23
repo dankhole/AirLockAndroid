@@ -19,7 +19,7 @@ last reviewed repository state; it is not permission to discard newer work.
 | --- | --- |
 | Play application ID | `com.dankhole.airlock` |
 | Java namespace | `com.dankhole.airlockandroid` |
-| Version | Candidate `versionCode 2`, `versionName 0.1.1`; version 1 is on Internal testing |
+| Version | Candidate `versionCode 3`, `versionName 0.1.2`; version 1 is on Internal testing |
 | SDK | min 26, compile/target 36 |
 | Runtime stack | Platform Java views; no AndroidX, Compose, Kotlin, or third-party runtime dependency |
 | Release certificate SHA-256 | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
@@ -33,10 +33,10 @@ a generic Play Store installation error, so delivery on a physical tester
 device is not yet confirmed.
 
 The current replacement candidates are
-`releases/Airlock-0.1.1-internal-2.aab` (SHA-256
-`5b69eee3d289866a1dddc5582e8c22e0f3a4588488297e61b8ad800c789b7ac5`)
-and `releases/Airlock-0.1.1-internal-2.apk` (SHA-256
-`4fea3ed5dc49608caf910dee6aa77df2a94ef03d3cbea06fa171da89933eb31e`).
+`releases/Airlock-0.1.2-internal-3.aab` (SHA-256
+`1ec17cf3fd4a35c468b6ca76c0f77bc1ef8abd5dd94ecb41f39aeefa8c94b0ab`)
+and `releases/Airlock-0.1.2-internal-3.apk` (SHA-256
+`0043790d3e618678d6ad02269bdcd1ee4e36f321047b34bdb78a19073600cac5`).
 They include the four-digit approval flow and decision-first blocker UI, match
 their signed Gradle outputs, and remain local pending upload or distribution.
 
@@ -109,8 +109,15 @@ The final centered action-card refinement then passed 60 JVM tests, debug lint,
 debug and release assembly, and release bundle generation. Artifact inspection
 confirmed package `com.dankhole.airlock`, version code 2 (`0.1.1`), min SDK 26,
 target SDK 36, and the registered release certificate. The signed APK and AAB
-were copied to `releases/` with the checksums recorded above; physical-device
-qualification is still required before treating them as release-verified.
+were superseded by the explicitly bumped version-3 artifacts; physical-device
+qualification is still required before treating the replacement as
+release-verified.
+
+The explicit release bump to version code 3 (`0.1.2`) passed the same 60 JVM
+tests, debug lint, debug and release assembly, and release bundle generation.
+Inspection confirmed package `com.dankhole.airlock`, min SDK 26, target SDK 36,
+and the registered release certificate. The copied version-3 APK and AAB
+byte-match their signed Gradle outputs and use the checksums recorded above.
 
 ## Implemented Product Contract
 
@@ -170,7 +177,7 @@ decision.
 3. Confirm remaining tester accounts, support email,
    and complete the `specialUse` foreground-service declaration/video before
    the first Play rollout.
-4. Upload the verified version-2 bundle through the Internal testing track and
+4. Upload the verified version-3 bundle through the Internal testing track and
    confirm Play-delivered installation.
 5. Collect reliability, approval-flow, and deterrence feedback, then explicitly
    decide when to retire the signed-release `+5` override and qualify the

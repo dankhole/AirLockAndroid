@@ -14,8 +14,8 @@ changes.
 | Java namespace `com.dankhole.airlockandroid` | Intentionally unchanged; it is not the installed package ID |
 | Release certificate | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
 | Target SDK | 36 |
-| Version | Candidate `versionCode 2`, `versionName 0.1.1`; version 1 is on Internal testing |
-| Signed AAB | Version 1 uploaded; version 2 built from its exact source commit and verified locally |
+| Version | Candidate `versionCode 3`, `versionName 0.1.2`; version 1 is on Internal testing |
+| Signed AAB | Version 1 uploaded; version 3 is the current verified local candidate |
 | Privacy policy | GitHub Pages source and in-app URL prepared; Pages must be enabled and the URL checked before rollout |
 | Play Console developer verification | Sufficient to create the app and Internal testing release; monitor any remaining dashboard task |
 | Play App Signing strategy | Enabled; Google Play signs delivered releases |
@@ -41,19 +41,17 @@ Uploaded version-1 AAB SHA-256:
 ```
 
 This checksum describes `releases/Airlock-0.1.0-internal-1.aab`, which was
-prepared from commit `2afe9c3` and uploaded as version 1. The version-2
-candidate was rebuilt separately from its exact source commit.
+prepared from commit `2afe9c3` and uploaded as version 1.
 
-Candidate version-2 artifacts from commit
-`57b95572b02271a4d3c880031dbcd65364a69416`:
+Current candidate version-3 artifacts:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `releases/Airlock-0.1.1-internal-2.aab` | `e5a8c5fb42f60373d29cfab087f32453ec83df4749f207011b2fcd032ea9023c` |
-| `releases/Airlock-0.1.1-internal-2.apk` | `b352702bc65a90d758531cd9bedd7429a0d9bb327a38c04008d27d150b1289a4` |
+| `releases/Airlock-0.1.2-internal-3.aab` | `1ec17cf3fd4a35c468b6ca76c0f77bc1ef8abd5dd94ecb41f39aeefa8c94b0ab` |
+| `releases/Airlock-0.1.2-internal-3.apk` | `0043790d3e618678d6ad02269bdcd1ee4e36f321047b34bdb78a19073600cac5` |
 
 The copied files byte-match the signed Gradle outputs. Package inspection
-confirmed `com.dankhole.airlock`, version code 2, version name `0.1.1`, min SDK
+confirmed `com.dankhole.airlock`, version code 3, version name `0.1.2`, min SDK
 26, and target SDK 36. APK and AAB verification matched the registered upload
 certificate.
 
@@ -106,7 +104,7 @@ Airlock is an accountability aid, not tamper-proof parental-control or device-se
 ### Internal Release Notes
 
 ```text
-Adds four-digit Keyholder request and reply codes. This Internal test still uses the labeled +5 reply override; please verify blocker timing, Recents/Home behavior, and retained request fields.
+Introduces a clearer blocker home with separate request, approval, and emergency flows. Active requests and replacement requests are explicit. This Internal test still uses the labeled +5 reply override; please verify blocker timing, retained form state, and Recents/Home behavior.
 ```
 
 ## Internal Test Track
@@ -118,9 +116,9 @@ Adds four-digit Keyholder request and reply codes. This Internal test still uses
    upload key.
 4. Complete the `specialUse` foreground-service declaration and demonstration
    video below.
-5. Rebuild and verify the version-2 artifact from the current source before
-   using release name `0.1.1 internal 2`. The previously recorded version-2
-   artifact predates this behavior and must not be uploaded.
+5. Upload the verified version-3 artifact using release name
+   `0.1.2 internal 3`. The local version-2 candidates are obsolete and must not
+   be uploaded.
 6. Review any Console warnings, then start rollout to Internal testing.
 7. Copy the opt-in link and open it while signed into an allow-listed tester
    account.
