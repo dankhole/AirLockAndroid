@@ -50,13 +50,14 @@ Before changing code:
   uses the minutes saved when its request was generated, not the current field.
 - Request codes and ordinary approval codes are exactly four digits. The shared
   Master/Keyholder PIN is four digits other than `0000`. PIN-based approvals use
-  `floor((request * PIN) / 100) mod 10000`, rendered with leading zeroes. The
-  request SMS includes the app, duration, and request code but never explains
-  how an approval code is derived. This is intentional friction, not secure
+  `floor((request * PIN) / 100) mod 10000`, rendered with leading zeroes; the SMS
+  explains this as dropping the product's last two digits and returning the last
+  four digits left with leading zeroes. This is intentional friction, not secure
   authentication. While the product remains on Internal testing, both debug and
-  release builds instead use `(request + 5656) mod 10000` as an explicit
-  testing override. The PIN calculation remains implemented and unit-tested
-  behind that flag. Pending records expire after 10 minutes.
+  release builds also accept `(request + 5656) mod 10000` as a hidden testing
+  fallback. The fallback must not appear in user-facing copy. Pending records
+  expire after 10 minutes, and either valid reply atomically consumes the same
+  request record and grants its saved minutes.
 - Emergency access is exactly three random one-time 8-digit codes per batch.
   Replacing a batch revokes all old codes; only salted hashes persist. One code
   pauses all blocking for 24 hours without turning duty off.

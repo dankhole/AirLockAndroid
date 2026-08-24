@@ -39,6 +39,8 @@ final class Preferences {
     private static final String APPROVAL_CODE_PREFIX = "approval_code_";
     private static final String APPROVAL_CODE_EXPIRY_PREFIX = "approval_code_expiry_";
     private static final String APPROVAL_CODE_MINUTES_PREFIX = "approval_code_minutes_";
+    private static final String APPROVAL_CODE_REQUEST_PREFIX = "approval_code_request_";
+    private static final String APPROVAL_CODE_OVERRIDE_PREFIX = "approval_code_override_";
     private static final String APP_LIMIT_PREFIX = "limit_minutes_";
     private static final String UNLOCK_PREFIX = "unlock_until_";
     private static final String USAGE_PREFIX = "usage_";
@@ -409,7 +411,7 @@ final class Preferences {
                 requestedMinutes,
                 System.currentTimeMillis(),
                 RANDOM.nextInt(ApprovalCodePolicy.REQUEST_CODE_COUNT),
-                BuildConfig.ADD_5656_APPROVAL_OVERRIDE
+                BuildConfig.ACCEPT_ADD_5656_APPROVAL_OVERRIDE
         );
     }
 
@@ -432,18 +434,29 @@ final class Preferences {
         String approvalCode = "";
         Set<String> approvalCodes = pendingApprovalCodes(preferences, packageName);
         Set<String> originalApprovalCodes = new HashSet<>(approvalCodes);
+        Set<String> acceptedCodes = acceptedApprovalCodes(
+                preferences,
+                packageName,
+                approvalCodes
+        );
 
         int start = Math.floorMod(requestStartOffset, ApprovalCodePolicy.REQUEST_CODE_COUNT);
         for (int offset = 0; offset < ApprovalCodePolicy.REQUEST_CODE_COUNT; offset++) {
             int requestValue = ApprovalCodePolicy.REQUEST_CODE_MIN
                     + (start + offset) % ApprovalCodePolicy.REQUEST_CODE_COUNT;
             String candidateRequest = String.format(Locale.US, "%04d", requestValue);
-            String candidateApproval = approvalCodeForRequest(
+            String candidateApproval = ApprovalCodePolicy.approvalCodeFromTable(
                     approvalTable,
-                    candidateRequest,
-                    useApprovalOverride
+                    candidateRequest
             );
-            if (candidateApproval.isEmpty() || approvalCodes.contains(candidateApproval)) {
+            String candidateOverride = useApprovalOverride
+                    ? ApprovalCodePolicy.overrideApprovalCodeForRequest(candidateRequest)
+                    : "";
+            if (candidateApproval.isEmpty()
+                    || acceptedCodes.contains(candidateApproval)
+                    || (!candidateOverride.isEmpty()
+                            && !candidateOverride.equals(candidateApproval)
+                            && acceptedCodes.contains(candidateOverride))) {
                 continue;
             }
             requestCode = candidateRequest;
@@ -455,11 +468,17 @@ final class Preferences {
         }
 
         approvalCodes.add(approvalCode);
-        boolean saved = preferences.edit()
+        SharedPreferences.Editor saveEditor = preferences.edit()
                 .putStringSet(pendingApprovalCodesKey(packageName), approvalCodes)
                 .putLong(approvalExpiryKey(packageName, approvalCode), now + CODE_TTL_MS)
                 .putInt(approvalMinutesKey(packageName, approvalCode), safeMinutes)
-                .commit();
+                .putString(approvalRequestKey(packageName, approvalCode), requestCode);
+        if (useApprovalOverride) {
+            saveEditor.putBoolean(approvalOverrideKey(packageName, approvalCode), true);
+        } else {
+            saveEditor.remove(approvalOverrideKey(packageName, approvalCode));
+        }
+        boolean saved = saveEditor.commit();
         if (saved) {
             return requestCode;
         }
@@ -467,6 +486,8 @@ final class Preferences {
                 .putStringSet(pendingApprovalCodesKey(packageName), originalApprovalCodes)
                 .remove(approvalExpiryKey(packageName, approvalCode))
                 .remove(approvalMinutesKey(packageName, approvalCode))
+                .remove(approvalRequestKey(packageName, approvalCode))
+                .remove(approvalOverrideKey(packageName, approvalCode))
                 .apply();
         return "";
     }
@@ -547,9 +568,29 @@ final class Preferences {
 
         String normalized = normalizeCode(enteredCode);
         Set<String> approvalCodes = pendingApprovalCodes(preferences, packageName);
-        if (approvalCodes.contains(normalized)) {
-            long expiry = preferences.getLong(approvalExpiryKey(packageName, normalized), 0L);
-            int minutes = preferences.getInt(approvalMinutesKey(packageName, normalized), -1);
+        String matchedApprovalCode = matchingApprovalCode(
+                preferences,
+                packageName,
+                approvalCodes,
+                normalized
+        );
+        if (!matchedApprovalCode.isEmpty()) {
+            long expiry = preferences.getLong(
+                    approvalExpiryKey(packageName, matchedApprovalCode),
+                    0L
+            );
+            int minutes = preferences.getInt(
+                    approvalMinutesKey(packageName, matchedApprovalCode),
+                    -1
+            );
+            String requestCode = preferences.getString(
+                    approvalRequestKey(packageName, matchedApprovalCode),
+                    ""
+            );
+            boolean acceptsOverride = preferences.getBoolean(
+                    approvalOverrideKey(packageName, matchedApprovalCode),
+                    false
+            );
             int approvedMinutes = ApprovalCodePolicy.approvedMinutes(
                     true,
                     expiry,
@@ -559,11 +600,13 @@ final class Preferences {
             if (approvedMinutes > 0) {
                 Set<String> originalApprovalCodes = new HashSet<>(approvalCodes);
                 long previousUnlockUntil = preferences.getLong(UNLOCK_PREFIX + packageName, 0L);
-                approvalCodes.remove(normalized);
+                approvalCodes.remove(matchedApprovalCode);
                 boolean saved = preferences.edit()
                         .putStringSet(pendingApprovalCodesKey(packageName), approvalCodes)
-                        .remove(approvalExpiryKey(packageName, normalized))
-                        .remove(approvalMinutesKey(packageName, normalized))
+                        .remove(approvalExpiryKey(packageName, matchedApprovalCode))
+                        .remove(approvalMinutesKey(packageName, matchedApprovalCode))
+                        .remove(approvalRequestKey(packageName, matchedApprovalCode))
+                        .remove(approvalOverrideKey(packageName, matchedApprovalCode))
                         .putLong(
                                 UNLOCK_PREFIX + packageName,
                                 ApprovalCodePolicy.unlockUntilMs(now, approvedMinutes)
@@ -575,10 +618,12 @@ final class Preferences {
                 restoreFailedApprovalRedemption(
                         preferences,
                         packageName,
-                        normalized,
+                        matchedApprovalCode,
                         originalApprovalCodes,
                         expiry,
                         minutes,
+                        requestCode,
+                        acceptsOverride,
                         previousUnlockUntil
                 );
                 return APPROVAL_REDEMPTION_SAVE_FAILED;
@@ -638,12 +683,24 @@ final class Preferences {
             Set<String> originalApprovalCodes,
             long expiry,
             int minutes,
+            String requestCode,
+            boolean acceptsOverride,
             long previousUnlockUntil
     ) {
         SharedPreferences.Editor restore = preferences.edit()
                 .putStringSet(pendingApprovalCodesKey(packageName), originalApprovalCodes)
                 .putLong(approvalExpiryKey(packageName, approvalCode), expiry)
                 .putInt(approvalMinutesKey(packageName, approvalCode), minutes);
+        if (requestCode.isEmpty()) {
+            restore.remove(approvalRequestKey(packageName, approvalCode));
+        } else {
+            restore.putString(approvalRequestKey(packageName, approvalCode), requestCode);
+        }
+        if (acceptsOverride) {
+            restore.putBoolean(approvalOverrideKey(packageName, approvalCode), true);
+        } else {
+            restore.remove(approvalOverrideKey(packageName, approvalCode));
+        }
         restoreUnlockDeadline(restore, UNLOCK_PREFIX + packageName, previousUnlockUntil);
         restore.apply();
     }
@@ -678,6 +735,8 @@ final class Preferences {
                 activeCodes.remove(approvalCode);
                 editor.remove(approvalExpiryKey(packageName, approvalCode));
                 editor.remove(approvalMinutesKey(packageName, approvalCode));
+                editor.remove(approvalRequestKey(packageName, approvalCode));
+                editor.remove(approvalOverrideKey(packageName, approvalCode));
                 changed = true;
             }
         }
@@ -694,13 +753,67 @@ final class Preferences {
         return new HashSet<>(stored);
     }
 
+    private static Set<String> acceptedApprovalCodes(
+            SharedPreferences preferences,
+            String packageName,
+            Set<String> approvalCodes
+    ) {
+        Set<String> acceptedCodes = new HashSet<>(approvalCodes);
+        for (String approvalCode : approvalCodes) {
+            if (!preferences.getBoolean(
+                    approvalOverrideKey(packageName, approvalCode),
+                    false
+            )) {
+                continue;
+            }
+            String requestCode = preferences.getString(
+                    approvalRequestKey(packageName, approvalCode),
+                    ""
+            );
+            String overrideCode = ApprovalCodePolicy.overrideApprovalCodeForRequest(requestCode);
+            if (!overrideCode.isEmpty()) {
+                acceptedCodes.add(overrideCode);
+            }
+        }
+        return acceptedCodes;
+    }
+
+    private static String matchingApprovalCode(
+            SharedPreferences preferences,
+            String packageName,
+            Set<String> approvalCodes,
+            String enteredCode
+    ) {
+        if (approvalCodes.contains(enteredCode)) {
+            return enteredCode;
+        }
+        for (String approvalCode : approvalCodes) {
+            if (!preferences.getBoolean(
+                    approvalOverrideKey(packageName, approvalCode),
+                    false
+            )) {
+                continue;
+            }
+            String requestCode = preferences.getString(
+                    approvalRequestKey(packageName, approvalCode),
+                    ""
+            );
+            if (enteredCode.equals(
+                    ApprovalCodePolicy.overrideApprovalCodeForRequest(requestCode)
+            )) {
+                return approvalCode;
+            }
+        }
+        return "";
+    }
+
     static String configuredApprovalCodeForRequest(Context context, String requestCode) {
         SharedPreferences preferences = prefs(context);
         String normalized = normalizeCode(requestCode);
         return approvalCodeForRequest(
                 preferences.getString(KEY_MASTER_APPROVAL_TABLE, ""),
                 normalized,
-                BuildConfig.ADD_5656_APPROVAL_OVERRIDE
+                BuildConfig.ACCEPT_ADD_5656_APPROVAL_OVERRIDE
         );
     }
 
@@ -742,6 +855,14 @@ final class Preferences {
 
     private static String approvalMinutesKey(String packageName, String approvalCode) {
         return APPROVAL_CODE_MINUTES_PREFIX + packageName + "_" + approvalCode;
+    }
+
+    private static String approvalRequestKey(String packageName, String approvalCode) {
+        return APPROVAL_CODE_REQUEST_PREFIX + packageName + "_" + approvalCode;
+    }
+
+    private static String approvalOverrideKey(String packageName, String approvalCode) {
+        return APPROVAL_CODE_OVERRIDE_PREFIX + packageName + "_" + approvalCode;
     }
 
     static final class PendingApprovalSummary {

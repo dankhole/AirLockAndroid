@@ -1,6 +1,6 @@
 # Airlock Product Language
 
-Last updated: August 23, 2026
+Last updated: August 24, 2026
 
 This document defines the characters, roles, and vocabulary used throughout the app. New UI copy, notifications, SMS text, screenshots, and documentation should follow it.
 
@@ -102,15 +102,14 @@ Recommended blocker navigation labels:
 
 Recommended SMS structure:
 
-`The Goose is asking for 10 minutes of extra time in YouTube! Request code: 4321. Send back the 4-digit approval code if this request is approved.`
+`The Goose is asking for 10 minutes of extra time in YouTube! Request code: 4321. To approve, multiply the request code by the 4-digit Master PIN, drop the product's last 2 digits, then send the last 4 digits left (add leading zeroes).`
 
-The SMS may identify the requested app, duration, and request code. It must
-never include the Master PIN, the locally derived approval code, or instructions
-that reveal how an approval code is calculated.
+The SMS may identify the requested app, duration, request code, and PIN-based
+calculation instructions. It must never include the Master PIN, the locally
+derived approval code, or instructions for a temporary fallback.
 
-Post-internal Keyholder setup guidance outside the request SMS may describe the
-platform-agnostic calculation directly. The request and reply are each exactly
-four digits; the shared Master PIN is four digits other than `0000`. The rule is
+The request and reply are each exactly four digits; the shared Master PIN is
+four digits other than `0000`. The rule is
 `floor((request * PIN) / 100) mod 10000`; in conversational copy, multiply,
 drop the product's last two digits, then return the last four digits left with
 leading zeroes. For example, request `4321` with PIN `6789` produces approval
@@ -118,11 +117,11 @@ leading zeroes. For example, request `4321` with PIN `6789` produces approval
 
 This is intentional friction, not secure approval. Do not call it encrypted,
 unbreakable, brute-force resistant, or suitable for parental control. During
-Internal testing, debug and signed release builds use `(request + 5656) mod
-10000` as a testing override. User-facing copy must not reveal this calculation
+Internal testing, debug and signed release builds also accept `(request + 5656)
+mod 10000` as a testing fallback. User-facing copy must not reveal this fallback
 or label behavior as a test, override, debug behavior, or Internal-testing
-behavior. One build flag selects the accepted behavior; the SMS remains
-calculation-free in either mode.
+behavior. One build flag selects whether the extra reply is accepted; the SMS
+continues to describe only the PIN calculation.
 
 ## Implementation Note
 

@@ -1,6 +1,6 @@
 # Play Console Submission Draft
 
-Last updated: August 23, 2026
+Last updated: August 24, 2026
 
 This document contains copy-ready values for the first Airlock internal
 test. Re-check them against the shipped build whenever behavior or data handling
@@ -14,8 +14,8 @@ changes.
 | Java namespace `com.dankhole.airlockandroid` | Intentionally unchanged; it is not the installed package ID |
 | Release certificate | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
 | Target SDK | 36 |
-| Version | Candidate `versionCode 5`, `versionName 0.1.4`; version 1 is on Internal testing |
-| Signed AAB | Version 1 uploaded; version 5 is the current verified local candidate |
+| Version | Candidate `versionCode 6`, `versionName 0.1.5`; version 1 is on Internal testing |
+| Signed AAB | Version 1 uploaded; version 6 is the current verified local candidate |
 | Privacy policy | GitHub Pages source and in-app URL prepared; Pages must be enabled and the URL checked before rollout |
 | Play Console developer verification | Sufficient to create the app and Internal testing release; monitor any remaining dashboard task |
 | Play App Signing strategy | Enabled; Google Play signs delivered releases |
@@ -43,14 +43,14 @@ Uploaded version-1 AAB SHA-256:
 This checksum describes `releases/Airlock-0.1.0-internal-1.aab`, which was
 prepared from commit `2afe9c3` and uploaded as version 1.
 
-Current candidate version-5 artifact:
+Current candidate version-6 artifact:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `releases/Airlock-0.1.4-internal-5.aab` | `f1f58de5d46d6c4521233e6710812cd12689925f6cd967585fe07c8dcd2a56d7` |
+| `releases/Airlock-0.1.5-internal-6.aab` | `473be104369a8f82a952c153384b7db6a71fd9cfb5471a4e2b59875ae69c934e` |
 
 The copied bundle byte-matches the signed Gradle output. Package inspection
-confirmed `com.dankhole.airlock`, version code 5, version name `0.1.4`, min SDK
+confirmed `com.dankhole.airlock`, version code 6, version name `0.1.5`, min SDK
 26, and target SDK 36. The companion release APK matched the registered upload
 certificate.
 
@@ -115,8 +115,8 @@ Refines Keyholder approval guidance and introduces a clearer blocker home with s
    upload key.
 4. Complete the `specialUse` foreground-service declaration and demonstration
    video below.
-5. Upload the verified version-5 artifact using release name
-   `0.1.4 internal 5`. Earlier local candidates are obsolete and must not be
+5. Upload the verified version-6 artifact using release name
+   `0.1.5 internal 6`. Earlier local candidates are obsolete and must not be
    uploaded.
 6. Review any Console warnings, then start rollout to Internal testing.
 7. Copy the opt-in link and open it while signed into an allow-listed tester
@@ -124,13 +124,12 @@ Refines Keyholder approval guidance and introduces a clearer blocker home with s
 8. Install from Google Play and run the physical-device scenarios in
    `docs/TEST_PLAN.md`.
 
-Give internal testers the current reply rule separately from the request SMS:
-add `5656` to the four-digit request as a number and keep only the last four
-digits (`4321` becomes `9977`). The signed build's SMS does not explain how the
-reply is derived or expose temporary test configuration. Explain that the
-calculation provides deliberate friction rather than secure authentication. The shared-PIN
-multiplication path is implemented but remains disabled until a later explicit
-release change.
+Tell internal testers to follow the shared-PIN calculation in the request SMS.
+The signed build also accepts the hidden fallback of adding `5656` to the
+request and keeping the last four digits (`4321` becomes `9977`), but release
+copy must not expose it. Explain that both calculations provide deliberate
+friction rather than secure authentication. Retiring the fallback remains a
+later explicit release change.
 
 Internal testing supports up to 100 testers and has no 12-tester/14-day access
 requirement. For a new personal account, moving toward production later requires

@@ -64,7 +64,7 @@ public class ApprovalRequestTest {
     }
 
     @Test
-    public void approvalOverrideRequestAdds5656() {
+    public void approvalOverrideRequestStoresOnePinCalculatedRecord() {
         TestSharedPreferences preferences = readyPreferences();
 
         String requestCode = Preferences.createRequestCode(
@@ -78,9 +78,11 @@ public class ApprovalRequestTest {
 
         assertEquals("4321", requestCode);
         assertEquals(
-                Collections.singleton("9977"),
+                Collections.singleton("3352"),
                 preferences.getStringSet(approvalCodesKey(), Collections.emptySet())
         );
+        assertEquals("4321", preferences.getString(approvalRequestKey("3352"), ""));
+        assertTrue(preferences.getBoolean(approvalOverrideKey("3352"), false));
     }
 
     @Test
@@ -139,7 +141,7 @@ public class ApprovalRequestTest {
     }
 
     @Test
-    public void testingOverrideRequestRejectsPinCalculation() {
+    public void approvalOverrideRequestAcceptsPinAndAdditiveReplies() {
         TestSharedPreferences preferences = readyPreferences();
         assertEquals(
                 "4321",
@@ -154,7 +156,7 @@ public class ApprovalRequestTest {
         );
 
         assertEquals(
-                Preferences.APPROVAL_REDEMPTION_INVALID,
+                17,
                 Preferences.redeemApprovalCodeAndGrantMinutes(
                         preferences,
                         PACKAGE_NAME,
@@ -163,11 +165,100 @@ public class ApprovalRequestTest {
                 )
         );
         assertEquals(
+                Preferences.APPROVAL_REDEMPTION_INVALID,
+                Preferences.redeemApprovalCodeAndGrantMinutes(
+                        preferences,
+                        PACKAGE_NAME,
+                        "9977",
+                        NOW_MS
+                )
+        );
+        assertEquals(
+                "4321",
+                Preferences.createRequestCode(
+                        preferences,
+                        PACKAGE_NAME,
+                        17,
+                        NOW_MS + 1,
+                        REQUEST_4321_OFFSET,
+                        true
+                )
+        );
+        assertEquals(
                 17,
                 Preferences.redeemApprovalCodeAndGrantMinutes(
                         preferences,
                         PACKAGE_NAME,
                         "9977",
+                        NOW_MS + 1
+                )
+        );
+        assertEquals(
+                Preferences.APPROVAL_REDEMPTION_INVALID,
+                Preferences.redeemApprovalCodeAndGrantMinutes(
+                        preferences,
+                        PACKAGE_NAME,
+                        "3352",
+                        NOW_MS + 1
+                )
+        );
+    }
+
+    @Test
+    public void generatorSkipsReplyCollisionWithAdditiveAlias() {
+        TestSharedPreferences preferences = readyPreferences();
+        preferences.edit()
+                .putStringSet(approvalCodesKey(), Collections.singleton("9977"))
+                .putLong(approvalExpiryKey("9977"), 601_000L)
+                .putInt(approvalMinutesKey("9977"), 5)
+                .apply();
+
+        assertEquals(
+                "4322",
+                Preferences.createRequestCode(
+                        preferences,
+                        PACKAGE_NAME,
+                        17,
+                        NOW_MS,
+                        REQUEST_4321_OFFSET,
+                        true
+                )
+        );
+    }
+
+    @Test
+    public void failedAliasRedemptionRestoresBothReplies() {
+        TestSharedPreferences preferences = readyPreferences();
+        assertEquals(
+                "4321",
+                Preferences.createRequestCode(
+                        preferences,
+                        PACKAGE_NAME,
+                        17,
+                        NOW_MS,
+                        REQUEST_4321_OFFSET,
+                        true
+                )
+        );
+        preferences.failNextCommit();
+
+        assertEquals(
+                Preferences.APPROVAL_REDEMPTION_SAVE_FAILED,
+                Preferences.redeemApprovalCodeAndGrantMinutes(
+                        preferences,
+                        PACKAGE_NAME,
+                        "9977",
+                        NOW_MS
+                )
+        );
+        assertTrue(preferences.getBoolean(approvalOverrideKey("3352"), false));
+        assertEquals("4321", preferences.getString(approvalRequestKey("3352"), ""));
+        assertEquals(
+                17,
+                Preferences.redeemApprovalCodeAndGrantMinutes(
+                        preferences,
+                        PACKAGE_NAME,
+                        "3352",
                         NOW_MS
                 )
         );
@@ -446,5 +537,13 @@ public class ApprovalRequestTest {
 
     private String approvalMinutesKey(String code) {
         return "approval_code_minutes_" + PACKAGE_NAME + "_" + code;
+    }
+
+    private String approvalRequestKey(String code) {
+        return "approval_code_request_" + PACKAGE_NAME + "_" + code;
+    }
+
+    private String approvalOverrideKey(String code) {
+        return "approval_code_override_" + PACKAGE_NAME + "_" + code;
     }
 }

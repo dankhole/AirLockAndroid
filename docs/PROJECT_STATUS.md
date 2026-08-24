@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: August 23, 2026
+Last updated: August 24, 2026
 
 ## Current Stage
 
@@ -19,7 +19,7 @@ last reviewed repository state; it is not permission to discard newer work.
 | --- | --- |
 | Play application ID | `com.dankhole.airlock` |
 | Java namespace | `com.dankhole.airlockandroid` |
-| Version | Candidate `versionCode 5`, `versionName 0.1.4`; version 1 is on Internal testing |
+| Version | Candidate `versionCode 6`, `versionName 0.1.5`; version 1 is on Internal testing |
 | SDK | min 26, compile/target 36 |
 | Runtime stack | Platform Java views; no AndroidX, Compose, Kotlin, or third-party runtime dependency |
 | Release certificate SHA-256 | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
@@ -33,10 +33,10 @@ a generic Play Store installation error, so delivery on a physical tester
 device is not yet confirmed.
 
 The current replacement candidate is
-`releases/Airlock-0.1.4-internal-5.aab` (SHA-256
-`f1f58de5d46d6c4521233e6710812cd12689925f6cd967585fe07c8dcd2a56d7`).
-It includes the four-digit approval flow, decision-first blocker UI, hidden
-approval derivation, and the additive override, byte-matches the signed Gradle
+`releases/Airlock-0.1.5-internal-6.aab` (SHA-256
+`473be104369a8f82a952c153384b7db6a71fd9cfb5471a4e2b59875ae69c934e`).
+It includes the four-digit approval flow, decision-first blocker UI, documented
+PIN calculation, and hidden additive fallback, byte-matches the signed Gradle
 output, and remains local pending upload.
 
 ## Last Verified Evidence
@@ -130,6 +130,18 @@ lint-vital checks. Inspection confirmed package `com.dankhole.airlock`, min SDK
 output and uses the checksum recorded above. Full lint and device tests were
 intentionally not repeated for this focused change.
 
+On August 24, the approval flow was adjusted so the SMS again explains the
+Master-PIN multiplication rule while Internal-testing builds accept both that
+PIN-derived reply and the hidden `(request + 5656) mod 10000` fallback. Both
+replies resolve to one pending record, share its expiry and saved minutes, and
+are protected against primary/alias collisions. Version code 6 (`0.1.5`) passed
+all 62 JVM tests, release APK assembly, release bundle generation, and release
+lint-vital checks. Inspection confirmed package `com.dankhole.airlock`, min SDK
+26, target SDK 36, the registered certificate, and
+`ACCEPT_ADD_5656_APPROVAL_OVERRIDE=true`. The copied AAB byte-matches the signed
+Gradle output and uses the checksum recorded above. Full lint and device tests
+were not repeated for this focused approval change.
+
 ## Implemented Product Contract
 
 - Dedicated three-step access gate for Usage Access, overlay access, and visible
@@ -150,12 +162,11 @@ intentionally not repeated for this focused change.
   Home/Recents state by the aggregate foreground sanity check.
 - Four-digit requests and replies with a shared four-digit Master/Keyholder PIN
   other than `0000`.
-  The platform-agnostic multiplication rule is implemented, but current debug
-  and signed Internal-testing releases intentionally accept the additive test
-  override: add `5656` to the request and keep the last four digits. The request
-  SMS never reveals either calculation path. Pending requests keep their
-  original minutes for 10 minutes,
-  and changing the PIN revokes them.
+  The platform-agnostic multiplication rule is implemented, explained in the
+  request SMS, and accepted. Current debug and signed Internal-testing releases
+  also accept the hidden additive fallback: add `5656` to the request and keep
+  the last four digits. Pending requests keep their original minutes for 10
+  minutes, and changing the PIN revokes them.
 - Three hashed one-time emergency codes per replacement batch; one code pauses
   blocking for 24 hours while keeping Duty requested.
 - Guarded-app-only usage totals, local-only storage, disabled backup/transfer,
@@ -175,11 +186,9 @@ active request for the same app.
 
 This is a deterrent, not strong authentication. A person who controls the
 device, knows the PIN, or collects enough examples can bypass it. During
-Internal testing, both debug and release builds intentionally replace the PIN
-calculation with `(request + 5656) mod 10000`. The request SMS contains only the
-request details and never exposes the calculation or temporary configuration;
-switching the signed release to the PIN calculation remains an explicit later
-decision.
+During Internal testing, both debug and release builds accept the PIN result
+explained in the SMS and `(request + 5656) mod 10000`, which remains hidden from
+release copy. Removing the additive fallback remains an explicit later decision.
 
 ## Next Sequence
 
@@ -191,7 +200,7 @@ decision.
 3. Confirm remaining tester accounts, support email,
    and complete the `specialUse` foreground-service declaration/video before
    the first Play rollout.
-4. Upload the verified version-5 bundle through the Internal testing track and
+4. Upload the verified version-6 bundle through the Internal testing track and
    confirm Play-delivered installation.
 5. Collect reliability, approval-flow, and deterrence feedback, then explicitly
    decide when to retire the signed-release additive override and qualify the

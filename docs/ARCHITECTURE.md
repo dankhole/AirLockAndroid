@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: August 23, 2026
+Last updated: August 24, 2026
 
 ## Runtime Flow
 
@@ -226,12 +226,11 @@ composer opens. Redemption removes the one-time approval metadata and writes
 the package unlock deadline in one committed preference transaction, so a
 process cannot persist only half of the grant.
 
-The platform-agnostic approval rule implemented behind the current test
-override is
+The platform-agnostic approval rule is
 `floor((request * Master PIN) / 100) mod 10000`, formatted to four digits. The
-Keyholder can be taught the operation outside the request SMS: multiply the two
-four-digit numbers, discard the product's last two digits, and return the last
-four digits left, adding leading zeroes. Example: request `4321` and PIN `6789` produce
+request SMS describes the operation: multiply the two four-digit numbers,
+discard the product's last two digits, and return the last four digits left,
+adding leading zeroes. Example: request `4321` and PIN `6789` produce
 `29335269`, then approval `3352`.
 
 The app must validate a reply without keeping the plaintext PIN. When a
@@ -281,12 +280,17 @@ production foreground-sanity path immediately with a log token. Release builds
 contain neither exported component.
 
 While Airlock remains on Internal testing, both debug and release build types
-set `ADD_5656_APPROVAL_OVERRIDE=true`, replacing the PIN-calculated result with
-`(request + 5656) mod 10000`. The BuildConfig flag selects the accepted result
-and Master-PIN helper. The SMS uses one calculation-free template in both modes.
-This release override is temporary product configuration, not an exported debug component.
+set `ACCEPT_ADD_5656_APPROVAL_OVERRIDE=true`. The PIN-calculated result remains
+the primary pending record, while `(request + 5656) mod 10000` is accepted as a
+second reply alias. The request code and fallback-enabled bit persist with the
+primary record so either reply atomically consumes the same expiry and saved
+minutes without inflating pending-request summaries. Generation rejects any
+primary-or-alias collision with another active request. The SMS describes only
+the PIN calculation. This fallback is temporary product configuration, not an
+exported debug component.
 Retiring it for signed releases requires changing only the release flag; the
-behavior and all related copy switch together.
+accepted replies and Master-PIN helper switch together while the SMS continues
+to explain the PIN calculation.
 
 ## Android API Choices
 
@@ -310,12 +314,12 @@ Accessibility can become useful later for blocking specific in-app surfaces like
 
 The MVP uses `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. That opens the user's messaging app and avoids direct SMS permissions.
 
-The request code and requested minutes are intentionally visible in the compose
-screen, but the derivation rule is never shown there. After the internal
-override is retired, the Keyholder combines the request with the shared PIN by
-hand using guidance shared outside the request SMS, so no app, browser, account,
-or backend is required. The current internal build instead adds `5656` and
-keeps the last four digits.
+The request code, requested minutes, and PIN-based derivation rule are
+intentionally visible in the compose screen. After the internal fallback is
+retired, the Keyholder continues combining the request with the shared PIN by
+hand using the SMS guidance, so no app, browser, account, or backend is
+required. The current internal build also accepts the hidden
+`+5656`, last-four-digits fallback.
 Neither calculation is cryptographic authentication; a device owner or someone
 who observes enough examples may infer or bypass it. Airlock promises
 accountable friction, not resistance to a determined attacker.

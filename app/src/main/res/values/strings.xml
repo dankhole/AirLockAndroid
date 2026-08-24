@@ -414,8 +414,8 @@
     <string name="sms_approval_setup_required">Update the Master PIN to 4 digits other than 0000 before asking for approval.</string>
     <string name="sms_request_save_failed">The goose could not save this request! Try again!</string>
     <plurals name="sms_request_body">
-        <item quantity="one">The Goose is asking for %1$d minute of extra time in %2$s! Request code: %3$s. Send back the 4-digit approval code if this request is approved.</item>
-        <item quantity="other">The Goose is asking for %1$d minutes of extra time in %2$s! Request code: %3$s. Send back the 4-digit approval code if this request is approved.</item>
+        <item quantity="one">The Goose is asking for %1$d minute of extra time in %2$s! Request code: %3$s. To approve, multiply the request code by the 4-digit Master PIN, drop the product\'s last 2 digits, then send the last 4 digits left (add leading zeroes).</item>
+        <item quantity="other">The Goose is asking for %1$d minutes of extra time in %2$s! Request code: %3$s. To approve, multiply the request code by the 4-digit Master PIN, drop the product\'s last 2 digits, then send the last 4 digits left (add leading zeroes).</item>
     </plurals>
     <string name="sms_app_missing">No SMS app found!</string>
     <string name="monitoring_start_failed_default">Android did not allow monitoring to start.</string>
