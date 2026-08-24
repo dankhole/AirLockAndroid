@@ -64,7 +64,7 @@ public class ApprovalRequestTest {
     }
 
     @Test
-    public void testingOverrideRequestUsesPlusFive() {
+    public void approvalOverrideRequestAdds5656() {
         TestSharedPreferences preferences = readyPreferences();
 
         String requestCode = Preferences.createRequestCode(
@@ -78,7 +78,7 @@ public class ApprovalRequestTest {
 
         assertEquals("4321", requestCode);
         assertEquals(
-                Collections.singleton("9876"),
+                Collections.singleton("9977"),
                 preferences.getStringSet(approvalCodesKey(), Collections.emptySet())
         );
     }
@@ -123,7 +123,7 @@ public class ApprovalRequestTest {
                 Preferences.redeemApprovalCodeAndGrantMinutes(
                         preferences,
                         PACKAGE_NAME,
-                        "9876",
+                        "9977",
                         NOW_MS
                 )
         );
@@ -167,7 +167,7 @@ public class ApprovalRequestTest {
                 Preferences.redeemApprovalCodeAndGrantMinutes(
                         preferences,
                         PACKAGE_NAME,
-                        "9876",
+                        "9977",
                         NOW_MS
                 )
         );

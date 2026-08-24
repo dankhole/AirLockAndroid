@@ -119,18 +119,18 @@ developer-verified APK and is not proof that the artifact is unsigned.
    appears after the limit.
 7. Exercise the extra-time request and approval-code flow.
 
-For the current signed Internal-testing release, add 5 to each request digit and
-wrap after 9. Example: request `4321` becomes approval `9876`. The SMS labels
-this `INTERNAL TEST OVERRIDE`; it is deliberate test plumbing, not secure
-authentication.
+For the current signed Internal-testing release, add `5656` to the request as a
+number and keep only the last four digits. Example: request `4321` becomes
+approval `9977`. The SMS does not include this calculation or expose the
+temporary test configuration; give the rule to the Keyholder separately.
 
 The shared-PIN calculation is already implemented for the later
 platform-agnostic flow: multiply the four-digit request by the four-digit Master
 PIN, remove the product's last two digits, and send the last four digits left,
 preserving leading zeroes. Request `4321` with PIN `6789` would produce
 `29335269`, then approval `3352`. It is not accepted while the internal override
-is enabled. Before retiring `+5`, disable the release flag—which selects both
-behavior and copy—then qualify that path through `docs/TEST_PLAN.md`.
+is enabled. Before retiring the additive override, disable the release flag and
+qualify that path through `docs/TEST_PLAN.md`.
 
 ## Google Play Internal Testing
 

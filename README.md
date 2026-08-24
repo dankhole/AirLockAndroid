@@ -62,8 +62,8 @@ With command-line tooling:
 6. Open the selected app and keep it foregrounded for over one minute.
 7. Confirm the goose overlay appears.
 8. Enter requested extra minutes and tap `Text the Keyholder!`.
-9. For this internal-test build, derive the reply by adding 5 to each request
-   digit modulo 10, then return and enter that approval code.
+9. For this internal-test build, add `5656` to the request as a number and keep
+   only the last four digits, then return and enter that approval code.
 10. Confirm the goose animation plays and the overlay disappears for the requested duration.
 
 For emergency-code testing, use the master PIN to generate a replacement set, save or share the three plaintext codes, then hide them. Each 8-digit code can be used once to pause all goose blocking for 24 hours; only salted hashes remain on the device.
@@ -82,9 +82,9 @@ Start with [the documentation map](docs/README.md) and
 
 ## Current Limitations
 
-- The current internal-test approval code is a transparent per-digit `+5`
-  transform of the four-digit request code. The platform-agnostic shared-PIN
-  calculation is implemented behind the same build flag that selects its copy.
+- The current internal-test approval code adds `5656` to the four-digit request
+  as a number and keeps the last four digits. The platform-agnostic shared-PIN
+  calculation is implemented behind a build flag.
   Requested minutes are stored against each pending code for 10 minutes. Both
   rules are deterrents rather than secure authentication; stronger
   authorization remains a later accountability phase.

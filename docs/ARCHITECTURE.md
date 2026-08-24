@@ -229,9 +229,9 @@ process cannot persist only half of the grant.
 The platform-agnostic approval rule implemented behind the current test
 override is
 `floor((request * Master PIN) / 100) mod 10000`, formatted to four digits. The
-SMS describes the same operation in human terms: multiply the two four-digit
-numbers, discard the product's last two digits, and return the last four digits
-left, adding leading zeroes. Example: request `4321` and PIN `6789` produce
+Keyholder can be taught the operation outside the request SMS: multiply the two
+four-digit numbers, discard the product's last two digits, and return the last
+four digits left, adding leading zeroes. Example: request `4321` and PIN `6789` produce
 `29335269`, then approval `3352`.
 
 The app must validate a reply without keeping the plaintext PIN. When a
@@ -281,11 +281,10 @@ production foreground-sanity path immediately with a log token. Release builds
 contain neither exported component.
 
 While Airlock remains on Internal testing, both debug and release build types
-set `PLUS_FIVE_APPROVAL_OVERRIDE=true`, replacing the PIN-calculated result with
-the per-digit `+5` transform. Main resources contain copy for both modes, and
-the same BuildConfig flag selects the accepted result, SMS instructions, and
-Master-PIN helper. Current test copy says `INTERNAL TEST OVERRIDE`. This release
-override is temporary product configuration, not an exported debug component.
+set `ADD_5656_APPROVAL_OVERRIDE=true`, replacing the PIN-calculated result with
+`(request + 5656) mod 10000`. The BuildConfig flag selects the accepted result
+and Master-PIN helper. The SMS uses one calculation-free template in both modes.
+This release override is temporary product configuration, not an exported debug component.
 Retiring it for signed releases requires changing only the release flag; the
 behavior and all related copy switch together.
 
@@ -312,9 +311,11 @@ Accessibility can become useful later for blocking specific in-app surfaces like
 The MVP uses `ACTION_SENDTO` with an `smsto:` URI and `sms_body`. That opens the user's messaging app and avoids direct SMS permissions.
 
 The request code and requested minutes are intentionally visible in the compose
-screen. After the internal override is retired, the Keyholder combines the
-request with the shared PIN by hand, so no app, browser, account, or backend is
-required. The current internal build instead uses its labeled `+5` test rule.
+screen, but the derivation rule is never shown there. After the internal
+override is retired, the Keyholder combines the request with the shared PIN by
+hand using guidance shared outside the request SMS, so no app, browser, account,
+or backend is required. The current internal build instead adds `5656` and
+keeps the last four digits.
 Neither calculation is cryptographic authentication; a device owner or someone
 who observes enough examples may infer or bypass it. Airlock promises
 accountable friction, not resistance to a determined attacker.
@@ -356,7 +357,7 @@ accountable friction, not resistance to a determined attacker.
 - Add setting-change delay for weakening limits.
 - Consider unlock attempt throttling only after measuring whether the added
   friction improves the intended behavior.
-- Retire the signed-release `+5` override after Internal testing, then qualify
+- Retire the signed-release additive override after Internal testing, then qualify
   the PIN-calculated SMS and redemption flow as one coherent release change.
 - Add platform device instrumentation when the project permits an appropriate
   runner without changing the no-AndroidX production constraint.

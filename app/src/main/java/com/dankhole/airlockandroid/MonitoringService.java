@@ -1377,11 +1377,8 @@ public class MonitoringService extends Service {
             ).show();
             return false;
         }
-        int messageResource = BuildConfig.PLUS_FIVE_APPROVAL_OVERRIDE
-                ? R.plurals.sms_request_body_testing_override
-                : R.plurals.sms_request_body;
         String message = getResources().getQuantityString(
-                messageResource,
+                R.plurals.sms_request_body,
                 requestedMinutes,
                 requestedMinutes,
                 appLabel(packageName),

@@ -409,7 +409,7 @@ final class Preferences {
                 requestedMinutes,
                 System.currentTimeMillis(),
                 RANDOM.nextInt(ApprovalCodePolicy.REQUEST_CODE_COUNT),
-                BuildConfig.PLUS_FIVE_APPROVAL_OVERRIDE
+                BuildConfig.ADD_5656_APPROVAL_OVERRIDE
         );
     }
 
@@ -419,7 +419,7 @@ final class Preferences {
             int requestedMinutes,
             long now,
             int requestStartOffset,
-            boolean usePlusFiveTestingOverride
+            boolean useApprovalOverride
     ) {
         cleanExpiredApprovalCodes(preferences, packageName, now);
         String approvalTable = preferences.getString(KEY_MASTER_APPROVAL_TABLE, "");
@@ -441,7 +441,7 @@ final class Preferences {
             String candidateApproval = approvalCodeForRequest(
                     approvalTable,
                     candidateRequest,
-                    usePlusFiveTestingOverride
+                    useApprovalOverride
             );
             if (candidateApproval.isEmpty() || approvalCodes.contains(candidateApproval)) {
                 continue;
@@ -700,17 +700,17 @@ final class Preferences {
         return approvalCodeForRequest(
                 preferences.getString(KEY_MASTER_APPROVAL_TABLE, ""),
                 normalized,
-                BuildConfig.PLUS_FIVE_APPROVAL_OVERRIDE
+                BuildConfig.ADD_5656_APPROVAL_OVERRIDE
         );
     }
 
     private static String approvalCodeForRequest(
             String approvalTable,
             String requestCode,
-            boolean usePlusFiveTestingOverride
+            boolean useApprovalOverride
     ) {
-        return usePlusFiveTestingOverride
-                ? ApprovalCodePolicy.testingApprovalCodeForRequest(requestCode)
+        return useApprovalOverride
+                ? ApprovalCodePolicy.overrideApprovalCodeForRequest(requestCode)
                 : ApprovalCodePolicy.approvalCodeFromTable(approvalTable, requestCode);
     }
 

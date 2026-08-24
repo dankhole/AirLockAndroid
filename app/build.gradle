@@ -17,8 +17,8 @@ android {
         applicationId "com.dankhole.airlock"
         minSdk 26
         targetSdk 36
-        versionCode 3
-        versionName "0.1.2"
+        versionCode 5
+        versionName "0.1.4"
     }
 
     if (releaseSigningConfigured) {
@@ -34,10 +34,10 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField "boolean", "PLUS_FIVE_APPROVAL_OVERRIDE", "true"
+            buildConfigField "boolean", "ADD_5656_APPROVAL_OVERRIDE", "true"
         }
         release {
-            buildConfigField "boolean", "PLUS_FIVE_APPROVAL_OVERRIDE", "true"
+            buildConfigField "boolean", "ADD_5656_APPROVAL_OVERRIDE", "true"
             if (releaseSigningConfigured) {
                 signingConfig signingConfigs.release
             }

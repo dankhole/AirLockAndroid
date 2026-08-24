@@ -46,9 +46,9 @@ public class ApprovalCodePolicyTest {
     }
 
     @Test
-    public void plusFiveTestingOverrideStillTransformsEachDigit() {
-        assertEquals("6789", ApprovalCodePolicy.testingApprovalCodeForRequest("1234"));
-        assertEquals("5678", ApprovalCodePolicy.testingApprovalCodeForRequest("0123"));
+    public void approvalOverrideAdds5656AndKeepsLastFourDigits() {
+        assertEquals("9977", ApprovalCodePolicy.overrideApprovalCodeForRequest("4321"));
+        assertEquals("0656", ApprovalCodePolicy.overrideApprovalCodeForRequest("5000"));
     }
 
     @Test

@@ -196,9 +196,9 @@ The runner requires exactly one running emulator and always uses `adb -e`; it
 refuses to target physical devices. It builds and installs the debug APK,
 resets app-private fixture state, exercises setup gating, picker recreation,
 live service blocking, retained blocker input, invalid codes, and the current
-request-code `+5` approval rule, then restores emulator settings and app-op
-permissions. During Internal testing, signed release builds use the same `+5`
-result with `INTERNAL TEST OVERRIDE` SMS copy. The PIN-based multiplication path
+request-code `+5656` approval rule, then restores emulator settings and app-op
+permissions. During Internal testing, signed release builds use the same result,
+and SMS copy does not describe either calculation path. The PIN-based multiplication path
 remains covered by unit tests but is not active in either current build type. Use
 `scripts/android-smoke.sh --skip-build` only after assembling
 the current debug APK. Set `TARGET_PACKAGE` and `TARGET_QUERY` when the pinned
@@ -282,8 +282,7 @@ The authoritative release checklist and current external blockers live in
 `docs/RELEASE.md`, `docs/PLAY_CONSOLE_SUBMISSION.md`, and
 `docs/PROJECT_STATUS.md`. Keep signing credentials outside Git, verify critical
 app exclusions on the release device matrix, and do not treat either the
-transparent four-digit approval calculation or the per-digit `+5` path as
-secure authentication. The `+5` path intentionally remains enabled in signed
+transparent four-digit approval calculation or the additive override as secure
+authentication. The additive override intentionally remains enabled in signed
 release builds only while Airlock is on Internal testing. Retiring it requires
-setting the release BuildConfig flag false; that same flag selects the accepted
-calculation and all explanatory copy.
+setting the release BuildConfig flag false.

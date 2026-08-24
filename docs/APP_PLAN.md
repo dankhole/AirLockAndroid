@@ -43,7 +43,7 @@ The MVP currently includes:
   saved when its request was created, even if the form changes later.
 - Four-digit request and approval codes. The platform-agnostic PIN calculation
   is implemented, while current debug and signed Internal-testing builds keep
-  the simpler per-digit `+5` override enabled.
+  the simpler `(request + 5656) mod 10000` override enabled.
 - Three one-time emergency codes per replacement batch. Replacing a batch
   revokes the old one; each valid code pauses all blocking for 24 hours.
 
@@ -72,8 +72,9 @@ authorization: someone who observes enough examples or controls the device can
 bypass it. Product copy and store claims must preserve that distinction.
 
 While Airlock remains on the Play Internal testing track, debug and release
-builds replace the PIN-calculated result with the older per-digit `+5`
-transform. Their composed SMS labels that rule as a test override. The normal
+builds replace the PIN-calculated result with `(request + 5656) mod 10000`.
+Their composed SMS includes only the request details and never explains how the
+reply is derived. The normal
 calculation remains implemented and covered by pure unit tests, but is not the
 accepted reply in current internal builds. Retiring the override is an explicit
 post-test decision, not an automatic consequence of assembling a release APK.
@@ -116,7 +117,7 @@ monitoring.
 - Finish the physical Pixel/Samsung matrix and multi-day reliability run.
 - Resolve Play App Signing, Play verification, tester list, support email, and
   foreground-service declaration tasks.
-- Release the four-digit internal-test build, with its labeled `+5` override,
+- Release the four-digit internal-test build with the additive override,
   to friends through Play Internal testing and, where useful, a correctly
   signed direct APK.
 - Collect reliability, battery, setup clarity, approval-flow usability, and

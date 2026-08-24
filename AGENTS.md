@@ -50,15 +50,13 @@ Before changing code:
   uses the minutes saved when its request was generated, not the current field.
 - Request codes and ordinary approval codes are exactly four digits. The shared
   Master/Keyholder PIN is four digits other than `0000`. PIN-based approvals use
-  `floor((request * PIN) / 100) mod 10000`, rendered with leading zeroes; the SMS
-  explains this as dropping the product's last two digits and returning the
-  last four digits left. This is intentional friction, not secure
+  `floor((request * PIN) / 100) mod 10000`, rendered with leading zeroes. The
+  request SMS includes the app, duration, and request code but never explains
+  how an approval code is derived. This is intentional friction, not secure
   authentication. While the product remains on Internal testing, both debug and
-  release builds use the per-digit `+5` transform as an explicit testing
-  override. The PIN calculation remains implemented and unit-tested behind that
-  flag. The same build flag selects the accepted calculation and its explanatory
-  copy, so retiring the override requires changing that flag only. Pending
-  records expire after 10 minutes.
+  release builds instead use `(request + 5656) mod 10000` as an explicit
+  testing override. The PIN calculation remains implemented and unit-tested
+  behind that flag. Pending records expire after 10 minutes.
 - Emergency access is exactly three random one-time 8-digit codes per batch.
   Replacing a batch revokes all old codes; only salted hashes persist. One code
   pauses all blocking for 24 hours without turning duty off.
@@ -93,6 +91,11 @@ backoff unless tests and device evidence justify a change. See
 - Put user-visible text and plurals in `strings.xml`. Follow
   [`docs/PRODUCT_LANGUAGE.md`](docs/PRODUCT_LANGUAGE.md) for Goose/Keyholder
   roles and keep requirement/error copy clear before making it playful.
+- Never expose test, debug, fixture, override, placeholder, or internal-track
+  language in release UI, notifications, SMS, Play listing/release notes, or
+  screenshots. A temporary behavior may remain enabled, but release copy must
+  describe only what the user and Keyholder need to do. Audit main resources
+  and release-facing assets for those markers before building a release bundle.
 - Keep UsageStats, package loading, and other Binder/disk work off the main
   thread. Concurrency must be bounded with no unbounded queues.
 - Prefer narrow, behavior-preserving changes and focused pure-Java tests. Debug

@@ -14,8 +14,8 @@ changes.
 | Java namespace `com.dankhole.airlockandroid` | Intentionally unchanged; it is not the installed package ID |
 | Release certificate | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
 | Target SDK | 36 |
-| Version | Candidate `versionCode 3`, `versionName 0.1.2`; version 1 is on Internal testing |
-| Signed AAB | Version 1 uploaded; version 3 is the current verified local candidate |
+| Version | Candidate `versionCode 5`, `versionName 0.1.4`; version 1 is on Internal testing |
+| Signed AAB | Version 1 uploaded; version 5 is the current verified local candidate |
 | Privacy policy | GitHub Pages source and in-app URL prepared; Pages must be enabled and the URL checked before rollout |
 | Play Console developer verification | Sufficient to create the app and Internal testing release; monitor any remaining dashboard task |
 | Play App Signing strategy | Enabled; Google Play signs delivered releases |
@@ -43,16 +43,15 @@ Uploaded version-1 AAB SHA-256:
 This checksum describes `releases/Airlock-0.1.0-internal-1.aab`, which was
 prepared from commit `2afe9c3` and uploaded as version 1.
 
-Current candidate version-3 artifacts:
+Current candidate version-5 artifact:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `releases/Airlock-0.1.2-internal-3.aab` | `1ec17cf3fd4a35c468b6ca76c0f77bc1ef8abd5dd94ecb41f39aeefa8c94b0ab` |
-| `releases/Airlock-0.1.2-internal-3.apk` | `0043790d3e618678d6ad02269bdcd1ee4e36f321047b34bdb78a19073600cac5` |
+| `releases/Airlock-0.1.4-internal-5.aab` | `f1f58de5d46d6c4521233e6710812cd12689925f6cd967585fe07c8dcd2a56d7` |
 
-The copied files byte-match the signed Gradle outputs. Package inspection
-confirmed `com.dankhole.airlock`, version code 3, version name `0.1.2`, min SDK
-26, and target SDK 36. APK and AAB verification matched the registered upload
+The copied bundle byte-matches the signed Gradle output. Package inspection
+confirmed `com.dankhole.airlock`, version code 5, version name `0.1.4`, min SDK
+26, and target SDK 36. The companion release APK matched the registered upload
 certificate.
 
 ## Create App
@@ -104,7 +103,7 @@ Airlock is an accountability aid, not tamper-proof parental-control or device-se
 ### Internal Release Notes
 
 ```text
-Introduces a clearer blocker home with separate request, approval, and emergency flows. Active requests and replacement requests are explicit. This Internal test still uses the labeled +5 reply override; please verify blocker timing, retained form state, and Recents/Home behavior.
+Refines Keyholder approval guidance and introduces a clearer blocker home with separate request, approval, and emergency flows. Active requests and additional requests are explicit.
 ```
 
 ## Internal Test Track
@@ -116,19 +115,20 @@ Introduces a clearer blocker home with separate request, approval, and emergency
    upload key.
 4. Complete the `specialUse` foreground-service declaration and demonstration
    video below.
-5. Upload the verified version-3 artifact using release name
-   `0.1.2 internal 3`. The local version-2 candidates are obsolete and must not
-   be uploaded.
+5. Upload the verified version-5 artifact using release name
+   `0.1.4 internal 5`. Earlier local candidates are obsolete and must not be
+   uploaded.
 6. Review any Console warnings, then start rollout to Internal testing.
 7. Copy the opt-in link and open it while signed into an allow-listed tester
    account.
 8. Install from Google Play and run the physical-device scenarios in
    `docs/TEST_PLAN.md`.
 
-Give internal testers the current reply rule: add 5 to each digit of the
-four-digit request and wrap after 9 (`4321` becomes `9876`). The signed build's
-SMS labels this `INTERNAL TEST OVERRIDE`. Explain that it is test plumbing and
-deliberate friction rather than secure authentication. The shared-PIN
+Give internal testers the current reply rule separately from the request SMS:
+add `5656` to the four-digit request as a number and keep only the last four
+digits (`4321` becomes `9977`). The signed build's SMS does not explain how the
+reply is derived or expose temporary test configuration. Explain that the
+calculation provides deliberate friction rather than secure authentication. The shared-PIN
 multiplication path is implemented but remains disabled until a later explicit
 release change.
 

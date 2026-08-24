@@ -21,7 +21,7 @@ background-to-empty transitions and resume-only blocker restoration,
 approval-code duration policy, atomic approval redemption and rollback with
 multiple pending requests, four-digit multiplication and leading-zero behavior,
 PIN-derived lookup creation, active-collision avoidance, expired-request reuse,
-PIN-change invalidation, the `+5` test override, three-code emergency-batch
+PIN-change invalidation, the `+5656` test override, three-code emergency-batch
 replacement, notification visibility policy, and monitoring-exit recovery
 classification.
 
@@ -151,21 +151,21 @@ Expected result: valid approval code removes the overlay for the minutes request
    of the request, approval, or emergency inputs are visible yet.
 4. Open `Ask for extra time`, enter requested extra minutes such as `1`, and tap
    `Create request & open text`.
-5. Confirm the SMS compose screen says `The Goose is asking for X minutes of extra time`, identifies the app, and includes an exactly four-digit numeric request code, including a leading zero when generated.
+5. Confirm the SMS compose screen says `The Goose is asking for X minutes of extra time`, identifies the app, and includes an exactly four-digit numeric request code, including a leading zero when generated. Confirm it does not mention the Master PIN, math, a derivation rule, testing, overrides, debug builds, or the release track.
 6. Return to the overlay and confirm its home shows `WAITING FOR KEYHOLDER`, the
    original duration, and `Enter approval code` as the primary action.
 7. Open `Make another request`; confirm it says the earlier request stays
    active, change the requested minutes, and create the additional request.
-8. In the current signed Internal-testing release, confirm the SMS labels
-   `INTERNAL TEST OVERRIDE`, add 5 to each request digit modulo 10 (`4321`
-   becomes `9876`), and confirm either valid approval grants the minutes
-   requested when that specific code was generated.
-9. Separately in a debug build, confirm the SMS labels `INTERNAL TEST OVERRIDE`
-   and the build uses the same `+5` reply. Unit tests must continue covering the
-   disabled shared-PIN calculation and verifying that the two modes reject one
-   another's result. Before retiring the override, build a candidate with it
-   disabled and verify request `4321` with PIN `6789` produces and accepts only
-   `3352`.
+8. In the current signed Internal-testing release, calculate the reply outside
+   the SMS by adding `5656` to the request as a number and keeping the last four
+   digits (`4321` becomes `9977`). Confirm either valid approval grants the
+   minutes requested when that specific code was generated.
+9. Separately in a debug build, confirm the SMS uses the same calculation-free
+   copy and the build uses the same `+5656` reply. Unit tests must continue
+   covering the disabled shared-PIN calculation and verifying that the two modes
+   reject one another's result. Before retiring the override, build a candidate
+   with it disabled and verify request `4321` with PIN `6789` produces and
+   accepts only `3352`.
 10. Open `Enter approval code`, enter a partial approval code, leave the
     overlay, return, and confirm the approval sub-screen and entry are retained.
 11. Enter an incorrect approval code and confirm it is rejected.
@@ -176,7 +176,7 @@ Expected result: valid approval code removes the overlay for the minutes request
 13. Enter a valid approval code, tap `Loose the Goose!`, and confirm the goose animation plays before the overlay disappears with `The goose is loose for X minutes!`.
 14. Change the Master PIN and immediately confirm every still-pending reply is
     rejected. Generate a new request and confirm it follows the active mode:
-    the current `+5` override, or the new PIN in an override-disabled build.
+    the current additive override, or the new PIN in an override-disabled build.
 15. Keep the blocked app foregrounded and confirm the overlay returns after the extra time expires.
 
 ### Responsive And Accessible UI

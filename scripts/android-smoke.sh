@@ -184,19 +184,11 @@ type_id() {
     adb_e shell input text "$value"
 }
 
-plus_five_code() {
+approval_override_code() {
     local request_code="$1"
-    local result=""
-    local index digit
-    for ((index = 0; index < ${#request_code}; index++)); do
-        digit="${request_code:index:1}"
-        if [[ ! "$digit" =~ ^[0-9]$ ]]; then
-            fail "Request code is not numeric: $request_code"
-            return 1
-        fi
-        result+="$(((digit + 5) % 10))"
-    done
-    printf '%s' "$result"
+    [[ "$request_code" =~ ^[0-9]{4}$ ]] \
+        || fail "Request code is not four digits: $request_code"
+    printf '%04d' "$(((10#$request_code + 5656) % 10000))"
 }
 
 fixture() {
@@ -575,9 +567,9 @@ approval_code="$(printf '%s' "$fixture_output" \
     | sed -n 's/.*approval=\([0-9][0-9]*\).*/\1/p')"
 [[ -n "$request_code" ]] || fail "Fixture did not return a request code: $fixture_output"
 [[ -n "$approval_code" ]] || fail "Fixture did not return an approval code: $fixture_output"
-expected_approval_code="$(plus_five_code "$request_code")"
+expected_approval_code="$(approval_override_code "$request_code")"
 [[ "$approval_code" == "$expected_approval_code" ]] \
-    || fail "Approval code $approval_code did not follow the +5 rule for $request_code"
+    || fail "Approval code $approval_code did not follow the +5656 rule for $request_code"
 adb_e shell am force-stop "$PACKAGE"
 adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.DebugBlockerActivity" \
     --es target_package "$TARGET_PACKAGE" --es app_label "$TARGET_QUERY" \
