@@ -117,8 +117,8 @@ leading zeroes. For example, request `4321` with PIN `6789` produces approval
 
 This is intentional friction, not secure approval. Do not call it encrypted,
 unbreakable, brute-force resistant, or suitable for parental control. During
-Internal testing, debug and signed release builds also accept `(request + 5656)
-mod 10000` as a testing fallback. User-facing copy must not reveal this fallback
+Internal testing, debug and release build configurations also accept adding 3 to each
+request-code digit modulo 10 as a testing fallback. User-facing copy must not reveal this fallback
 or label behavior as a test, override, debug behavior, or Internal-testing
 behavior. One build flag selects whether the extra reply is accepted; the SMS
 continues to describe only the PIN calculation.

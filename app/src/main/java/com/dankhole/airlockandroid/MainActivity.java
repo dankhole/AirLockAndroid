@@ -419,9 +419,7 @@ public class MainActivity extends Activity {
     private LinearLayout buildMasterPinCard() {
         LinearLayout card = sectionCard(
                 getString(R.string.section_master_pin),
-                getString(BuildConfig.ACCEPT_ADD_5656_APPROVAL_OVERRIDE
-                        ? R.string.section_master_pin_helper_approval_override
-                        : R.string.section_master_pin_helper)
+                getString(R.string.section_master_pin_helper)
         );
 
         masterPinRequiredText = UiStyle.statusText(this);
@@ -1180,11 +1178,7 @@ public class MainActivity extends Activity {
                         ? R.string.master_pin_update_title
                         : R.string.master_pin_required_title),
                 masterPinReady
-                        ? getString(
-                                BuildConfig.ACCEPT_ADD_5656_APPROVAL_OVERRIDE
-                                        ? R.string.master_pin_ready_detail_approval_override
-                                        : R.string.master_pin_ready_detail
-                        )
+                        ? getString(R.string.master_pin_ready_detail)
                         : hasMasterPin
                         ? getString(R.string.master_pin_update_detail)
                         : getString(R.string.master_pin_required_detail)

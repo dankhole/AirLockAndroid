@@ -69,7 +69,7 @@ request so replies can be checked without an app, website, or server. Emergency
 codes are stored as salted hashes.
 Ordinary approval codes are short-lived values stored in app-private storage
 with their requested minutes and expiration so Airlock can validate more than
-one pending request; they expire after 10 minutes or are removed when used.
+one pending request; they expire after 1 hour or are removed when used.
 The simple approval calculation is intended as a behavioral deterrent, not
 secure authentication. No local-only design can prevent a device owner from
 clearing app storage, revoking Android access, or uninstalling the app.

@@ -239,7 +239,6 @@
     <string name="done_keyholder_number">Done editing Keyholder</string>
     <string name="section_master_pin">Master PIN</string>
     <string name="section_master_pin_helper">This 4-digit PIN (other than 0000) controls Goose Duty and is the same PIN the Keyholder uses to calculate approval codes.</string>
-    <string name="section_master_pin_helper_approval_override">This 4-digit PIN (other than 0000) controls Goose Duty and remains the shared Keyholder PIN.</string>
     <string name="current_master_pin_label">Current master PIN</string>
     <string name="current_pin_hint">Current PIN</string>
     <string name="new_master_pin_label">New master PIN</string>
@@ -350,7 +349,6 @@
     <string name="master_pin_required_title">REQUIRED BEFORE GOOSE DUTY: Master PIN missing!</string>
     <string name="master_pin_update_title">UPDATE REQUIRED: Set a 4-digit Master PIN!</string>
     <string name="master_pin_ready_detail">The same 4-digit PIN (other than 0000) controls Goose Duty and lets the Keyholder calculate approval codes without an app or website.</string>
-    <string name="master_pin_ready_detail_approval_override">The 4-digit Master PIN is ready for Goose Duty and Keyholder access.</string>
     <string name="master_pin_required_detail">Have the Keyholder set a 4-digit PIN other than 0000 before Goose Duty starts.</string>
     <string name="master_pin_update_detail">Re-enter the current PIN, then choose a 4-digit PIN other than 0000 to enable the new approval calculation.</string>
     <string name="master_pin_update_before_duty">Update the Master PIN to 4 digits other than 0000 before starting Goose Duty.</string>

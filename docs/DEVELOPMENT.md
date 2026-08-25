@@ -171,8 +171,9 @@ channel instead of assuming pre-Android-13 notifications are on.
 Run `./gradlew :app:testDebugUnitTest` for the fast local suite. The tests cover
 one-use app-limit authorization and expiry, configuration-safe process-local
 editor sessions, process-local token loss, bounded
-foreground-query concurrency, approval-code duration policy, atomic approval
-redemption with multiple pending requests, four-digit PIN calculation and
+foreground-query concurrency, approval-code duration and one-hour expiry
+policy, atomic approval redemption with multiple pending requests, four-digit
+PIN calculation and
 lookup generation, test-override isolation, three-code emergency-batch
 replacement and revocation, foreground lifecycle classification, failed-write restoration,
 notification visibility policy, and monitoring-exit recovery classification.
@@ -197,8 +198,8 @@ refuses to target physical devices. It builds and installs the debug APK,
 resets app-private fixture state, exercises setup gating, picker recreation,
 live service blocking, retained blocker input, invalid codes, and the current
 request-code approval fallback, then restores emulator settings and app-op
-permissions. During Internal testing, signed release builds accept both the
-PIN-based multiplication result and the hidden `+5656` fallback; SMS copy
+permissions. During Internal testing, the release build configuration accepts both the
+PIN-based multiplication result and the hidden per-digit `+3` fallback; SMS copy
 describes only the PIN calculation. Use
 `scripts/android-smoke.sh --skip-build` only after assembling
 the current debug APK. Set `TARGET_PACKAGE` and `TARGET_QUERY` when the pinned
@@ -282,7 +283,7 @@ The authoritative release checklist and current external blockers live in
 `docs/RELEASE.md`, `docs/PLAY_CONSOLE_SUBMISSION.md`, and
 `docs/PROJECT_STATUS.md`. Keep signing credentials outside Git, verify critical
 app exclusions on the release device matrix, and do not treat either the
-transparent four-digit approval calculation or the additive fallback as secure
-authentication. The additive fallback intentionally remains enabled in signed
+transparent four-digit approval calculation or the per-digit fallback as secure
+authentication. The per-digit fallback intentionally remains enabled in signed
 release builds only while Airlock is on Internal testing. Retiring it requires
 setting the release BuildConfig flag false.

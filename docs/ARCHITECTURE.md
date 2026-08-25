@@ -245,7 +245,7 @@ verification; a legacy PIN of another length or `0000` must be changed before
 Duty can be healthy.
 
 Every generated approval value is stored in a per-package pending set with the
-requested minutes and a 10-minute expiry. Several requests can coexist and can
+requested minutes and a 1-hour expiry. Several requests can coexist and can
 be redeemed out of order. The current minutes field is never consulted during
 redemption. Pending approval values and the PIN-derived lookup are app-private
 records, not cryptographic authorization. Legacy single-code keys remain
@@ -280,9 +280,10 @@ production foreground-sanity path immediately with a log token. Release builds
 contain neither exported component.
 
 While Airlock remains on Internal testing, both debug and release build types
-set `ACCEPT_ADD_5656_APPROVAL_OVERRIDE=true`. The PIN-calculated result remains
-the primary pending record, while `(request + 5656) mod 10000` is accepted as a
-second reply alias. The request code and fallback-enabled bit persist with the
+set `ACCEPT_DIGIT_SHIFT_3_APPROVAL_OVERRIDE=true`. The PIN-calculated result
+remains the primary pending record, while adding 3 to each request-code digit
+modulo 10 is accepted as a second reply alias. The request code and
+fallback-enabled bit persist with the
 primary record so either reply atomically consumes the same expiry and saved
 minutes without inflating pending-request summaries. Generation rejects any
 primary-or-alias collision with another active request. The SMS describes only
@@ -318,8 +319,8 @@ The request code, requested minutes, and PIN-based derivation rule are
 intentionally visible in the compose screen. After the internal fallback is
 retired, the Keyholder continues combining the request with the shared PIN by
 hand using the SMS guidance, so no app, browser, account, or backend is
-required. The current internal build also accepts the hidden
-`+5656`, last-four-digits fallback.
+required. The current internal build also accepts the hidden per-digit `+3`
+fallback.
 Neither calculation is cryptographic authentication; a device owner or someone
 who observes enough examples may infer or bypass it. Airlock promises
 accountable friction, not resistance to a determined attacker.

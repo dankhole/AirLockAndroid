@@ -42,8 +42,8 @@ The MVP currently includes:
 - Multiple pending extra-time requests. Each approval grants the exact minutes
   saved when its request was created, even if the form changes later.
 - Four-digit request and approval codes. The platform-agnostic PIN calculation
-  is implemented and accepted, while current debug and signed Internal-testing
-  builds also accept the simpler `(request + 5656) mod 10000` fallback.
+  is implemented and accepted, while current debug and release build
+  configurations also accept a fallback that adds 3 to each request-code digit modulo 10.
 - Three one-time emergency codes per replacement batch. Replacing a batch
   revokes the old one; each valid code pauses all blocking for 24 hours.
 
@@ -61,7 +61,7 @@ Airlock precomputes the 10,000 possible approval results when the PIN is set,
 then stores that PIN-derived lookup locally alongside the salted PIN hash. It
 never stores the plaintext PIN. `0000` is excluded because it would make every
 PIN-calculated reply identical. Changing the PIN revokes pending ordinary
-approvals. Each pending approval stores its requested minutes and a 10-minute
+approvals. Each pending approval stores its requested minutes and a 1-hour
 expiry so requests can coexist and remain independent of the editable form.
 Request values may recur after their pending records expire or are redeemed;
 only collisions with currently pending replies are skipped.
@@ -72,7 +72,7 @@ authorization: someone who observes enough examples or controls the device can
 bypass it. Product copy and store claims must preserve that distinction.
 
 While Airlock remains on the Play Internal testing track, debug and release
-builds accept both the PIN-calculated result and `(request + 5656) mod 10000`.
+builds accept both the PIN-calculated result and the per-digit `+3` fallback.
 The composed SMS explains only the PIN calculation; it does not expose the
 fallback. Both replies consume the same pending request and grant its saved
 minutes. Retiring the fallback is an explicit post-test decision, not an
@@ -116,7 +116,7 @@ monitoring.
 - Finish the physical Pixel/Samsung matrix and multi-day reliability run.
 - Resolve Play App Signing, Play verification, tester list, support email, and
   foreground-service declaration tasks.
-- Release the four-digit internal-test build with the hidden additive fallback,
+- Release the four-digit internal-test build with the hidden per-digit fallback,
   to friends through Play Internal testing and, where useful, a correctly
   signed direct APK.
 - Collect reliability, battery, setup clarity, approval-flow usability, and

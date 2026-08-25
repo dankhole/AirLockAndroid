@@ -59,7 +59,10 @@ public class ApprovalRequestTest {
                 Collections.singleton("3352"),
                 preferences.getStringSet(approvalCodesKey(), Collections.emptySet())
         );
-        assertEquals(601_000L, preferences.getLong(approvalExpiryKey("3352"), 0L));
+        assertEquals(
+                NOW_MS + Preferences.APPROVAL_CODE_TTL_MS,
+                preferences.getLong(approvalExpiryKey("3352"), 0L)
+        );
         assertEquals(17, preferences.getInt(approvalMinutesKey("3352"), -1));
     }
 
@@ -125,7 +128,7 @@ public class ApprovalRequestTest {
                 Preferences.redeemApprovalCodeAndGrantMinutes(
                         preferences,
                         PACKAGE_NAME,
-                        "9977",
+                        "7654",
                         NOW_MS
                 )
         );
@@ -141,7 +144,7 @@ public class ApprovalRequestTest {
     }
 
     @Test
-    public void approvalOverrideRequestAcceptsPinAndAdditiveReplies() {
+    public void approvalOverrideRequestAcceptsPinAndDigitShiftReplies() {
         TestSharedPreferences preferences = readyPreferences();
         assertEquals(
                 "4321",
@@ -169,7 +172,7 @@ public class ApprovalRequestTest {
                 Preferences.redeemApprovalCodeAndGrantMinutes(
                         preferences,
                         PACKAGE_NAME,
-                        "9977",
+                        "7654",
                         NOW_MS
                 )
         );
@@ -189,7 +192,7 @@ public class ApprovalRequestTest {
                 Preferences.redeemApprovalCodeAndGrantMinutes(
                         preferences,
                         PACKAGE_NAME,
-                        "9977",
+                        "7654",
                         NOW_MS + 1
                 )
         );
@@ -205,12 +208,15 @@ public class ApprovalRequestTest {
     }
 
     @Test
-    public void generatorSkipsReplyCollisionWithAdditiveAlias() {
+    public void generatorSkipsReplyCollisionWithDigitShiftAlias() {
         TestSharedPreferences preferences = readyPreferences();
         preferences.edit()
-                .putStringSet(approvalCodesKey(), Collections.singleton("9977"))
-                .putLong(approvalExpiryKey("9977"), 601_000L)
-                .putInt(approvalMinutesKey("9977"), 5)
+                .putStringSet(approvalCodesKey(), Collections.singleton("7654"))
+                .putLong(
+                        approvalExpiryKey("7654"),
+                        NOW_MS + Preferences.APPROVAL_CODE_TTL_MS
+                )
+                .putInt(approvalMinutesKey("7654"), 5)
                 .apply();
 
         assertEquals(
@@ -247,7 +253,7 @@ public class ApprovalRequestTest {
                 Preferences.redeemApprovalCodeAndGrantMinutes(
                         preferences,
                         PACKAGE_NAME,
-                        "9977",
+                        "7654",
                         NOW_MS
                 )
         );
@@ -288,7 +294,7 @@ public class ApprovalRequestTest {
                 preferences,
                 PACKAGE_NAME,
                 9,
-                601_001L,
+                NOW_MS + Preferences.APPROVAL_CODE_TTL_MS + 1L,
                 REQUEST_4321_OFFSET,
                 false
         );
@@ -400,7 +406,10 @@ public class ApprovalRequestTest {
         preferences.edit()
                 .remove(Preferences.KEY_MASTER_APPROVAL_TABLE)
                 .putStringSet(approvalCodesKey(), Collections.singleton("3352"))
-                .putLong(approvalExpiryKey("3352"), 601_000L)
+                .putLong(
+                        approvalExpiryKey("3352"),
+                        NOW_MS + Preferences.APPROVAL_CODE_TTL_MS
+                )
                 .putInt(approvalMinutesKey("3352"), 17)
                 .apply();
 
@@ -462,7 +471,7 @@ public class ApprovalRequestTest {
         assertTrue(summary.hasRequests());
         assertEquals(1, summary.count);
         assertEquals(17, summary.singleMinutes);
-        assertEquals(9, summary.singleRemainingMinutes);
+        assertEquals(59, summary.singleRemainingMinutes);
     }
 
     @Test
@@ -511,7 +520,7 @@ public class ApprovalRequestTest {
         Preferences.PendingApprovalSummary summary = Preferences.pendingApprovalSummary(
                 preferences,
                 PACKAGE_NAME,
-                NOW_MS + 600_001L
+                NOW_MS + Preferences.APPROVAL_CODE_TTL_MS + 1L
         );
 
         assertFalse(summary.hasRequests());

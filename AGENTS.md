@@ -54,9 +54,10 @@ Before changing code:
   explains this as dropping the product's last two digits and returning the last
   four digits left with leading zeroes. This is intentional friction, not secure
   authentication. While the product remains on Internal testing, both debug and
-  release builds also accept `(request + 5656) mod 10000` as a hidden testing
-  fallback. The fallback must not appear in user-facing copy. Pending records
-  expire after 10 minutes, and either valid reply atomically consumes the same
+  release builds also accept a hidden testing fallback that adds 3 to each
+  request-code digit modulo 10. The fallback must not appear in user-facing
+  copy. Pending records expire after 1 hour, and either valid reply atomically
+  consumes the same
   request record and grants its saved minutes.
 - Emergency access is exactly three random one-time 8-digit codes per batch.
   Replacing a batch revokes all old codes; only salted hashes persist. One code

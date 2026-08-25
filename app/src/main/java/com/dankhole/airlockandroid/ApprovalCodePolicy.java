@@ -7,7 +7,7 @@ final class ApprovalCodePolicy {
     static final int APPROVAL_TABLE_LENGTH = REQUEST_CODE_COUNT * CODE_LENGTH;
 
     private static final int APPROVAL_MODULUS = 10_000;
-    private static final int OVERRIDE_ADDEND = 5_656;
+    private static final int OVERRIDE_DIGIT_SHIFT = 3;
     private static final int PRODUCT_DIGITS_TO_DROP = 100;
 
     private ApprovalCodePolicy() {
@@ -78,8 +78,12 @@ final class ApprovalCodePolicy {
         if (!isValidRequestCode(requestCode)) {
             return "";
         }
-        int request = Integer.parseInt(requestCode);
-        return fourDigitCode((request + OVERRIDE_ADDEND) % APPROVAL_MODULUS);
+        StringBuilder approval = new StringBuilder(CODE_LENGTH);
+        for (int i = 0; i < requestCode.length(); i++) {
+            int digit = requestCode.charAt(i) - '0';
+            approval.append((char) ('0' + (digit + OVERRIDE_DIGIT_SHIFT) % 10));
+        }
+        return approval.toString();
     }
 
     private static boolean isFourDigits(String value) {

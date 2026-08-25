@@ -188,7 +188,8 @@ approval_override_code() {
     local request_code="$1"
     [[ "$request_code" =~ ^[0-9]{4}$ ]] \
         || fail "Request code is not four digits: $request_code"
-    printf '%04d' "$(((10#$request_code + 5656) % 10000))"
+    printf '%s' "$request_code" \
+        | sed 'y/0123456789/3456789012/'
 }
 
 fixture() {
@@ -569,7 +570,7 @@ approval_code="$(printf '%s' "$fixture_output" \
 [[ -n "$approval_code" ]] || fail "Fixture did not return an approval code: $fixture_output"
 expected_approval_code="$(approval_override_code "$request_code")"
 [[ "$approval_code" == "$expected_approval_code" ]] \
-    || fail "Approval code $approval_code did not follow the +5656 rule for $request_code"
+    || fail "Approval code $approval_code did not follow the per-digit +3 rule for $request_code"
 adb_e shell am force-stop "$PACKAGE"
 adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.DebugBlockerActivity" \
     --es target_package "$TARGET_PACKAGE" --es app_label "$TARGET_QUERY" \

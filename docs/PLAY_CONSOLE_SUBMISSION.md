@@ -1,6 +1,6 @@
 # Play Console Submission Draft
 
-Last updated: August 24, 2026
+Last updated: August 25, 2026
 
 This document contains copy-ready values for the first Airlock internal
 test. Re-check them against the shipped build whenever behavior or data handling
@@ -14,8 +14,8 @@ changes.
 | Java namespace `com.dankhole.airlockandroid` | Intentionally unchanged; it is not the installed package ID |
 | Release certificate | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
 | Target SDK | 36 |
-| Version | Candidate `versionCode 6`, `versionName 0.1.5`; version 1 is on Internal testing |
-| Signed AAB | Version 1 uploaded; version 6 is the current verified local candidate |
+| Version | Candidate `versionCode 7`, `versionName 0.1.6`; version 1 is on Internal testing |
+| Signed AAB | Version 1 uploaded; version 7 is the current verified local candidate |
 | Privacy policy | GitHub Pages source and in-app URL prepared; Pages must be enabled and the URL checked before rollout |
 | Play Console developer verification | Sufficient to create the app and Internal testing release; monitor any remaining dashboard task |
 | Play App Signing strategy | Enabled; Google Play signs delivered releases |
@@ -43,14 +43,14 @@ Uploaded version-1 AAB SHA-256:
 This checksum describes `releases/Airlock-0.1.0-internal-1.aab`, which was
 prepared from commit `2afe9c3` and uploaded as version 1.
 
-Current candidate version-6 artifact:
+Current candidate version-7 artifact:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `releases/Airlock-0.1.5-internal-6.aab` | `473be104369a8f82a952c153384b7db6a71fd9cfb5471a4e2b59875ae69c934e` |
+| `releases/Airlock-0.1.6-internal-7.aab` | `1aeaa37a345e55ea1e8291fc684282108e90e70c5bdd9f38e1ed853d7f70991b` |
 
 The copied bundle byte-matches the signed Gradle output. Package inspection
-confirmed `com.dankhole.airlock`, version code 6, version name `0.1.5`, min SDK
+confirmed `com.dankhole.airlock`, version code 7, version name `0.1.6`, min SDK
 26, and target SDK 36. The companion release APK matched the registered upload
 certificate.
 
@@ -103,7 +103,7 @@ Airlock is an accountability aid, not tamper-proof parental-control or device-se
 ### Internal Release Notes
 
 ```text
-Refines Keyholder approval guidance and introduces a clearer blocker home with separate request, approval, and emergency flows. Active requests and additional requests are explicit.
+Refines Keyholder approval guidance, keeps multiple requests independently active for up to one hour, and clearly separates request, approval, and emergency flows.
 ```
 
 ## Internal Test Track
@@ -115,9 +115,8 @@ Refines Keyholder approval guidance and introduces a clearer blocker home with s
    upload key.
 4. Complete the `specialUse` foreground-service declaration and demonstration
    video below.
-5. Upload the verified version-6 artifact using release name
-   `0.1.5 internal 6`. Earlier local candidates are obsolete and must not be
-   uploaded.
+5. Upload `Airlock-0.1.6-internal-7.aab` using release name
+   `0.1.6 internal 7`. Do not upload the obsolete version-6 artifact.
 6. Review any Console warnings, then start rollout to Internal testing.
 7. Copy the opt-in link and open it while signed into an allow-listed tester
    account.
@@ -125,8 +124,8 @@ Refines Keyholder approval guidance and introduces a clearer blocker home with s
    `docs/TEST_PLAN.md`.
 
 Tell internal testers to follow the shared-PIN calculation in the request SMS.
-The signed build also accepts the hidden fallback of adding `5656` to the
-request and keeping the last four digits (`4321` becomes `9977`), but release
+The signed candidate also accepts the hidden fallback of adding 3 to each
+request-code digit modulo 10 (`4321` becomes `7654`), but release
 copy must not expose it. Explain that both calculations provide deliberate
 friction rather than secure authentication. Retiring the fallback remains a
 later explicit release change.

@@ -21,7 +21,7 @@ background-to-empty transitions and resume-only blocker restoration,
 approval-code duration policy, atomic approval redemption and rollback with
 multiple pending requests, four-digit multiplication and leading-zero behavior,
 PIN-derived lookup creation, active-collision avoidance, expired-request reuse,
-PIN-change invalidation, the `+5656` test override, three-code emergency-batch
+PIN-change invalidation, the per-digit `+3` test override, three-code emergency-batch
 replacement, notification visibility policy, and monitoring-exit recovery
 classification.
 
@@ -151,21 +151,22 @@ Expected result: valid approval code removes the overlay for the minutes request
    of the request, approval, or emergency inputs are visible yet.
 4. Open `Ask for extra time`, enter requested extra minutes such as `1`, and tap
    `Create request & open text`.
-5. Confirm the SMS compose screen says `The Goose is asking for X minutes of extra time`, identifies the app, includes an exactly four-digit numeric request code, and explains the Master-PIN multiplication rule, including dropping the product's last two digits and preserving leading zeroes. Confirm it does not mention the additive fallback, testing, overrides, debug builds, or the release track.
+5. Confirm the SMS compose screen says `The Goose is asking for X minutes of extra time`, identifies the app, includes an exactly four-digit numeric request code, and explains the Master-PIN multiplication rule, including dropping the product's last two digits and preserving leading zeroes. Confirm it does not mention the per-digit fallback, testing, overrides, debug builds, or the release track.
 6. Return to the overlay and confirm its home shows `WAITING FOR KEYHOLDER`, the
    original duration, and `Enter approval code` as the primary action.
 7. Open `Make another request`; confirm it says the earlier request stays
    active, change the requested minutes, and create the additional request.
-8. In the current signed Internal-testing release, confirm the PIN-calculated
+8. In the next signed Internal-testing release, confirm the PIN-calculated
    reply from the SMS works. Generate a second request and confirm the hidden
-   fallback also works by adding `5656` and keeping the last four digits (`4321`
-   becomes `9977`). Each reply must consume its request once and grant the
+   fallback also works by adding 3 to each digit modulo 10 (`4321` becomes
+   `7654`, and `7890` becomes `0123`). Each reply must consume its request once and grant the
    minutes saved with that request.
 9. Separately in a debug build, confirm the SMS describes only the PIN
    calculation and both replies are accepted. Unit tests must continue covering
-   reply-alias collisions, atomic consumption, rollback, and the fallback-off
-   path. Before retiring the fallback, build a candidate with it disabled and
-   verify request `4321` with PIN `6789` accepts only `3352`.
+   the one-hour expiry boundary, reply-alias collisions, atomic consumption,
+   rollback, and the fallback-off path. Before retiring the fallback, build a
+   candidate with it disabled and verify request `4321` with PIN `6789` accepts
+   only `3352`.
 10. Open `Enter approval code`, enter a partial approval code, leave the
     overlay, return, and confirm the approval sub-screen and entry are retained.
 11. Enter an incorrect approval code and confirm it is rejected.

@@ -83,9 +83,9 @@ Start with [the documentation map](docs/README.md) and
 ## Current Limitations
 
 - The current internal-test build accepts the documented shared-PIN result and
-  a temporary fallback that adds `5656` to the request and keeps the last four
-  digits. The fallback is not exposed in release copy.
-  Requested minutes are stored against each pending code for 10 minutes. Both
+  a temporary fallback that adds 3 to each request-code digit, wrapping 7–9
+  back to 0–2. The fallback is not exposed in release copy.
+  Requested minutes are stored against each pending code for 1 hour. Both
   rules are deterrents rather than secure authentication; stronger
   authorization remains a later accountability phase.
 - Overlay blocking is friction, not hard security. A determined user can revoke special permissions, force-stop, or uninstall the app.

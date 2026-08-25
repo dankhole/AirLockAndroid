@@ -51,8 +51,8 @@ final class Preferences {
     private static final int EMERGENCY_CODE_LENGTH = 8;
     static final int APPROVAL_REDEMPTION_INVALID = -1;
     static final int APPROVAL_REDEMPTION_SAVE_FAILED = -2;
+    static final long APPROVAL_CODE_TTL_MS = 60 * 60 * 1000L;
     private static final long EMERGENCY_PAUSE_MS = 24 * 60 * 60 * 1000L;
-    private static final long CODE_TTL_MS = 10 * 60 * 1000L;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private Preferences() {
@@ -411,7 +411,7 @@ final class Preferences {
                 requestedMinutes,
                 System.currentTimeMillis(),
                 RANDOM.nextInt(ApprovalCodePolicy.REQUEST_CODE_COUNT),
-                BuildConfig.ACCEPT_ADD_5656_APPROVAL_OVERRIDE
+                BuildConfig.ACCEPT_DIGIT_SHIFT_3_APPROVAL_OVERRIDE
         );
     }
 
@@ -470,7 +470,10 @@ final class Preferences {
         approvalCodes.add(approvalCode);
         SharedPreferences.Editor saveEditor = preferences.edit()
                 .putStringSet(pendingApprovalCodesKey(packageName), approvalCodes)
-                .putLong(approvalExpiryKey(packageName, approvalCode), now + CODE_TTL_MS)
+                .putLong(
+                        approvalExpiryKey(packageName, approvalCode),
+                        now + APPROVAL_CODE_TTL_MS
+                )
                 .putInt(approvalMinutesKey(packageName, approvalCode), safeMinutes)
                 .putString(approvalRequestKey(packageName, approvalCode), requestCode);
         if (useApprovalOverride) {
@@ -813,7 +816,7 @@ final class Preferences {
         return approvalCodeForRequest(
                 preferences.getString(KEY_MASTER_APPROVAL_TABLE, ""),
                 normalized,
-                BuildConfig.ACCEPT_ADD_5656_APPROVAL_OVERRIDE
+                BuildConfig.ACCEPT_DIGIT_SHIFT_3_APPROVAL_OVERRIDE
         );
     }
 

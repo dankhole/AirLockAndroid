@@ -46,9 +46,9 @@ public class ApprovalCodePolicyTest {
     }
 
     @Test
-    public void approvalOverrideAdds5656AndKeepsLastFourDigits() {
-        assertEquals("9977", ApprovalCodePolicy.overrideApprovalCodeForRequest("4321"));
-        assertEquals("0656", ApprovalCodePolicy.overrideApprovalCodeForRequest("5000"));
+    public void approvalOverrideAddsThreeToEachDigitAndWraps() {
+        assertEquals("7654", ApprovalCodePolicy.overrideApprovalCodeForRequest("4321"));
+        assertEquals("0123", ApprovalCodePolicy.overrideApprovalCodeForRequest("7890"));
     }
 
     @Test
