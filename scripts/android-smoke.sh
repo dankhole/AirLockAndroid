@@ -543,6 +543,7 @@ wait_for_id blocker_minutes
 capture_artifacts "blocker-new-request"
 type_id blocker_minutes 9
 adb_e shell input keyevent 3
+wait_for_id_absent blocker_root 5
 adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 wait_for_id blocker_root 20
 assert_id_contains blocker_minutes 9
@@ -558,6 +559,55 @@ tap_id blocker_emergency_option
 wait_for_id blocker_emergency_hint
 assert_id_contains blocker_emergency_hint 24
 capture_artifacts "blocker-emergency-day-pass"
+
+CURRENT_SCENARIO="live-celebration-navigation"
+restore_setting global animator_duration_scale 10
+fixture_output="$(fixture seed --es target_package "$TARGET_PACKAGE" \
+    --ei request_minutes 7 --ez monitoring true)"
+approval_code="$(printf '%s' "$fixture_output" \
+    | sed -n 's/.*approval=\([0-9][0-9]*\).*/\1/p')"
+[[ -n "$approval_code" ]] || fail "Fixture did not return an approval code: $fixture_output"
+adb_e shell am force-stop "$PACKAGE"
+launch_main
+sleep 2
+adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+wait_for_id blocker_root 20
+tap_id blocker_enter_approval
+type_id blocker_approval_code "$approval_code"
+tap_id blocker_unlock
+wait_for_id blocker_celebration 10
+adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null
+celebration_token="celebration-$RANDOM-$RANDOM"
+fixture force_foreground_sanity --es sanity_token "$celebration_token" >/dev/null
+wait_for_log "debug foreground sanity check completed token=$celebration_token" 6
+wait_for_id_absent blocker_root 3
+wait_for_id main_scroll 5
+capture_artifacts "$CURRENT_SCENARIO"
+restore_setting global animator_duration_scale 0
+
+CURRENT_SCENARIO="emergency-celebration-watchdog"
+restore_setting global animator_duration_scale 10
+fixture_output="$(fixture seed --es target_package "$TARGET_PACKAGE" \
+    --ez monitoring true --ez emergency_codes true)"
+emergency_codes="$(printf '%s' "$fixture_output" \
+    | sed -n 's/.*emergency=\([0-9,][0-9,]*\).*/\1/p')"
+emergency_code="${emergency_codes%%,*}"
+[[ "$emergency_code" =~ ^[0-9]{8}$ ]] \
+    || fail "Fixture did not return an emergency code: $fixture_output"
+adb_e shell am force-stop "$PACKAGE"
+launch_main
+sleep 2
+adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+wait_for_id blocker_root 20
+tap_id blocker_emergency_option
+type_id blocker_emergency_code "$emergency_code"
+tap_id blocker_emergency_submit
+wait_for_id blocker_celebration 10
+adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null
+wait_for_id_absent blocker_root 7
+wait_for_id main_scroll 5
+capture_artifacts "$CURRENT_SCENARIO"
+restore_setting global animator_duration_scale 0
 
 CURRENT_SCENARIO="approval-duration-and-celebration"
 fixture_output="$(fixture seed --es target_package "$TARGET_PACKAGE" \

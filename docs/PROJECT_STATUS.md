@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: August 25, 2026
+Last updated: August 31, 2026
 
 ## Current Stage
 
@@ -19,7 +19,7 @@ last reviewed repository state; it is not permission to discard newer work.
 | --- | --- |
 | Play application ID | `com.dankhole.airlock` |
 | Java namespace | `com.dankhole.airlockandroid` |
-| Version | Candidate `versionCode 7`, `versionName 0.1.6`; version 1 is on Internal testing |
+| Version | Candidate `versionCode 8`, `versionName 0.1.7`; version 1 is on Internal testing |
 | SDK | min 26, compile/target 36 |
 | Runtime stack | Platform Java views; no AndroidX, Compose, Kotlin, or third-party runtime dependency |
 | Release certificate SHA-256 | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
@@ -33,12 +33,13 @@ a generic Play Store installation error, so delivery on a physical tester
 device is not yet confirmed.
 
 The current replacement candidate is
-`releases/Airlock-0.1.6-internal-7.aab` (SHA-256
-`1aeaa37a345e55ea1e8291fc684282108e90e70c5bdd9f38e1ed853d7f70991b`).
-It includes the documented PIN calculation, hidden per-digit override,
-independent one-hour request expiry, and decision-first blocker UI. It
-byte-matches the signed Gradle output and remains local pending upload. The
-version-6 artifact is obsolete and must not be uploaded.
+`releases/Airlock-0.1.7-internal-8.aab` (SHA-256
+`a9e78424b40ea236bdaad71e4dac8b77949d7441cf14160eb9139dfeb21d12a9`).
+It includes the overlay lifecycle and navigation hardening, documented PIN
+calculation, hidden per-digit override, independent one-hour request expiry,
+and decision-first blocker UI. It byte-matches the signed Gradle output and
+remains local pending upload. The version-7 artifact is obsolete and must not
+be uploaded.
 
 ## Last Verified Evidence
 
@@ -178,6 +179,23 @@ certificate, the enabled hidden override, and no override markers in packaged
 user-visible resources. The copied AAB byte-matches the signed Gradle output;
 its checksum is recorded above. Physical-device qualification remains open.
 
+On August 31, the overlay lifecycle audit traced the monitoring history and
+every foreground, navigation, celebration, window-attachment, permission, and
+service-teardown path. Timestamped lifecycle reduction now accepts genuinely
+delayed events without allowing overlap replay to resurrect a stale guarded
+app. Explicit Home and messaging exits invalidate in-flight queries, success
+celebrations are bounded and foreground-aware, and attached overlay references
+are retained until verified removal with bounded retry. All 74 JVM tests,
+debug lint, debug/release assembly, and release bundle generation passed. The
+expanded Android 17 Pixel 8 emulator suite passed under gesture and three-button
+navigation at `app/build/reports/android-smoke/20260831-091920`, followed by
+three additional focused navigation matrices at `20260831-092538`,
+`20260831-092639`, and `20260831-092732`. Inspection confirmed version code 8
+(`0.1.7`), package `com.dankhole.airlock`, min SDK 26, target SDK 36, and the
+registered upload certificate. The copied AAB byte-matches the signed Gradle
+output and uses the checksum recorded above. Physical-device qualification
+remains open.
+
 ## Implemented Product Contract
 
 - Dedicated three-step access gate for Usage Access, overlay access, and visible
@@ -186,16 +204,18 @@ its checksum is recorded above. Physical-device qualification remains open.
   off, paused, recovering, and active enforcement, and exposes settings below.
 - Two-step app picker and per-app limits with critical-app exclusions and
   master-PIN authorization while Duty is active.
-- Foreground-service monitoring with overlapping UsageEvents, explicit
-  foreground/background transition state, gesture recovery, startup-only
-  UsageStats seeding, bounded workers, batched persistence, health diagnostics,
-  boot/update restart, and screen-off suspension.
+- Foreground-service monitoring with overlapping UsageEvents, timestamped
+  foreground/background evidence, delayed-event reduction, gesture recovery,
+  startup-only UsageStats seeding, bounded workers, batched persistence, health
+  diagnostics, boot/update restart, and screen-off suspension.
 - Full-screen dark blocker with a decision-first home and separate request,
   approval, and emergency forms. It makes active requests and additive new
   requests explicit, does not auto-open the keyboard, retains flow/input state
   across temporary hide/reopen, reports exact granted minutes, plays a Goose
-  celebration, leaves safely on Back, and cannot be reattached over known
-  Home/Recents state by the aggregate foreground sanity check.
+  celebration, leaves safely on Back, bounds celebration windows, retains
+  attached-window authority through removal failures, and cannot be reattached
+  over known Home/Recents/explicit-exit state by stale lifecycle or aggregate
+  foreground evidence.
 - Four-digit requests and replies with a shared four-digit Master/Keyholder PIN
   other than `0000`.
   The platform-agnostic multiplication rule is implemented, explained in the
@@ -236,7 +256,7 @@ copy. Removing the fallback remains an explicit later decision.
 3. Confirm remaining tester accounts, support email,
    and complete the `specialUse` foreground-service declaration/video before
    the first Play rollout.
-4. Upload the verified version-7 bundle through the Internal testing track and
+4. Upload the verified version-8 bundle through the Internal testing track and
    confirm Play-delivered installation.
 5. Collect reliability, approval-flow, and deterrence feedback, then explicitly
    decide when to retire the signed-release per-digit override and qualify the

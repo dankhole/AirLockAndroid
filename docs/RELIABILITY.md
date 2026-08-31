@@ -1,6 +1,6 @@
 # Monitoring Reliability
 
-Last updated: August 11, 2026
+Last updated: August 31, 2026
 
 ## Reliability Contract
 
@@ -35,10 +35,14 @@ recorded. Do not turn an emulator pass into a device-reliability claim.
 | App update | `MY_PACKAGE_REPLACED` | Start duty if it was requested |
 | Usage Access revoked or temporarily unavailable | AppOps check and query result | Keep service/notification alive; retry every 30 seconds |
 | Overlay access revoked | Settings check | Hide blocker, show required state, retry every 30 seconds |
-| Delayed UsageEvents | Ten-second overlapping query window | Clear a backgrounded candidate immediately, poll the transition window quickly, and reprocess recent lifecycle events without double-counting elapsed time |
-| Unknown foreground after service creation | 30-second aggregate sanity check | Seed only a never-observed initial candidate; aggregate stats never override a known launcher, System UI, app, or explicit background transition |
+| Delayed or replayed UsageEvents | Ten-second overlapping query window plus timestamped foreground/background evidence | Clear a backgrounded candidate immediately, accept genuinely delayed lifecycle evidence in chronological order, and prevent stale overlap resumes from resurrecting an app after newer foreground or matching-background evidence |
+| Unknown foreground after service creation | Five-minute lifecycle lookback plus 30-second aggregate sanity check | Seed only a never-observed initial candidate; aggregate stats never override a known launcher, System UI, app, or explicit background transition |
 | Stuck foreground query | Ten-second main-thread watchdog | Use at most two process-wide workers with no queue; reject additional work and retry every 30 seconds until a worker returns or the process restarts |
-| Overlay attach failure | `WindowManager.addView` exception | Exponential retry from one to 30 seconds |
+| Unexpected foreground-loop exception | Poll and completion boundaries | Remove stale UI, mark monitoring unhealthy, abandon the query identity, and schedule a bounded recovery poll |
+| Overlay attach or post-attach initialization failure | Window attachment check and runtime exception boundary | Retain authority over any attached view, detach it immediately, report unhealthy monitoring, and retry attachment with exponential backoff |
+| Overlay detach failure | Attached-view check around `removeViewImmediate` | Retain the authoritative view reference and retry removal from 200 ms to 30 seconds; never let keyboard cleanup or persistence failure skip removal |
+| Navigation during a grant celebration | Continued lifecycle polling and four-second watchdog | Keep the ordinary celebration only over the same confirmed foreground app; detach it on navigation, unknown foreground, or deadline |
+| Explicit Leave App or successful SMS launch | Successful destination launch | Hide immediately and establish a foreground-exit boundary so delayed events from the old guarded-app session cannot reattach the blocker over Home or Messages |
 | Screen off or keyguard visible | Screen/user-present broadcasts plus state check | Flush usage, stop querying, resume immediately after unlock |
 | Android background mode is Restricted | `ActivityManager.isBackgroundRestricted()` | Show a required warning, continue best-effort checks while alive, and re-promote the service when Airlock is reopened after the restriction is removed |
 | Android 13+ Active apps Stop or force-stop | No callback; later visible through `ApplicationExitInfo` | User must reopen Airlock; requested duty starts again |
@@ -88,11 +92,17 @@ overlap/recovery path unless device evidence shows otherwise.
 `UsageEvents` activity lifecycle transitions are the authoritative foreground
 signal once any lifecycle state exists. A foreground event names the candidate;
 a matching `PAUSED` or `STOPPED` event clears it until another foreground event
-arrives. This explicit empty transition is different from having no startup
-information. `queryUsageStats()` is interval-aggregated and may seed only the
-latter during a bounded sanity check. It must never replace a known launcher,
-Recents, app, or empty transition state, because doing so can attach the blocker
-after the guarded app has left the foreground.
+arrives. Polls overlap by ten seconds. The reducer retains the newest foreground
+timestamp and each package's recent background timestamp, so an event delivered
+late can still be incorporated when it fits the chronology while an older
+guarded-app resume cannot override a newer foreground event or its own later
+background event. Exact duplicates at the newest timestamp are skipped and
+recent background evidence is bounded to the overlap window. This explicit
+empty transition is different from having no startup information.
+`queryUsageStats()` is interval-aggregated and may seed only the latter during a
+bounded sanity check, after a wider lifecycle lookback. It must never replace a
+known launcher, Recents, app, or empty transition state, because doing so can
+attach the blocker after the guarded app has left the foreground.
 
 The five-minute sticky-blocker record retains form state and identifies which
 blocked package may need rebuilding after a temporary interruption. It never
@@ -102,7 +112,19 @@ removed while the service polls briefly for an actual return event. Query
 failure or timeout also removes the overlay and reports unhealthy monitoring
 rather than leaving a stale system-wide window attached. Back on a focused
 blocker must provide the same Home escape as `Leave App!` so a focusable overlay
-cannot trap all navigation.
+cannot trap all navigation. A successful explicit Home or messaging launch also
+creates an event-time exit boundary: overlap events from the session being left
+cannot reattach the blocker, while a later real resume of the guarded app can.
+
+Window cleanup is authoritative over keyboard and storage cleanup. Airlock
+clears its overlay reference only after the view is detached (or Android reports
+that it is already absent); otherwise it retains the reference, reports degraded
+health, and retries removal with bounded backoff. The same rule applies when
+`addView` succeeds but later styling or focus initialization fails. Ordinary
+unlock celebrations continue foreground polling and remain visible only while
+their guarded package is confirmed foreground, with a four-second watchdog for
+a lost animation callback. Emergency-pass celebrations use the same watchdog
+but preserve the no-UsageStats-query rule while the day pass is active.
 
 ## Diagnostics
 

@@ -67,6 +67,7 @@ public class MonitoringService extends Service {
     private static final long RECOVERY_FAST_WINDOW_MS = 3_000L;
     private static final long RECOVERY_WARM_WINDOW_MS = 15_000L;
     private static final long USAGE_EVENT_OVERLAP_MS = 10_000L;
+    private static final long UNKNOWN_FOREGROUND_LOOKBACK_MS = 5 * 60_000L;
     private static final long FOREGROUND_SANITY_CHECK_INTERVAL_MS = 30_000L;
     private static final long FOREGROUND_QUERY_TIMEOUT_MS = 10_000L;
     private static final int MAX_FOREGROUND_QUERY_WORKERS = 2;
@@ -77,6 +78,7 @@ public class MonitoringService extends Service {
     private static final long USAGE_RECONCILE_INTERVAL_MS = 60_000L;
     private static final long USAGE_PERSIST_INTERVAL_MS = 30_000L;
     private static final long EMERGENCY_PAUSE_CHECK_INTERVAL_MS = 60_000L;
+    private static final long CELEBRATION_MAX_MS = 4_000L;
     private static final long OVERLAY_STICKY_MS = 5 * 60 * 1000L;
     private static final AtomicInteger FOREGROUND_THREAD_SEQUENCE = new AtomicInteger();
     private static final BoundedTaskExecutor FOREGROUND_QUERY_EXECUTOR =
@@ -101,15 +103,21 @@ public class MonitoringService extends Service {
     private Set<String> homePackageNames;
     private String lastForegroundPackage;
     private boolean foregroundStateKnown;
+    private long foregroundCandidateEventMs = Long.MIN_VALUE;
+    private long latestForegroundEventMs = Long.MIN_VALUE;
+    private final Map<String, Long> latestBackgroundEventMs = new HashMap<>();
     private String lastCriticalBlockValidationPackage;
     private long lastTickElapsedMs;
     private long lastUsageQueryEndMs;
     private long lastForegroundSanityCheckMs;
     private long lastLifecycleEventMs;
+    private final Set<String> lastLifecycleEventKeys = new HashSet<>();
     private long keepOverlayUntilMs;
     private long leaveAppGraceUntilElapsedMs;
     private long transientRecoveryStartedElapsedMs;
     private boolean unlockCelebrationRunning;
+    private boolean emergencyCelebrationRunning;
+    private long celebrationDeadlineElapsedMs;
     private boolean overlayNeedsRefresh;
     private boolean overlayWindowObscured;
     private boolean foregroundQueryInFlight;
@@ -132,12 +140,18 @@ public class MonitoringService extends Service {
     private String monitoringIssue = "";
     private int consecutiveOverlayFailures;
     private long nextOverlayAttemptElapsedMs;
+    private Runnable overlayRemovalRetryRunnable;
+    private int consecutiveOverlayRemovalFailures;
     private UsageLedger usageLedger;
 
     private final Runnable pollRunnable = new Runnable() {
         @Override
         public void run() {
-            requestForegroundPoll();
+            try {
+                requestForegroundPoll();
+            } catch (RuntimeException exception) {
+                handleUnexpectedForegroundLoopFailure(exception);
+            }
         }
     };
 
@@ -236,8 +250,9 @@ public class MonitoringService extends Service {
         handler.removeCallbacks(pollRunnable);
         handler.removeCallbacks(reconciliationRunnable);
         cancelForegroundQueryTimeout();
-        usageLedger.flush(true);
+        cancelOverlayRemovalRetry();
         hideOverlay(false);
+        flushUsageSafely(true, "final");
         unregisterDeviceStateReceiver();
         if (reconciliationHandler != null) {
             reconciliationHandler.removeCallbacksAndMessages(null);
@@ -325,6 +340,30 @@ public class MonitoringService extends Service {
         }
     }
 
+    private void handleUnexpectedForegroundLoopFailure(RuntimeException exception) {
+        if (stopping) {
+            return;
+        }
+        foregroundQueryInFlight = false;
+        foregroundQueryId++;
+        cancelForegroundQueryTimeout();
+        consecutiveForegroundQueryFailures++;
+        try {
+            invalidateForegroundState();
+        } catch (RuntimeException ignored) {
+            // Keep the recovery loop alive even if Android window cleanup also failed.
+        }
+        try {
+            setMonitoringIssue(getString(R.string.monitoring_issue_blocker_error));
+        } catch (RuntimeException ignored) {
+            // A later healthy poll can repair the persisted health state.
+        }
+        debugLog("foreground loop failed: " + exception.getClass().getSimpleName());
+        scheduleForegroundPoll(consecutiveForegroundQueryFailures < 3
+                ? POLL_INTERVAL_MS
+                : DEGRADED_RETRY_INTERVAL_MS);
+    }
+
     private String monitoringRequirementIssue() {
         if (!AndroidPermissions.hasUsageAccess(this)) {
             return getString(R.string.monitoring_requirement_usage);
@@ -389,10 +428,10 @@ public class MonitoringService extends Service {
     }
 
     private void waitForRecovery(String issue, long delayMs) {
-        usageLedger.flush(true);
         hideOverlay(true);
-        lastForegroundPackage = null;
-        foregroundStateKnown = false;
+        flushUsageSafely(true, "recovery");
+        resetForegroundEvidence(false, Long.MIN_VALUE);
+        resetLifecycleWatermark();
         lastTickElapsedMs = SystemClock.elapsedRealtime();
         endTransientRecovery();
         setMonitoringIssue(issue);
@@ -432,10 +471,10 @@ public class MonitoringService extends Service {
     }
 
     private void pauseWhileDeviceUnavailable() {
-        usageLedger.flush(true);
         hideOverlay(true);
-        lastForegroundPackage = null;
-        foregroundStateKnown = false;
+        flushUsageSafely(true, "device pause");
+        resetForegroundEvidence(false, Long.MIN_VALUE);
+        resetLifecycleWatermark();
         lastTickElapsedMs = SystemClock.elapsedRealtime();
         endTransientRecovery();
         MonitoringHealth.recordHeartbeat(this);
@@ -448,6 +487,7 @@ public class MonitoringService extends Service {
             public void onReceive(Context context, Intent intent) {
                 String action = intent.getAction();
                 if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                    abandonForegroundQuery();
                     deviceInteractive = false;
                     deviceUnlocked = false;
                     pauseWhileDeviceUnavailable();
@@ -466,10 +506,12 @@ public class MonitoringService extends Service {
                         || Intent.ACTION_USER_UNLOCKED.equals(action)
                         || Intent.ACTION_TIME_CHANGED.equals(action)
                         || Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
+                    abandonForegroundQuery();
                     long now = System.currentTimeMillis();
                     lastUsageQueryEndMs = now - USAGE_EVENT_OVERLAP_MS;
                     lastForegroundSanityCheckMs = 0L;
-                    lastLifecycleEventMs = 0L;
+                    resetLifecycleWatermark();
+                    resetForegroundEvidence(false, Long.MIN_VALUE);
                     lastTickElapsedMs = SystemClock.elapsedRealtime();
                     handler.removeCallbacks(pollRunnable);
                     handler.post(pollRunnable);
@@ -504,12 +546,34 @@ public class MonitoringService extends Service {
         deviceStateReceiver = null;
     }
 
+    private void abandonForegroundQuery() {
+        if (!foregroundQueryInFlight) {
+            return;
+        }
+        foregroundQueryInFlight = false;
+        foregroundQueryId++;
+        cancelForegroundQueryTimeout();
+        debugLog("foreground query abandoned after device-state change");
+    }
+
     private void requestForegroundPoll() {
         if (stopping || foregroundQueryInFlight) {
             return;
         }
         if (!Preferences.isMonitoringRequested(this)) {
             stopMonitoring(false);
+            return;
+        }
+        if (emergencyCelebrationRunning) {
+            long celebrationRemainingMs = celebrationDeadlineElapsedMs
+                    - SystemClock.elapsedRealtime();
+            if (celebrationRemainingMs <= 0L) {
+                debugLog("emergency celebration watchdog removed overlay");
+                hideOverlay(false);
+                pauseForEmergencyDayPassIfActive();
+            } else {
+                scheduleForegroundPoll(Math.min(POLL_INTERVAL_MS, celebrationRemainingMs));
+            }
             return;
         }
         if (!unlockCelebrationRunning && pauseForEmergencyDayPassIfActive()) {
@@ -525,17 +589,20 @@ public class MonitoringService extends Service {
             pauseWhileDeviceUnavailable();
             return;
         }
-        if (unlockCelebrationRunning) {
-            keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
-            scheduleNextForegroundPoll();
-            return;
-        }
         long now = System.currentTimeMillis();
         long elapsedNow = SystemClock.elapsedRealtime();
         long previousQueryEndMs = lastUsageQueryEndMs;
-        if (previousQueryEndMs <= 0L
-                || previousQueryEndMs > now
-                || now - previousQueryEndMs > 5 * 60_000L) {
+        boolean queryClockDiscontinuity = previousQueryEndMs > now
+                || (previousQueryEndMs > 0L
+                && now - previousQueryEndMs > UNKNOWN_FOREGROUND_LOOKBACK_MS);
+        if (queryClockDiscontinuity) {
+            hideOverlay(true, true);
+            resetForegroundEvidence(false, Long.MIN_VALUE);
+            resetLifecycleWatermark();
+            lastForegroundSanityCheckMs = 0L;
+            debugLog("foreground evidence reset after clock/query gap");
+        }
+        if (previousQueryEndMs <= 0L || queryClockDiscontinuity) {
             previousQueryEndMs = now - USAGE_EVENT_OVERLAP_MS;
         }
         final long queryPreviousEndMs = previousQueryEndMs;
@@ -549,12 +616,17 @@ public class MonitoringService extends Service {
                 : null;
         String previousForegroundPackage = lastForegroundPackage;
         boolean previousForegroundStateKnown = foregroundStateKnown;
+        long previousForegroundCandidateEventMs = foregroundCandidateEventMs;
+        long previousLatestForegroundEventMs = latestForegroundEventMs;
+        Map<String, Long> previousLatestBackgroundEventMs =
+                new HashMap<>(latestBackgroundEventMs);
         String blockedPackage = overlayPackageName != null
                 ? overlayPackageName
                 : stickyBlockedPackageName;
         Set<String> selectedPackages = Preferences.selectedPackages(this);
         Set<String> transientPackages = transientSystemPackages();
         long previousLifecycleEventMs = lastLifecycleEventMs;
+        Set<String> previousLifecycleEventKeys = new HashSet<>(lastLifecycleEventKeys);
         long queryId = ++foregroundQueryId;
 
         foregroundQueryInFlight = true;
@@ -567,9 +639,13 @@ public class MonitoringService extends Service {
                         queryPreviousEndMs,
                         previousForegroundPackage,
                         previousForegroundStateKnown,
+                        previousForegroundCandidateEventMs,
+                        previousLatestForegroundEventMs,
+                        previousLatestBackgroundEventMs,
                         blockedPackage,
                         transientPackages,
                         previousLifecycleEventMs,
+                        previousLifecycleEventKeys,
                         runSanityCheck
                 );
             } catch (RuntimeException exception) {
@@ -577,19 +653,29 @@ public class MonitoringService extends Service {
                 result = ForegroundQueryResult.failed(
                         previousForegroundPackage,
                         previousForegroundStateKnown,
-                        previousLifecycleEventMs
+                        previousForegroundCandidateEventMs,
+                        previousLatestForegroundEventMs,
+                        previousLatestBackgroundEventMs,
+                        previousLifecycleEventMs,
+                        previousLifecycleEventKeys
                 );
             }
             ForegroundQueryResult completedResult = result;
-            handler.post(() -> completeForegroundPoll(
-                    queryId,
-                    elapsedNow,
-                    previousForegroundPackage,
-                    previousForegroundStateKnown,
-                    selectedPackages,
-                    completedResult,
-                    debugSanityToken
-            ));
+            handler.post(() -> {
+                try {
+                    completeForegroundPoll(
+                            queryId,
+                            elapsedNow,
+                            previousForegroundPackage,
+                            previousForegroundStateKnown,
+                            selectedPackages,
+                            completedResult,
+                            debugSanityToken
+                    );
+                } catch (RuntimeException exception) {
+                    handleUnexpectedForegroundLoopFailure(exception);
+                }
+            });
         });
         if (!posted) {
             foregroundQueryInFlight = false;
@@ -641,7 +727,13 @@ public class MonitoringService extends Service {
         }
 
         consecutiveForegroundQueryFailures = 0;
-        lastLifecycleEventMs = Math.max(lastLifecycleEventMs, queryResult.latestLifecycleEventMs);
+        lastLifecycleEventMs = queryResult.latestLifecycleEventMs;
+        lastLifecycleEventKeys.clear();
+        lastLifecycleEventKeys.addAll(queryResult.latestLifecycleEventKeys);
+        foregroundCandidateEventMs = queryResult.foregroundCandidateEventMs;
+        latestForegroundEventMs = queryResult.latestForegroundEventMs;
+        latestBackgroundEventMs.clear();
+        latestBackgroundEventMs.putAll(queryResult.latestBackgroundEventMs);
         long now = System.currentTimeMillis();
         long elapsedNow = SystemClock.elapsedRealtime();
         String foregroundPackage = queryResult.packageName;
@@ -684,6 +776,26 @@ public class MonitoringService extends Service {
             lastForegroundPackage = foregroundPackage;
             foregroundStateKnown = queryResult.candidateKnown;
             lastTickElapsedMs = elapsedNow;
+
+            if (unlockCelebrationRunning) {
+                ForegroundEventPolicy.CandidateState currentForeground =
+                        queryResult.candidateKnown
+                                ? ForegroundEventPolicy.knownCandidate(foregroundPackage)
+                                : ForegroundEventPolicy.unknownCandidate();
+                if (!ForegroundEventPolicy.shouldKeepCelebration(
+                        overlayPackageName,
+                        currentForeground,
+                        elapsedNow,
+                        celebrationDeadlineElapsedMs
+                )) {
+                    if (elapsedNow >= celebrationDeadlineElapsedMs) {
+                        debugLog("celebration watchdog removed overlay for "
+                                + overlayPackageName);
+                    }
+                    hideOverlay(false);
+                }
+                return;
+            }
 
             boolean foregroundSelected = foregroundPackage != null
                     && selectedPackages.contains(foregroundPackage);
@@ -739,16 +851,30 @@ public class MonitoringService extends Service {
             setMonitoringIssue(getString(R.string.monitoring_issue_blocker_error));
             debugLog("foreground completion failed: " + exception.getClass().getSimpleName());
         } finally {
-            usageLedger.flush(false);
-            if (debugSanityToken != null) {
-                debugLog("debug foreground sanity check completed token=" + debugSanityToken);
+            try {
+                usageLedger.flush(false);
+                if (debugSanityToken != null) {
+                    debugLog("debug foreground sanity check completed token=" + debugSanityToken);
+                }
+                if (pollHealthy
+                        && consecutiveOverlayFailures == 0
+                        && consecutiveOverlayRemovalFailures == 0
+                        && !foregroundStatusRecoveryPending) {
+                    clearMonitoringIssue();
+                }
+            } catch (RuntimeException exception) {
+                pollHealthy = false;
+                try {
+                    invalidateForegroundState();
+                    setMonitoringIssue(getString(R.string.monitoring_issue_blocker_error));
+                } catch (RuntimeException ignored) {
+                    // Scheduling below is the last-resort recovery guarantee.
+                }
+                debugLog("foreground finalization failed: "
+                        + exception.getClass().getSimpleName());
+            } finally {
+                scheduleNextForegroundPoll(queryStartedElapsedMs);
             }
-            if (pollHealthy
-                    && consecutiveOverlayFailures == 0
-                    && !foregroundStatusRecoveryPending) {
-                clearMonitoringIssue();
-            }
-            scheduleNextForegroundPoll(queryStartedElapsedMs);
         }
     }
 
@@ -769,9 +895,13 @@ public class MonitoringService extends Service {
             long previousQueryEndMs,
             String previousForegroundPackage,
             boolean previousForegroundStateKnown,
+            long previousForegroundCandidateEventMs,
+            long previousLatestForegroundEventMs,
+            Map<String, Long> previousLatestBackgroundEventMs,
             String blockedPackage,
             Set<String> transientPackages,
             long previousLifecycleEventMs,
+            Set<String> previousLifecycleEventKeys,
             boolean runSanityCheck
     ) {
         UsageStatsManager usageStatsManager = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
@@ -779,7 +909,11 @@ public class MonitoringService extends Service {
             return ForegroundQueryResult.failed(
                     previousForegroundPackage,
                     previousForegroundStateKnown,
-                    previousLifecycleEventMs
+                    previousForegroundCandidateEventMs,
+                    previousLatestForegroundEventMs,
+                    previousLatestBackgroundEventMs,
+                    previousLifecycleEventMs,
+                    previousLifecycleEventKeys
             );
         }
 
@@ -789,28 +923,48 @@ public class MonitoringService extends Service {
                     now - USAGE_EVENT_OVERLAP_MS,
                     previousQueryEndMs - USAGE_EVENT_OVERLAP_MS
             );
+            if (!previousForegroundStateKnown && runSanityCheck) {
+                queryStartMs = Math.min(
+                        queryStartMs,
+                        now - UNKNOWN_FOREGROUND_LOOKBACK_MS
+                );
+            }
             events = queryLifecycleEvents(usageStatsManager, queryStartMs, now);
         } catch (SecurityException ignored) {
             return ForegroundQueryResult.failed(
                     previousForegroundPackage,
                     previousForegroundStateKnown,
-                    previousLifecycleEventMs
+                    previousForegroundCandidateEventMs,
+                    previousLatestForegroundEventMs,
+                    previousLatestBackgroundEventMs,
+                    previousLifecycleEventMs,
+                    previousLifecycleEventKeys
             );
         }
         if (events == null) {
             return ForegroundQueryResult.failed(
                     previousForegroundPackage,
                     previousForegroundStateKnown,
-                    previousLifecycleEventMs
+                    previousForegroundCandidateEventMs,
+                    previousLatestForegroundEventMs,
+                    previousLatestBackgroundEventMs,
+                    previousLifecycleEventMs,
+                    previousLifecycleEventKeys
             );
         }
 
         UsageEvents.Event event = new UsageEvents.Event();
-        ForegroundEventPolicy.CandidateState candidateState = previousForegroundStateKnown
-                ? ForegroundEventPolicy.knownCandidate(previousForegroundPackage)
-                : ForegroundEventPolicy.unknownCandidate();
+        ForegroundEventPolicy.TimedCandidateState candidateState = previousForegroundStateKnown
+                ? ForegroundEventPolicy.knownTimedCandidate(
+                        previousForegroundPackage,
+                        previousForegroundCandidateEventMs,
+                        previousLatestForegroundEventMs,
+                        previousLatestBackgroundEventMs
+                )
+                : ForegroundEventPolicy.unknownTimedCandidate();
         boolean overlayInterrupted = false;
         long latestLifecycleEventMs = previousLifecycleEventMs;
+        Set<String> latestLifecycleEventKeys = new HashSet<>(previousLifecycleEventKeys);
         while (events.hasNextEvent()) {
             events.getNextEvent(event);
             int type = event.getEventType();
@@ -818,11 +972,28 @@ public class MonitoringService extends Service {
             if (eventPackageName == null) {
                 continue;
             }
-            if (ForegroundEventPolicy.isLifecycleEvent(type)) {
-                latestLifecycleEventMs = Math.max(latestLifecycleEventMs, event.getTimeStamp());
+            long eventTimestampMs = event.getTimeStamp();
+            if (!ForegroundEventPolicy.shouldApplyLifecycleEvent(
+                    eventTimestampMs,
+                    type,
+                    eventPackageName,
+                    latestLifecycleEventMs,
+                    latestLifecycleEventKeys,
+                    Build.VERSION.SDK_INT
+            )) {
+                continue;
+            }
+            if (eventTimestampMs > latestLifecycleEventMs) {
+                latestLifecycleEventMs = eventTimestampMs;
+                latestLifecycleEventKeys.clear();
+            }
+            if (eventTimestampMs == latestLifecycleEventMs) {
+                latestLifecycleEventKeys.add(
+                        ForegroundEventPolicy.lifecycleEventKey(type, eventPackageName)
+                );
             }
 
-            if (event.getTimeStamp() > previousQueryEndMs
+            if (eventTimestampMs > previousQueryEndMs
                     && ForegroundEventPolicy.isOverlayInterruptionEvent(
                             type,
                             eventPackageName,
@@ -834,10 +1005,11 @@ public class MonitoringService extends Service {
                 debugLog("overlay interruption event=" + type + " package=" + eventPackageName);
             }
 
-            candidateState = ForegroundEventPolicy.applyLifecycleEvent(
+            candidateState = ForegroundEventPolicy.applyTimedLifecycleEvent(
                     candidateState,
                     type,
                     eventPackageName,
+                    eventTimestampMs,
                     Build.VERSION.SDK_INT
             );
         }
@@ -857,18 +1029,23 @@ public class MonitoringService extends Service {
                     debugLog("usage summary seeded foreground " + candidateState.packageName
                             + " -> " + mostRecent.getPackageName());
                 }
-                candidateState = ForegroundEventPolicy.knownCandidate(
+                candidateState = ForegroundEventPolicy.seedTimedCandidate(
+                        candidateState,
                         mostRecent.getPackageName()
                 );
-                latestLifecycleEventMs = mostRecent.getLastTimeUsed();
             }
         }
 
+        candidateState = ForegroundEventPolicy.pruneTimedEvidence(
+                candidateState,
+                now - USAGE_EVENT_OVERLAP_MS
+        );
+
         return ForegroundQueryResult.successful(
-                candidateState.packageName,
-                candidateState.known,
+                candidateState,
                 overlayInterrupted,
-                latestLifecycleEventMs
+                latestLifecycleEventMs,
+                latestLifecycleEventKeys
         );
     }
 
@@ -1022,10 +1199,9 @@ public class MonitoringService extends Service {
             emergencyPauseNotificationShown = true;
             updateForegroundNotification();
         }
-        usageLedger.flush(true);
         hideOverlay(false);
-        lastForegroundPackage = null;
-        foregroundStateKnown = false;
+        flushUsageSafely(true, "emergency pause");
+        resetForegroundEvidence(false, Long.MIN_VALUE);
         lastTickElapsedMs = SystemClock.elapsedRealtime();
         transientRecoveryStartedElapsedMs = 0L;
         MonitoringHealth.recordHeartbeat(this);
@@ -1033,10 +1209,6 @@ public class MonitoringService extends Service {
                 Math.max(200L, Math.min(EMERGENCY_PAUSE_CHECK_INTERVAL_MS, remainingMs))
         );
         return true;
-    }
-
-    private void scheduleNextForegroundPoll() {
-        scheduleForegroundPoll(nextPollDelayMs());
     }
 
     private void scheduleNextForegroundPoll(long queryStartedElapsedMs) {
@@ -1078,10 +1250,9 @@ public class MonitoringService extends Service {
 
     private void invalidateForegroundState() {
         hideOverlay(true, true);
-        lastForegroundPackage = null;
         // A failed query must not let the aggregate fallback guess that the old
         // blocked app is still foreground. Require lifecycle evidence to reattach.
-        foregroundStateKnown = true;
+        resetForegroundEvidence(true, System.currentTimeMillis());
         lastCriticalBlockValidationPackage = null;
         lastTickElapsedMs = SystemClock.elapsedRealtime();
         if (stickyBlockedPackageName != null) {
@@ -1089,19 +1260,47 @@ public class MonitoringService extends Service {
         }
     }
 
+    private void resetForegroundEvidence(boolean knownEmpty, long evidenceTimestampMs) {
+        lastForegroundPackage = null;
+        foregroundStateKnown = knownEmpty;
+        foregroundCandidateEventMs = evidenceTimestampMs;
+        latestForegroundEventMs = evidenceTimestampMs;
+        latestBackgroundEventMs.clear();
+    }
+
+    private void resetLifecycleWatermark() {
+        lastLifecycleEventMs = 0L;
+        lastLifecycleEventKeys.clear();
+    }
+
+    private void markExplicitForegroundExit(String destination) {
+        abandonForegroundQuery();
+        resetForegroundEvidence(true, System.currentTimeMillis());
+        lastCriticalBlockValidationPackage = null;
+        lastTickElapsedMs = SystemClock.elapsedRealtime();
+        scheduleForegroundPoll(RECOVERY_FAST_POLL_INTERVAL_MS);
+        debugLog("foreground cleared after explicit exit to " + destination);
+    }
+
     private void showOverlay(String packageName) {
+        cancelOverlayRemovalRetry();
         rememberBlockedPackage(packageName);
         if (overlayView != null && packageName.equals(overlayPackageName)) {
             if (!overlayNeedsRefresh && overlayView.isAttachedToWindow()) {
+                consecutiveOverlayRemovalFailures = 0;
                 resetOverlayFailures();
                 return;
             }
             debugLog("rebuilding overlay for " + packageName
                     + ", refresh=" + overlayNeedsRefresh
                     + ", attached=" + overlayView.isAttachedToWindow());
-            hideOverlay(true, true);
+            if (!hideOverlay(true, true)) {
+                return;
+            }
         } else if (overlayView != null) {
-            hideOverlay(true, true);
+            if (!hideOverlay(true, true)) {
+                return;
+            }
         }
 
         if (SystemClock.elapsedRealtime() < nextOverlayAttemptElapsedMs) {
@@ -1150,31 +1349,58 @@ public class MonitoringService extends Service {
         params.gravity = Gravity.CENTER;
 
         try {
-            windowManager.addView(overlayView, params);
+            windowManager.addView(observedOverlay, params);
+        } catch (RuntimeException exception) {
+            if (observedOverlay.isAttachedToWindow()) {
+                hideOverlay(true, true);
+            } else {
+                overlayView = null;
+                overlayPackageName = null;
+            }
+            overlayNeedsRefresh = true;
+            recordOverlayFailure(packageName, "add", exception);
+            return;
+        }
+
+        try {
             UiStyle.applyDarkSystemBarAppearance(overlayView);
             overlayView.post(() -> {
                 if (overlayView == observedOverlay && observedOverlay.isAttachedToWindow()) {
-                    UiStyle.applyDarkSystemBarAppearance(observedOverlay);
+                    try {
+                        UiStyle.applyDarkSystemBarAppearance(observedOverlay);
+                    } catch (RuntimeException exception) {
+                        overlayNeedsRefresh = true;
+                        debugLog("overlay system-bar refresh failed for " + packageName + ": "
+                                + exception.getClass().getSimpleName());
+                    }
                 }
             });
             overlayNeedsRefresh = false;
+            consecutiveOverlayRemovalFailures = 0;
             resetOverlayFailures();
             debugLog("overlay added for " + packageName);
             blockerOverlayController.onAttached(overlayView);
         } catch (RuntimeException exception) {
-            overlayView = null;
-            overlayPackageName = null;
+            hideOverlay(true, true);
             overlayNeedsRefresh = true;
-            consecutiveOverlayFailures++;
-            long retryDelayMs = Math.min(
-                    30_000L,
-                    1_000L << Math.min(4, consecutiveOverlayFailures - 1)
-            );
-            nextOverlayAttemptElapsedMs = SystemClock.elapsedRealtime() + retryDelayMs;
-            setMonitoringIssue(getString(R.string.monitoring_issue_blocker_failed));
-            debugLog("overlay add failed for " + packageName + ": "
-                    + exception.getClass().getSimpleName());
+            recordOverlayFailure(packageName, "initialize", exception);
         }
+    }
+
+    private void recordOverlayFailure(
+            String packageName,
+            String operation,
+            RuntimeException exception
+    ) {
+        consecutiveOverlayFailures++;
+        long retryDelayMs = Math.min(
+                30_000L,
+                1_000L << Math.min(4, consecutiveOverlayFailures - 1)
+        );
+        nextOverlayAttemptElapsedMs = SystemClock.elapsedRealtime() + retryDelayMs;
+        setMonitoringIssue(getString(R.string.monitoring_issue_blocker_failed));
+        debugLog("overlay " + operation + " failed for " + packageName + ": "
+                + exception.getClass().getSimpleName());
     }
 
     private void resetOverlayFailures() {
@@ -1225,12 +1451,16 @@ public class MonitoringService extends Service {
             @Override
             public void onUnlockCelebrationStarted() {
                 unlockCelebrationRunning = true;
+                emergencyCelebrationRunning = false;
+                celebrationDeadlineElapsedMs =
+                        SystemClock.elapsedRealtime() + CELEBRATION_MAX_MS;
                 keepOverlayUntilMs = System.currentTimeMillis() + OVERLAY_STICKY_MS;
             }
 
             @Override
             public void onUnlockCelebrationFinished(int approvedMinutes) {
                 unlockCelebrationRunning = false;
+                celebrationDeadlineElapsedMs = 0L;
                 hideOverlay(false);
                 Toast.makeText(
                         MonitoringService.this,
@@ -1246,6 +1476,9 @@ public class MonitoringService extends Service {
             @Override
             public void onEmergencyCelebrationStarted() {
                 unlockCelebrationRunning = true;
+                emergencyCelebrationRunning = true;
+                celebrationDeadlineElapsedMs =
+                        SystemClock.elapsedRealtime() + CELEBRATION_MAX_MS;
                 clearStickyBlockedPackage();
                 emergencyPauseNotificationShown = true;
                 updateForegroundNotification();
@@ -1254,6 +1487,8 @@ public class MonitoringService extends Service {
             @Override
             public void onEmergencyCelebrationFinished() {
                 unlockCelebrationRunning = false;
+                emergencyCelebrationRunning = false;
+                celebrationDeadlineElapsedMs = 0L;
                 hideOverlay(false);
                 Toast.makeText(
                         MonitoringService.this,
@@ -1271,8 +1506,18 @@ public class MonitoringService extends Service {
         Intent home = new Intent(Intent.ACTION_MAIN);
         home.addCategory(Intent.CATEGORY_HOME);
         home.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(home);
-        hideOverlay(true);
+        boolean exitStarted = false;
+        try {
+            startActivity(home);
+            exitStarted = true;
+        } catch (RuntimeException exception) {
+            debugLog("home exit failed: " + exception.getClass().getSimpleName());
+        } finally {
+            if (exitStarted) {
+                markExplicitForegroundExit("home");
+            }
+            hideOverlay(true);
+        }
     }
 
     private String stickyBlockedPackageForTransient(
@@ -1390,6 +1635,9 @@ public class MonitoringService extends Service {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             startActivity(intent);
+            leaveAppGraceUntilElapsedMs = SystemClock.elapsedRealtime() + 1_500L;
+            markExplicitForegroundExit("messaging");
+            hideOverlay(true, true);
             return true;
         } catch (RuntimeException ignored) {
             Toast.makeText(this, R.string.sms_app_missing, Toast.LENGTH_SHORT).show();
@@ -1397,16 +1645,14 @@ public class MonitoringService extends Service {
         }
     }
 
-    private void hideOverlay() {
-        hideOverlay(true);
+    private boolean hideOverlay(boolean preserveFormState) {
+        return hideOverlay(preserveFormState, false);
     }
 
-    private void hideOverlay(boolean preserveFormState) {
-        hideOverlay(preserveFormState, false);
-    }
-
-    private void hideOverlay(boolean preserveFormState, boolean preserveSticky) {
+    private boolean hideOverlay(boolean preserveFormState, boolean preserveSticky) {
         unlockCelebrationRunning = false;
+        emergencyCelebrationRunning = false;
+        celebrationDeadlineElapsedMs = 0L;
         String removedPackageName = overlayPackageName;
         if (removedPackageName != null) {
             debugLog("hiding overlay for " + removedPackageName
@@ -1420,40 +1666,108 @@ public class MonitoringService extends Service {
             if (!preserveFormState && removedPackageName != null) {
                 blockerOverlayController.clearFormState(removedPackageName);
             }
-            return;
+            cancelOverlayRemovalRetry();
+            consecutiveOverlayRemovalFailures = 0;
+            resetOverlayFailures();
+            return true;
+        }
+        View viewToRemove = overlayView;
+        try {
+            KeyboardHelper.hide(this, viewToRemove);
+        } catch (RuntimeException ignored) {
+            // Keyboard cleanup must never prevent removal of the system-wide window.
         }
         try {
-            KeyboardHelper.hide(this, overlayView);
-            windowManager.removeView(overlayView);
-        } catch (RuntimeException ignored) {
-            // The view may already be detached if Android revoked overlay permission.
+            windowManager.removeViewImmediate(viewToRemove);
+        } catch (IllegalArgumentException ignored) {
+            // Android already detached the view, often after overlay access changes.
+        } catch (RuntimeException exception) {
+            if (viewToRemove.isAttachedToWindow()) {
+                consecutiveOverlayRemovalFailures++;
+                consecutiveOverlayFailures = Math.max(1, consecutiveOverlayFailures);
+                overlayNeedsRefresh = true;
+                try {
+                    setMonitoringIssue(getString(R.string.monitoring_issue_blocker_failed));
+                } catch (RuntimeException ignored) {
+                    // Retaining the view reference and retrying removal is authoritative.
+                }
+                debugLog("overlay removal failed for " + removedPackageName + ": "
+                        + exception.getClass().getSimpleName());
+                scheduleOverlayRemovalRetry(
+                        viewToRemove,
+                        preserveFormState,
+                        preserveSticky
+                );
+                return false;
+            }
         }
         overlayView = null;
         overlayPackageName = null;
         overlayWindowObscured = false;
+        cancelOverlayRemovalRetry();
+        consecutiveOverlayRemovalFailures = 0;
+        resetOverlayFailures();
         if (!preserveSticky) {
             clearStickyBlockedPackage();
         }
         if (!preserveFormState && removedPackageName != null) {
             blockerOverlayController.clearFormState(removedPackageName);
         }
+        return true;
+    }
+
+    private void scheduleOverlayRemovalRetry(
+            View expectedView,
+            boolean preserveFormState,
+            boolean preserveSticky
+    ) {
+        cancelOverlayRemovalRetry();
+        long retryDelayMs = Math.min(
+                30_000L,
+                200L << Math.min(7, Math.max(0, consecutiveOverlayRemovalFailures - 1))
+        );
+        overlayRemovalRetryRunnable = () -> {
+            overlayRemovalRetryRunnable = null;
+            if (overlayView != expectedView) {
+                return;
+            }
+            hideOverlay(preserveFormState, preserveSticky);
+        };
+        handler.postDelayed(overlayRemovalRetryRunnable, retryDelayMs);
+    }
+
+    private void cancelOverlayRemovalRetry() {
+        if (overlayRemovalRetryRunnable != null) {
+            handler.removeCallbacks(overlayRemovalRetryRunnable);
+            overlayRemovalRetryRunnable = null;
+        }
     }
 
     private void stopMonitoring(boolean clearEnabledPreference) {
         stopping = true;
+        handler.removeCallbacks(pollRunnable);
+        handler.removeCallbacks(reconciliationRunnable);
+        cancelForegroundQueryTimeout();
+        cancelOverlayRemovalRetry();
+        hideOverlay(false);
         if (clearEnabledPreference) {
             Preferences.setMonitoringRequested(this, false);
         }
         intentionallyStopped = intentionallyStopped
                 || !Preferences.isMonitoringRequested(this);
-        handler.removeCallbacks(pollRunnable);
-        handler.removeCallbacks(reconciliationRunnable);
-        cancelForegroundQueryTimeout();
-        usageLedger.flush(true);
-        hideOverlay(false);
+        flushUsageSafely(true, "stop");
         blockerOverlayController.clearAllFormStates();
         stopForeground(true);
         stopSelf();
+    }
+
+    private void flushUsageSafely(boolean force, String operation) {
+        try {
+            usageLedger.flush(force);
+        } catch (RuntimeException exception) {
+            debugLog(operation + " usage flush failed: "
+                    + exception.getClass().getSimpleName());
+        }
     }
 
     private void debugLog(String message) {
@@ -1495,47 +1809,71 @@ public class MonitoringService extends Service {
         final boolean overlayInterrupted;
         final boolean successful;
         final long latestLifecycleEventMs;
+        final Set<String> latestLifecycleEventKeys;
+        final long foregroundCandidateEventMs;
+        final long latestForegroundEventMs;
+        final Map<String, Long> latestBackgroundEventMs;
 
         private ForegroundQueryResult(
                 String packageName,
                 boolean candidateKnown,
                 boolean overlayInterrupted,
                 boolean successful,
-                long latestLifecycleEventMs
+                long latestLifecycleEventMs,
+                Set<String> latestLifecycleEventKeys,
+                long foregroundCandidateEventMs,
+                long latestForegroundEventMs,
+                Map<String, Long> latestBackgroundEventMs
         ) {
             this.packageName = packageName;
             this.candidateKnown = candidateKnown;
             this.overlayInterrupted = overlayInterrupted;
             this.successful = successful;
             this.latestLifecycleEventMs = latestLifecycleEventMs;
+            this.latestLifecycleEventKeys = new HashSet<>(latestLifecycleEventKeys);
+            this.foregroundCandidateEventMs = foregroundCandidateEventMs;
+            this.latestForegroundEventMs = latestForegroundEventMs;
+            this.latestBackgroundEventMs = new HashMap<>(latestBackgroundEventMs);
         }
 
         static ForegroundQueryResult successful(
-                String packageName,
-                boolean candidateKnown,
+                ForegroundEventPolicy.TimedCandidateState candidateState,
                 boolean overlayInterrupted,
-                long latestLifecycleEventMs
+                long latestLifecycleEventMs,
+                Set<String> latestLifecycleEventKeys
         ) {
             return new ForegroundQueryResult(
-                    packageName,
-                    candidateKnown,
+                    candidateState.packageName,
+                    candidateState.known,
                     overlayInterrupted,
                     true,
-                    latestLifecycleEventMs
+                    latestLifecycleEventMs,
+                    latestLifecycleEventKeys,
+                    candidateState.candidateEventTimestampMs,
+                    candidateState.latestForegroundEventTimestampMs,
+                    candidateState.latestBackgroundEventTimestamps
             );
         }
 
         static ForegroundQueryResult failed(
                 String packageName,
                 boolean candidateKnown,
-                long latestLifecycleEventMs
+                long foregroundCandidateEventMs,
+                long latestForegroundEventMs,
+                Map<String, Long> latestBackgroundEventMs,
+                long latestLifecycleEventMs,
+                Set<String> latestLifecycleEventKeys
         ) {
             return new ForegroundQueryResult(
                     packageName,
                     candidateKnown,
                     false,
                     false,
-                    latestLifecycleEventMs
+                    latestLifecycleEventMs,
+                    latestLifecycleEventKeys,
+                    foregroundCandidateEventMs,
+                    latestForegroundEventMs,
+                    latestBackgroundEventMs
             );
         }
     }
