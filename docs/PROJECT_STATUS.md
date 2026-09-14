@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: September 13, 2026
+Last updated: September 14, 2026
 
 ## Current Stage
 
@@ -48,6 +48,13 @@ No replacement distributable has been generated or copied for this task; a
 newly versioned, validated bundle is needed before shipping the updated source.
 
 ## Last Verified Evidence
+
+The first GitHub-hosted run on September 14 passed tests, lint, and builds,
+but emulator creation failed because the runner's device catalog did not
+contain `pixel_8`. No smoke tests ran and publishing was skipped. The workflow
+now selects `pixel_2` while retaining API 36; a successful hosted smoke run is
+still required. Run evidence:
+<https://github.com/dankhole/AirLockAndroid/actions/runs/34804470474>.
 
 The September 13 unexpected-blocker investigation passed all 99 JVM tests,
 debug assembly, and debug lint (one existing Gradle-wrapper update warning;
@@ -314,8 +321,9 @@ copy. Removing the fallback remains an explicit later decision.
 ## Known Release Gaps
 
 - GitHub Actions build, smoke, and opt-in Internal publishing are prepared in
-  `.github/workflows/android.yml`; the first hosted run and Google Play API
-  credentials remain outstanding. Activation and signing-secret setup are in
+  `.github/workflows/android.yml`; all five GitHub environment secret names are
+  configured, but a successful hosted smoke run and live publishing validation
+  remain outstanding. Activation and signing-secret setup are in
   [`RELEASE.md`](RELEASE.md#github-actions-automation).
 - The broad emulator smoke runner has intermittently shown an Android 17
   rotation/UI-dump race, although the consolidated candidate run passed it.

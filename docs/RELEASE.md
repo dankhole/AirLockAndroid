@@ -194,7 +194,7 @@ copy audits stop publishing. An active master run finishes before another starts
 GitHub may replace pending runs with newer pushes. This ships the newest queued
 changes rather than guaranteeing a separate release for every intermediate commit.
 
-The emulator job uses an API 36 Google APIs x86_64 Pixel 8 on Ubuntu, installs
+The emulator job uses an API 36 Google APIs x86_64 Pixel 2 on Ubuntu, installs
 the separate `:smoke-target` debug APK, and runs:
 
 ```sh
