@@ -790,6 +790,7 @@ assert_id_contains blocker_error REQUIRED
 type_id blocker_approval_code 123
 # The approval form is taller than the viewport while the IME is open.
 # Exercise the first-Back keyboard dismissal before navigating within the form.
+capture_artifacts "blocker-before-keyboard-back"
 adb_e shell input keyevent KEYCODE_BACK
 wait_for_id blocker_approval_code
 tap_id blocker_flow_back

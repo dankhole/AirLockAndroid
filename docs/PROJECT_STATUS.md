@@ -49,6 +49,11 @@ newly versioned, validated bundle is needed before shipping the updated source.
 
 ## Last Verified Evidence
 
+The next hosted run (`34805070471`) passed builds and the navigation matrix,
+then failed the approval form's first-Back keyboard-dismissal check. The overlay
+now ignores canceled Back releases so an IME-consumed Back cannot also exit to
+Home. Hosted verification is pending.
+
 The first GitHub-hosted run on September 14 passed tests, lint, and builds,
 but emulator creation failed because the runner's device catalog did not
 contain `pixel_8`. No smoke tests ran and publishing was skipped. The workflow

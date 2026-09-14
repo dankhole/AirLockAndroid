@@ -757,7 +757,9 @@ final class BlockerOverlayController {
             if (keyCode != KeyEvent.KEYCODE_BACK) {
                 return false;
             }
-            if (event.getAction() == KeyEvent.ACTION_UP) {
+            // The IME can cancel Back after using it to dismiss the keyboard.
+            // That release must not also trigger the blocker's safe exit.
+            if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) {
                 listener.onLeaveApp();
             }
             return true;
