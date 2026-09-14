@@ -1,7 +1,9 @@
 package com.dankhole.airlockandroid;
 
+import android.annotation.TargetApi;
 import android.content.Context;
 import android.graphics.Rect;
+import android.os.Build;
 import android.text.Editable;
 import android.text.InputFilter;
 import android.text.TextWatcher;
@@ -15,6 +17,8 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -67,6 +71,9 @@ final class BlockerOverlayController {
 
     void onAttached(View overlayView) {
         installBackHandler(overlayView);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            installBackDispatcher(overlayView);
+        }
         overlayView.setFocusableInTouchMode(true);
         overlayView.requestFocus();
         KeyboardHelper.hide(context, overlayView);
@@ -757,6 +764,10 @@ final class BlockerOverlayController {
             if (keyCode != KeyEvent.KEYCODE_BACK) {
                 return false;
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                    && focusedView.findOnBackInvokedDispatcher() != null) {
+                return false;
+            }
             // The IME can cancel Back after using it to dismiss the keyboard.
             // That release must not also trigger the blocker's safe exit.
             if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) {
@@ -770,6 +781,36 @@ final class BlockerOverlayController {
         ViewGroup group = (ViewGroup) view;
         for (int index = 0; index < group.getChildCount(); index++) {
             installBackHandler(group.getChildAt(index));
+        }
+    }
+
+    @TargetApi(Build.VERSION_CODES.TIRAMISU)
+    private void installBackDispatcher(View overlayView) {
+        View.OnAttachStateChangeListener attachment = new View.OnAttachStateChangeListener() {
+            private OnBackInvokedDispatcher dispatcher;
+            private final OnBackInvokedCallback callback = listener::onLeaveApp;
+
+            @Override
+            public void onViewAttachedToWindow(View view) {
+                dispatcher = view.findOnBackInvokedDispatcher();
+                if (dispatcher != null) {
+                    // Default priority lets the IME consume the first Back.
+                    dispatcher.registerOnBackInvokedCallback(
+                            OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback);
+                }
+            }
+
+            @Override
+            public void onViewDetachedFromWindow(View view) {
+                if (dispatcher != null) {
+                    dispatcher.unregisterOnBackInvokedCallback(callback);
+                    dispatcher = null;
+                }
+            }
+        };
+        overlayView.addOnAttachStateChangeListener(attachment);
+        if (overlayView.isAttachedToWindow()) {
+            attachment.onViewAttachedToWindow(overlayView);
         }
     }
 

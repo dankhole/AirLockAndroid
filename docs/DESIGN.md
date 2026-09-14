@@ -104,6 +104,9 @@ and weakening active configuration must keep the current master-PIN gates.
   leading zeroes. Emergency access uses a separate eight-digit field.
 - Empty or invalid codes show inline text and keep the blocker visible.
 - Back with the keyboard closed performs the same safe exit as `Leave App!`.
+  API 33+ overlays register a default-priority platform Back callback for their
+  attached lifetime; the keyboard consumes Back before that callback. Older
+  windows use the key-event handler and ignore canceled key releases.
   Recents, Home, and system navigation must never remain covered by a stale
   blocker. The overlay must remain clear of the navigation inset.
 - Success states state the exact granted minutes. The celebration is
