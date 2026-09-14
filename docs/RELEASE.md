@@ -179,8 +179,10 @@ processing can take longer.
 
 `.github/workflows/android.yml` prepares the same application for automated
 Internal testing. It never targets production or changes the listing, tester
-list, privacy declarations, or signing identity. The workflow is ready in source;
-credentials and the first successful hosted run are still required.
+list, privacy declarations, or signing identity. Build and emulator checks have
+passed on GitHub; see `PROJECT_STATUS.md` for the run evidence and activation
+state. A successful CI check without publishing does not validate Play API
+permissions or the signed upload path.
 
 | Trigger | Behavior |
 | --- | --- |

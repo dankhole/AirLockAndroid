@@ -49,20 +49,24 @@ newly versioned, validated bundle is needed before shipping the updated source.
 
 ## Last Verified Evidence
 
-The next hosted run (`34805070471`) passed builds and the navigation matrix,
-then failed the approval form's first-Back keyboard-dismissal check. The overlay
-now uses the platform Back dispatcher on API 33+ so the IME consumes the first
-Back and the blocker handles the next. A canceled-key-only fix failed the
-closed-keyboard navigation check in run `34870350949`; the legacy key handler
-is now reserved for windows without a modern dispatcher. Hosted verification
-is pending.
+GitHub-hosted Android CI passed on September 14 for commit `6911362`:
+<https://github.com/dankhole/AirLockAndroid/actions/runs/34871293494>.
+All six release-helper tests, 99 JVM tests, visible-text audit, debug lint,
+debug/release builds, and standalone target build/lint passed. The complete
+API 36 Linux emulator smoke suite passed, including gesture/three-button
+navigation, recovery, approval input, and celebration scenarios.
 
-The first GitHub-hosted run on September 14 passed tests, lint, and builds,
-but emulator creation failed because the runner's device catalog did not
-contain `pixel_8`. No smoke tests ran and publishing was skipped. The workflow
-now selects `pixel_2` while retaining API 36; a successful hosted smoke run is
-still required. Run evidence:
-<https://github.com/dankhole/AirLockAndroid/actions/runs/34804470474>.
+CI fixes selected the available `pixel_2` profile and moved API 33+ blocker
+Back handling to the platform dispatcher. The IME consumes the first Back;
+closed-keyboard Back exits safely. Local Android 17 navigation/recovery and
+approval-form regressions also passed in `20260914-125322` and
+`20260914-125715`. Task-started emulator, ADB, and Gradle processes exited.
+
+All five `play-internal` secret names are configured. `PLAY_AUTO_PUBLISH`
+remains unset, and the successful CI run skipped publishing. The service-account
+permissions and signed upload path still need a first publishing run; no new
+build was uploaded to Play during CI repair. Physical-device and multi-day
+qualification remain outstanding.
 
 The September 13 unexpected-blocker investigation passed all 99 JVM tests,
 debug assembly, and debug lint (one existing Gradle-wrapper update warning;
