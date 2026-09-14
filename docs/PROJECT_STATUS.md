@@ -67,6 +67,16 @@ Release run `34905421762` stopped before build or upload because SDK setup
 could not find the legacy `tools` package. Both SDK setup steps now explicitly
 request `platform-tools`; a new publishing run will execute all normal checks.
 
+Run `34905597460` passed the build checks but exposed a cold-rendering regression
+in the API 36 emulator: the initial-focus watchdog removed a legitimate blocker
+before its first focus callback, following a 914 ms first frame.
+Publishing was skipped. Initial focus now has a bounded two-second allowance;
+fresh evidence cannot extend it, and acquired-focus loss still removes the
+window immediately. A regression test covers delayed initial focus and the
+unchanged loss behavior. All 123 JVM tests, debug assembly/lint, release assembly,
+and release bundle generation passed locally after this correction. The CI
+emulator gate must pass again before publishing.
+
 The expanded gesture/three-button navigation matrix passed on the Android 17
 Pixel 8 emulator in `app/build/reports/android-smoke/20260914-182241`, including
 delayed-result Home navigation, independent removal during an eight-second

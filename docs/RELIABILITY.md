@@ -39,7 +39,7 @@ recorded. Do not turn an emulator pass into a device-reliability claim.
 | Slow successful foreground query | Result age exceeds two seconds | Retain its reduced history to keep the query cursor consistent, but remove the overlay, skip usage increments, and report recovery until a fresh query completes |
 | Reboot/runtime restart or shutdown | Current boot time, `DEVICE_STARTUP`/`DEVICE_SHUTDOWN`, and shutdown broadcast | Never replay an open activity from the previous boot; shutdown removes the window while preserving requested Duty |
 | Navigation during blocker construction | Prepare the view, then require a query started after preparation and at most 500 ms old at attachment | Attach only after renewed foreground confirmation and current gate checks |
-| Overlay loses or never obtains focus | Identity-guarded focus callback and independent 200 ms window check, with a 500 ms initial-focus grace period | Remove the window and require later activity evidence; retain form state |
+| Overlay loses or never obtains focus | Identity-guarded focus callback and independent 200 ms window check, with a two-second initial-focus grace period | Remove the window and require later activity evidence; retain form state |
 | Visible blocker outlives its foreground evidence | Independent 200 ms window check; confirmed query start is more than two seconds old | Remove the window and report recovery even if the next query is still running |
 | Old activity stops after another activity in the same app resumes | Package and activity-class identity in lifecycle reduction and replay deduplication | Preserve the newer activity; empty or ambiguous foreground reports recovery |
 | Access or selection changes during a query | Recheck current Duty, required access, and selected apps at completion and immediately before attaching/retaining a window | Discard authorization from the request-time snapshot before counting or attaching |
@@ -66,6 +66,10 @@ recorded. Do not turn an emulator pass into a device-reliability claim.
   disk, or preference work and create no worker threads. Expired evidence or
   missing initial focus is acted on at the next tick, subject to main-thread
   scheduling. The separate ten-second stuck-query watchdog remains unchanged.
+- Initial window focus: allow up to two seconds from attachment for cold
+  first-frame rendering and focus delivery. Foreground confirmations cannot
+  extend this deadline. Once focus has been acquired, losing it removes the
+  window immediately without another grace period.
 - Initial attachment: retain one prepared view and request confirmation on the
   200 ms cadence for at most three seconds, then return to normal polling if
   queries remain too slow. Only a query started after preparation and no more than

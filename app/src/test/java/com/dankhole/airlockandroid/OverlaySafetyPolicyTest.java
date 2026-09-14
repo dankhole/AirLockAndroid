@@ -55,8 +55,22 @@ public class OverlaySafetyPolicyTest {
     public void windowThatNeverGainsFocusHasBoundedLifetime() {
         OverlaySafetyPolicy window = new OverlaySafetyPolicy(0L);
         window.attached(100L, 150L);
-        assertFalse(window.focusUnavailable(649L, false));
-        assertTrue(window.focusUnavailable(650L, false));
+        // Fresh foreground evidence cannot prolong the initial-focus deadline.
+        window.confirmForeground(2_000L);
+        assertFalse(window.evidenceExpired(2_150L));
+        assertFalse(window.focusUnavailable(2_149L, false));
+        assertTrue(window.focusUnavailable(2_150L, false));
+    }
+
+    @Test
+    public void slowFirstFrameCanAcquireFocusWithoutDisablingLaterFocusLoss() {
+        OverlaySafetyPolicy window = new OverlaySafetyPolicy(0L);
+        window.attached(100L, 150L);
+        // A cold CI frame took over a second before focus delivery was possible.
+        assertFalse(window.focusUnavailable(1_350L, false));
+        assertFalse(window.focusUnavailable(1_550L, true));
+        assertFalse(window.focusUnavailable(2_150L, true));
+        assertTrue(window.focusUnavailable(2_151L, false));
     }
 
     @Test
@@ -76,6 +90,6 @@ public class OverlaySafetyPolicyTest {
         assertFalse(replacement.canAttach(100L, 350L));
         replacement.attached(400L, 450L);
         assertFalse(replacement.focusUnavailable(451L, false));
-        assertTrue(replacement.focusUnavailable(950L, false));
+        assertTrue(replacement.focusUnavailable(2_450L, false));
     }
 }

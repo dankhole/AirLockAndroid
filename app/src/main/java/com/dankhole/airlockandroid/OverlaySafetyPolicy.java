@@ -4,7 +4,9 @@ package com.dankhole.airlockandroid;
 final class OverlaySafetyPolicy {
     static final long CHECK_INTERVAL_MS = 200L;
     static final long ATTACHMENT_MAX_AGE_MS = 500L;
-    static final long INITIAL_FOCUS_GRACE_MS = 500L;
+    // Cold first-frame rendering can delay Android's initial focus callback beyond
+    // a second. Keep that startup allowance bounded and independent of renewals.
+    static final long INITIAL_FOCUS_GRACE_MS = 2_000L;
     static final long FAST_CONFIRMATION_WINDOW_MS = 3_000L;
 
     private final long preparedElapsedMs;
