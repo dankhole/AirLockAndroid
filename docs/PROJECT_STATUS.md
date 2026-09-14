@@ -63,10 +63,16 @@ approval-form regressions also passed in `20260914-125322` and
 `20260914-125715`. Task-started emulator, ADB, and Gradle processes exited.
 
 All five `play-internal` secret names are configured. `PLAY_AUTO_PUBLISH`
-remains unset, and the successful CI run skipped publishing. The service-account
-permissions and signed upload path still need a first publishing run; no new
-build was uploaded to Play during CI repair. Physical-device and multi-day
-qualification remain outstanding.
+remains unset. The first manual publishing test, version code `10006`, passed
+all build/smoke checks, upload-certificate verification, signed release build,
+and bundle verification. The signed bundle is saved in its Actions artifacts:
+<https://github.com/dankhole/AirLockAndroid/actions/runs/34875154023>.
+Google Play rejected creation of the release edit with “The caller does not
+have permission,” before bundle upload. Verify Play Console app access and
+**Release apps to testing tracks** for
+`airlock-ci@airlock-508603.iam.gserviceaccount.com`; Google Cloud IAM roles alone
+do not grant Play Console access. No new build was uploaded to Play. The upload
+path, physical-device install/update, and multi-day qualification remain unverified.
 
 The September 13 unexpected-blocker investigation passed all 99 JVM tests,
 debug assembly, and debug lint (one existing Gradle-wrapper update warning;
