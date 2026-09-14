@@ -63,6 +63,10 @@ and the standalone target's missing icon. That initial validation generated
 no distributable release. The requested replacement is prepared as `0.1.8`,
 with its version code allocated by the Internal-publishing CI workflow.
 
+Release run `34905421762` stopped before build or upload because SDK setup
+could not find the legacy `tools` package. Both SDK setup steps now explicitly
+request `platform-tools`; a new publishing run will execute all normal checks.
+
 The expanded gesture/three-button navigation matrix passed on the Android 17
 Pixel 8 emulator in `app/build/reports/android-smoke/20260914-182241`, including
 delayed-result Home navigation, independent removal during an eight-second

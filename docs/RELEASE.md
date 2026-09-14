@@ -196,6 +196,11 @@ copy audits stop publishing. An active master run finishes before another starts
 GitHub may replace pending runs with newer pushes. This ships the newest queued
 changes rather than guaranteeing a separate release for every intermediate commit.
 
+Both build and signing jobs explicitly request `platform-tools` from the pinned
+SDK setup action. Its default also requests the legacy `tools` package, which
+the SDK repository no longer resolved during the September 14 release run.
+The required compile SDK and build tools are installed separately afterward.
+
 The emulator job uses an API 36 Google APIs x86_64 Pixel 2 on Ubuntu, installs
 the separate `:smoke-target` debug APK, and runs:
 
