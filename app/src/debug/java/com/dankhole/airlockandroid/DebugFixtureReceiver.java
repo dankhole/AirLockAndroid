@@ -23,12 +23,15 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
     static final String EXTRA_REQUEST_MINUTES = "request_minutes";
     static final String EXTRA_EMERGENCY_CODES = "emergency_codes";
     static final String EXTRA_SANITY_TOKEN = "sanity_token";
+    static final String EXTRA_DELAY_MS = "delay_ms";
+    static final String EXTRA_TOKEN = "token";
 
     private static final String COMMAND_RESET = "reset";
     private static final String COMMAND_SEED = "seed";
     private static final String COMMAND_FORCE_FOREGROUND_SANITY = "force_foreground_sanity";
     private static final String COMMAND_STOP_MONITORING_SERVICE = "stop_monitoring_service";
     private static final String COMMAND_START_MONITORING_SERVICE = "start_monitoring_service";
+    private static final String COMMAND_DELAY_FOREGROUND_RESULT = "delay_foreground_result";
     private static final String DEFAULT_TARGET_PACKAGE = "com.google.android.youtube";
     private static final String FIXTURE_PHONE_NUMBER = "5555551212";
     private static final String FIXTURE_MASTER_PIN = "1234";
@@ -47,6 +50,17 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
         }
         if (COMMAND_FORCE_FOREGROUND_SANITY.equals(command)) {
             forceForegroundSanityCheck(context, intent);
+            return;
+        }
+        if (COMMAND_DELAY_FOREGROUND_RESULT.equals(command)) {
+            if (MonitoringTestHooks.delayNextForegroundResult(
+                    intent.getStringExtra(EXTRA_TARGET_PACKAGE),
+                    intent.getIntExtra(EXTRA_DELAY_MS, 0),
+                    intent.getStringExtra(EXTRA_TOKEN))) {
+                succeed("foreground result delay armed");
+            } else {
+                fail("Delay requires a package, 1..8000 ms, a token, and no pending delay");
+            }
             return;
         }
         if (COMMAND_STOP_MONITORING_SERVICE.equals(command)) {
@@ -69,6 +83,7 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
 
     @SuppressLint("ApplySharedPref")
     private void reset(Context context) {
+        MonitoringTestHooks.reset();
         context.stopService(new Intent(context, MonitoringService.class));
         Preferences.prefs(context).edit().clear().commit();
     }

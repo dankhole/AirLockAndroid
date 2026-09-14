@@ -1,6 +1,6 @@
 # Test Plan
 
-Last updated: August 24, 2026
+Last updated: September 14, 2026
 
 ## Static Checks
 
@@ -18,6 +18,8 @@ Confirm the installed package reports `targetSdk=36`.
 The local unit suite verifies edit-authorization expiry, process-local editor
 sessions, bounded query execution, foreground event classification,
 background-to-empty transitions and resume-only blocker restoration,
+activity-class handoffs and replay identity, foreground-health authority,
+post-preparation attachment confirmation and independent focus/evidence expiry,
 approval-code duration policy, atomic approval redemption and rollback with
 multiple pending requests, four-digit multiplication and leading-zero behavior,
 PIN-derived lookup creation, active-collision avoidance, expired-request reuse,
@@ -142,6 +144,20 @@ ambiguous or missing evidence shows recovery and must not guess a target.
 12. From the blocker, switch directly to an unblocked app and confirm the
     blocker is removed without covering the new app.
 13. Repeat steps 5-12 with gesture navigation and three-button navigation.
+14. Open another activity in the same guarded app. Confirm the old activity's
+    later stop neither clears the new candidate nor rebuilds its blocker.
+15. Leave a guarded app immediately before its first blocker appears. Confirm
+    Home, Recents, and Settings stay free of attached blocker windows. Repeat
+    with the notification shade already expanded when monitoring starts.
+
+The focused navigation harness delays a foreground result while navigating
+Home, stalls a query behind an existing blocker and checks actual detachment
+before it completes, and starts monitoring beneath an expanded notification
+shade to exercise a blocker that never gains focus. With the standalone
+`com.dankhole.airlock.smoketarget`, it also checks a two-activity handoff.
+These run in both navigation modes. JVM tests cover exact deadline boundaries;
+real gesture timing, same-class activity instances, missing event identity,
+multi-window/PiP, and OEM delivery still require physical-device qualification.
 
 ### Extra-Time Code
 

@@ -87,6 +87,7 @@ ORIGINAL_TARGET_NOTIFICATION_STATE="denied"
 TARGET_NOTIFICATION_MANAGED=false
 APP_INSTALLED=false
 DEVICE_PUT_TO_SLEEP=false
+NOTIFICATION_SHADE_OPENED=false
 EXPECTED_BLOCKER_ATTACHMENTS=0
 
 dump_ui() {
@@ -133,13 +134,71 @@ wait_for_log() {
     local timeout_seconds="${2:-10}"
     local attempt
     for ((attempt = 0; attempt < timeout_seconds * 5; attempt++)); do
-        if adb_e logcat -d -v brief AirLockMonitor:D '*:S' 2>/dev/null \
-                | grep -Fq "$expected"; then
+        monitor_log_snapshot
+        if grep -Fq "$expected" "$REPORT_DIR/$CURRENT_SCENARIO-monitor.log"; then
             return 0
         fi
         sleep 0.2
     done
     fail "Timed out waiting for log '$expected' during $CURRENT_SCENARIO"
+}
+
+monitor_log_snapshot() {
+    adb_e logcat -d -v brief AirLockMonitor:D '*:S' \
+        >"$REPORT_DIR/$CURRENT_SCENARIO-monitor.log"
+}
+
+wait_for_log_after() {
+    local marker="$1"
+    local expected="$2"
+    local timeout_seconds="${3:-10}"
+    local attempt
+    for ((attempt = 0; attempt < timeout_seconds * 5; attempt++)); do
+        monitor_log_snapshot
+        if awk -v marker="$marker" -v expected="$expected" '
+                index($0, marker) { started = 1; next }
+                started && index($0, expected) { found = 1 }
+                END { exit found ? 0 : 1 }
+            ' "$REPORT_DIR/$CURRENT_SCENARIO-monitor.log"; then
+            return 0
+        fi
+        sleep 0.2
+    done
+    fail "Timed out waiting for '$expected' after '$marker' during $CURRENT_SCENARIO"
+}
+
+assert_no_log_after() {
+    local marker="$1"
+    local unexpected="$2"
+    monitor_log_snapshot
+    if ! awk -v marker="$marker" -v unexpected="$unexpected" '
+            index($0, marker) { started = 1; next }
+            started && index($0, unexpected) { found = 1 }
+            END { exit (started && !found) ? 0 : 1 }
+        ' "$REPORT_DIR/$CURRENT_SCENARIO-monitor.log"; then
+        fail "Unexpected '$unexpected' after '$marker' during $CURRENT_SCENARIO"
+    fi
+}
+
+assert_no_log_between() {
+    local start_marker="$1"
+    local end_marker="$2"
+    local unexpected="$3"
+    monitor_log_snapshot
+    if ! awk -v start_marker="$start_marker" -v end_marker="$end_marker" \
+            -v unexpected="$unexpected" '
+            index($0, start_marker) { started = 1; next }
+            started && index($0, end_marker) { completed = 1; next }
+            started && !completed && index($0, unexpected) { found = 1 }
+            END { exit (started && completed && !found) ? 0 : 1 }
+        ' "$REPORT_DIR/$CURRENT_SCENARIO-monitor.log"; then
+        fail "Unexpected '$unexpected' while the foreground result was delayed during $CURRENT_SCENARIO"
+    fi
+}
+
+arm_foreground_result_delay() {
+    fixture delay_foreground_result --es target_package "$TARGET_PACKAGE" \
+        --ei delay_ms "$1" --es token "$2" >/dev/null
 }
 
 # UI automation cannot inspect a sleeping display, and a hidden window can be
@@ -191,6 +250,19 @@ assert_no_blocker_window_for() {
         fi
         sleep 0.25
     done
+}
+
+wait_for_notification_shade() {
+    local attempt
+    local destination="$REPORT_DIR/$CURRENT_SCENARIO-shade-windows.txt"
+    for ((attempt = 0; attempt < 20; attempt++)); do
+        adb_e shell dumpsys window >"$destination"
+        if grep -Eq 'mCurrentFocus=.*(NotificationShade|StatusBar)' "$destination"; then
+            return 0
+        fi
+        sleep 0.2
+    done
+    fail "Notification shade did not gain focus during $CURRENT_SCENARIO"
 }
 
 wait_for_monitoring_service() {
@@ -398,6 +470,124 @@ assert_blocker_clear_of_navigation_bar() {
     fi
 }
 
+run_delayed_foreground_home_scenario() {
+    CURRENT_SCENARIO="blocker-delayed-foreground-home-$1"
+    local token="$CURRENT_SCENARIO-$RANDOM-$RANDOM"
+    local started="debug foreground result delay started token=$token"
+    local completed="debug foreground result delay completed token=$token"
+
+    adb_e shell input keyevent KEYCODE_HOME
+    wait_for_blocker_window_absent
+    force_completed_foreground_poll
+    arm_foreground_result_delay 1500 "$token"
+    adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    wait_for_log "$started"
+    # Do not use UI dumps in this race: they may outlast the held snapshot.
+    adb_e shell input keyevent KEYCODE_HOME
+    assert_no_log_after "$started" "$completed"
+    wait_for_blocker_window_absent
+    assert_no_blocker_window_for 2
+    wait_for_log_after "$started" "$completed"
+    force_completed_foreground_poll
+    assert_no_blocker_window_for 2
+    # Logs catch a brief attachment between WindowManager samples, too.
+    assert_no_log_after "$started" "overlay added for"
+    capture_current_artifacts "$CURRENT_SCENARIO"
+    adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    wait_for_id blocker_root 20
+}
+
+run_stalled_foreground_watchdog_scenario() {
+    CURRENT_SCENARIO="blocker-stalled-foreground-$1"
+    local token="$CURRENT_SCENARIO-$RANDOM-$RANDOM"
+    local started="debug foreground result delay started token=$token"
+    local completed="debug foreground result delay completed token=$token"
+
+    blocker_window_present || fail "Expected an attached blocker before delaying its refresh"
+    arm_foreground_result_delay 8000 "$token"
+    wait_for_log "$started"
+    # Evidence expires independently of the still-running worker. Allow the
+    # two-second freshness budget plus one second of emulator scheduling slack.
+    wait_for_log_after "$started" \
+        "overlay safety watchdog removed overlay: evidence expired" 3
+    wait_for_blocker_window_absent 1
+    assert_no_log_after "$started" "$completed"
+    assert_no_blocker_window_for 2
+    assert_no_log_after "$started" "overlay added for"
+    wait_for_log_after "$started" "$completed" 10
+    assert_no_log_between "$started" "$completed" "overlay added for"
+    wait_for_id blocker_root 20
+    capture_current_artifacts "$CURRENT_SCENARIO-recovered"
+}
+
+run_never_focused_overlay_scenario() {
+    CURRENT_SCENARIO="blocker-restart-notification-shade-$1"
+    local token="$CURRENT_SCENARIO-$RANDOM-$RANDOM"
+    local marker="smoke checkpoint token=$token"
+    local removed="overlay safety watchdog removed overlay: focus unavailable"
+
+    fixture stop_monitoring_service >/dev/null
+    wait_for_monitoring_service false
+    wait_for_blocker_window_absent
+    # The guarded activity stays resumed beneath System UI. A restarted service
+    # can therefore build its first blocker without that window ever gaining focus.
+    NOTIFICATION_SHADE_OPENED=true
+    adb_e shell cmd statusbar expand-notifications
+    wait_for_notification_shade
+    adb_e shell log -p d -t AirLockMonitor "$marker"
+    start_monitoring_service_with_exemption
+    wait_for_monitoring_service true
+    wait_for_log_after "$marker" "$removed" 10
+    EXPECTED_BLOCKER_ATTACHMENTS=$((EXPECTED_BLOCKER_ATTACHMENTS + 1))
+    wait_for_blocker_window_absent
+    assert_no_blocker_window_for 3
+    force_completed_foreground_poll
+    assert_no_blocker_window_for 2
+    # The removal message is unique after this checkpoint, and no further
+    # attachment is allowed while the shade still owns focus.
+    monitor_log_snapshot
+    if ! awk -v marker="$marker" -v removed="$removed" '
+            index($0, marker) { started = 1; next }
+            started && index($0, removed) { retired = 1; next }
+            retired && index($0, "overlay added for") { reappeared = 1 }
+            END { exit (retired && !reappeared) ? 0 : 1 }
+        ' "$REPORT_DIR/$CURRENT_SCENARIO-monitor.log"; then
+        fail "Never-focused blocker reappeared beneath the notification shade"
+    fi
+    wait_for_notification_shade
+    capture_current_artifacts "$CURRENT_SCENARIO"
+    adb_e shell cmd statusbar collapse
+    NOTIFICATION_SHADE_OPENED=false
+    adb_e shell input keyevent KEYCODE_HOME
+    wait_for_blocker_window_absent
+    force_completed_foreground_poll
+    assert_no_blocker_window_for 2
+    adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    wait_for_id blocker_root 20
+}
+
+run_same_package_activity_scenario() {
+    [[ "$TARGET_PACKAGE" == "com.dankhole.airlock.smoketarget" ]] || return 0
+    CURRENT_SCENARIO="blocker-same-package-activity-$1"
+    local destination="$REPORT_DIR/$CURRENT_SCENARIO-activities.txt"
+    adb_e shell input keyevent KEYCODE_HOME
+    wait_for_blocker_window_absent
+    force_completed_foreground_poll
+    adb_e shell am force-stop "$TARGET_PACKAGE"
+    adb_e shell am start -W -n "$TARGET_PACKAGE/.MainActivity" \
+        --ez open_second true >/dev/null
+    wait_for_id blocker_root 20
+    adb_e shell dumpsys activity activities >"$destination"
+    if ! grep -Eq '(topResumedActivity|mResumedActivity|ResumedActivity):.*com\.dankhole\.airlock\.smoketarget/\.SecondActivity' \
+            "$destination"; then
+        fail "Blocker did not cover the resumed second activity"
+    fi
+    # A later completed query must retain B despite A's same-package STOPPED.
+    force_completed_foreground_poll
+    blocker_window_present || fail "The first activity stopping removed the second activity's blocker"
+    capture_current_artifacts "$CURRENT_SCENARIO"
+}
+
 run_blocker_navigation_scenario() {
     local navigation_overlay="$1"
     local mode_name="${navigation_overlay##*.}"
@@ -418,28 +608,34 @@ run_blocker_navigation_scenario() {
 
     adb_e shell input keyevent KEYCODE_APP_SWITCH
     wait_for_id_absent blocker_root 5
+    wait_for_blocker_window_absent
     sanity_token="$mode_name-$RANDOM-$RANDOM"
     fixture force_foreground_sanity --es sanity_token "$sanity_token" >/dev/null
     wait_for_log "debug foreground sanity check completed token=$sanity_token" 10
     wait_for_id_absent blocker_root 5
+    assert_no_blocker_window_for 2
     capture_current_artifacts "$CURRENT_SCENARIO-recents"
 
     adb_e shell input keyevent KEYCODE_HOME
     wait_for_id_absent blocker_root 5
+    wait_for_blocker_window_absent
     home_token="home-$mode_name-$RANDOM-$RANDOM"
     fixture force_foreground_sanity --es sanity_token "$home_token" >/dev/null
     wait_for_log "debug foreground sanity check completed token=$home_token" 10
     wait_for_id_absent blocker_root 5
+    assert_no_blocker_window_for 2
     adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
     wait_for_id blocker_root 20
 
     adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null
     wait_for_id_absent blocker_root 5
+    wait_for_blocker_window_absent
     adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
     wait_for_id blocker_root 20
 
     adb_e shell input keyevent KEYCODE_BACK
     wait_for_id_absent blocker_root 10
+    wait_for_blocker_window_absent
     capture_current_artifacts "$CURRENT_SCENARIO-back"
 
     CURRENT_SCENARIO="blocker-restart-home-$mode_name"
@@ -464,6 +660,11 @@ run_blocker_navigation_scenario() {
     assert_no_blocker_window_for
     adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
     wait_for_id blocker_root 20
+
+    run_delayed_foreground_home_scenario "$mode_name"
+    run_stalled_foreground_watchdog_scenario "$mode_name"
+    run_never_focused_overlay_scenario "$mode_name"
+    run_same_package_activity_scenario "$mode_name"
 
     CURRENT_SCENARIO="blocker-screen-off-$mode_name"
     DEVICE_PUT_TO_SLEEP=true
@@ -581,6 +782,9 @@ check_logs() {
 finish() {
     local exit_code="$1"
     set +e
+    if [[ "$NOTIFICATION_SHADE_OPENED" == true ]]; then
+        adb_e shell cmd statusbar collapse >/dev/null 2>&1
+    fi
     if [[ "$DEVICE_PUT_TO_SLEEP" == true ]]; then
         adb_e shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1
         adb_e shell wm dismiss-keyguard >/dev/null 2>&1

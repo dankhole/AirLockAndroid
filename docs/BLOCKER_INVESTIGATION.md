@@ -73,6 +73,27 @@ Local polling and persisted totals continue. Existing saved totals were not
 reset, so any earlier overcount remains until that stored day's normal expiry.
 See `RELIABILITY.md` and the physical Pixel/Samsung matrix in `TEST_PLAN.md`.
 
+## September 14 Follow-Up
+
+The follow-up closes three gaps from the review: initial attachment could reuse
+the snapshot captured before view construction; an attached blocker had no
+independent two-second evidence expiry while a query stalled; and package-only
+activity reduction could clear B after `A.pause`, `B.resume`, `A.stop`.
+
+The blocker now prepares its view before a separate foreground confirmation,
+uses a per-window lightweight watchdog for expired evidence and absent focus,
+and carries activity-class identity through reduction and replay deduplication.
+An irrelevant older activity stop does not rebuild the current window. Empty
+foreground state and stale cached state cannot restore healthy monitoring.
+The reducer state also replaces the service's duplicated foreground fields and
+long query argument lists. Timing and resource budgets live in `RELIABILITY.md`.
+
+Focused tests cover the lifecycle handoff, deadline boundaries, and ambiguous
+identity. The debug navigation harness adds delayed-result navigation, stalled
+query removal, never-focused attachment, and a real two-activity smoke target.
+Final validation evidence is recorded in `PROJECT_STATUS.md`. These source
+changes do not resolve the platform multi-window/PiP qualification limits above.
+
 ## Platform Evidence
 
 - [Android activity and device event semantics](https://developer.android.com/reference/android/app/usage/UsageEvents.Event#DEVICE_SHUTDOWN): shutdown stops activities without individual stop events; old open sessions cannot cross startup.

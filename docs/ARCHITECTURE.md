@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: September 13, 2026
+Last updated: September 14, 2026
 
 ## Runtime Flow
 
@@ -173,16 +173,26 @@ surface starts a bounded gesture-recovery window that polls at 200 ms for up to
 three seconds. Recovery for an already-blocked app can continue at 500 ms
 through 15 seconds before returning to normal cadence. Poll starts stay on that
 cadence instead of adding Binder query duration after every interval. A
-`PAUSED` or `STOPPED` event for the current candidate immediately creates a
+`PAUSED` or `STOPPED` event for the current activity immediately creates a
 known transition state and removes its overlay; only a later foreground event
 can name the next candidate. A bounded lifecycle lookback can recover missing
 startup evidence within the current boot/session. Aggregate last-used timestamps
 never authorize a blocker. Conflicting same-millisecond evidence stays empty,
 and explicit/global exit boundaries prevent overlap replay from resurrecting
 an old session. Successful slow queries still advance reduced history, but
-results older than two seconds cannot authorize a window. Current Duty, access,
-selection, device state, and evidence age are checked again after constructing
-the blocker, immediately before attachment.
+results older than two seconds cannot authorize a window. Candidate identity,
+chronology, and background evidence travel together in one reducer state object.
+Activity-class tracking prevents an older screen's stop from clearing a newer
+screen in the same app or needlessly rebuilding its blocker. An empty candidate
+reports recovery until fresh evidence establishes foreground authority.
+
+Initial attachment prepares one view, then requires another foreground query
+started after preparation. Current Duty, access, selection, device state, and
+the stricter attachment evidence age are checked immediately before attachment.
+`OverlaySafetyPolicy` owns each window's preparation, focus, and evidence
+deadlines. An independent lightweight handler check removes windows with expired
+evidence or missing initial focus even while the next query is stuck. Timing
+and resource budgets are defined in `RELIABILITY.md`.
 
 Overlay focus loss removes the old window and retains the actual focus-loss
 time as the boundary for recognizing a later return. Detachment retains view

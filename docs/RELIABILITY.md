@@ -1,6 +1,6 @@
 # Monitoring Reliability
 
-Last updated: September 13, 2026
+Last updated: September 14, 2026
 
 ## Reliability Contract
 
@@ -38,7 +38,10 @@ recorded. Do not turn an emulator pass into a device-reliability claim.
 | Delayed or replayed UsageEvents | Ten-second overlap from the previous query end, widened across scheduler gaps to a five-minute maximum | Reduce delayed evidence chronologically; reject resumes at/before a session boundary or matching background, and treat conflicting same-millisecond resumes as ambiguous |
 | Slow successful foreground query | Result age exceeds two seconds | Retain its reduced history to keep the query cursor consistent, but remove the overlay, skip usage increments, and report recovery until a fresh query completes |
 | Reboot/runtime restart or shutdown | Current boot time, `DEVICE_STARTUP`/`DEVICE_SHUTDOWN`, and shutdown broadcast | Never replay an open activity from the previous boot; shutdown removes the window while preserving requested Duty |
-| Overlay loses focus | Identity-guarded focus callback after initial attachment | Remove the window and require later activity evidence; retain form state |
+| Navigation during blocker construction | Prepare the view, then require a query started after preparation and at most 500 ms old at attachment | Attach only after renewed foreground confirmation and current gate checks |
+| Overlay loses or never obtains focus | Identity-guarded focus callback and independent 200 ms window check, with a 500 ms initial-focus grace period | Remove the window and require later activity evidence; retain form state |
+| Visible blocker outlives its foreground evidence | Independent 200 ms window check; confirmed query start is more than two seconds old | Remove the window and report recovery even if the next query is still running |
+| Old activity stops after another activity in the same app resumes | Package and activity-class identity in lifecycle reduction and replay deduplication | Preserve the newer activity; empty or ambiguous foreground reports recovery |
 | Access or selection changes during a query | Recheck current Duty, required access, and selected apps at completion and immediately before attaching/retaining a window | Discard authorization from the request-time snapshot before counting or attaching |
 | Unknown foreground after service creation | Five-minute lifecycle lookback bounded by the current boot/session | Wait for unambiguous activity evidence and report recovery; aggregate last-used timestamps never authorize a blocker |
 | Stuck foreground query | Ten-second main-thread watchdog | Use at most two process-wide workers with no queue; reject additional work and retry every 30 seconds until a worker returns or the process restarts |
@@ -58,6 +61,16 @@ recorded. Do not turn an emulator pass into a device-reliability claim.
   rather than added after it.
 - Gesture recovery: 200 ms for at most three seconds, then at most 500 ms
   through 15 seconds only for an already-blocked app.
+- Window safety: every 200 ms only while an overlay is attached. Healthy ticks
+  read elapsed time and local view focus; they perform no UsageStats, Binder,
+  disk, or preference work and create no worker threads. Expired evidence or
+  missing initial focus is acted on at the next tick, subject to main-thread
+  scheduling. The separate ten-second stuck-query watchdog remains unchanged.
+- Initial attachment: retain one prepared view and request confirmation on the
+  200 ms cadence for at most three seconds, then return to normal polling if
+  queries remain too slow. Only a query started after preparation and no more than
+  500 ms old can attach it. Existing windows retain the two-second evidence
+  lifetime, renewed only by a successful authorized foreground result.
 - Full-day usage reconciliation: once per minute while interactive and
   unlocked.
 - Usage persistence: dirty app totals in one batch every 30 seconds and on
@@ -97,8 +110,8 @@ overlap/recovery path unless device evidence shows otherwise.
 signal once any lifecycle state exists. A foreground event names the candidate;
 a matching `PAUSED` or `STOPPED` event clears it until another foreground event
 arrives. Polls overlap by ten seconds. The reducer retains the newest foreground
-timestamp and each package's recent background timestamp, so an event delivered
-late can still be incorporated when it fits the chronology while an older
+timestamp and recent background timestamps by package/activity class, so a late
+event can still be incorporated when it fits the chronology while an older
 guarded-app resume cannot override a newer foreground event or its own later
 background event. Exact duplicates at the newest timestamp are skipped and
 recent background evidence is bounded to the overlap window. This explicit
@@ -111,6 +124,14 @@ Screen, keyguard, shutdown, startup, explicit exits, and clock changes establish
 inclusive timestamp boundaries that an overlapping old resume cannot cross.
 Conflicting events in the same millisecond leave the candidate empty until a
 strictly later unambiguous resume.
+
+Activity identity matters within one app: `A.pause`, `B.resume`, `A.stop` must
+leave B as the candidate, and A's stop must not rebuild B's blocker. Events with
+no class identity remain conservative package-wide closures. The public event
+API cannot distinguish separate instances of the same activity class; ambiguous
+closures can therefore delay blocking. An empty candidate reports recovery,
+including after an ordinary service-start request, until a fresh poll establishes
+foreground authority.
 
 The five-minute sticky-blocker record retains form state and identifies which
 blocked package may need rebuilding after a temporary interruption. It never
@@ -151,9 +172,13 @@ there is no destructive automatic usage reset. Polling intervals are clipped
 at the first observed new-day boundary and at imported-through elapsed-time
 watermarks, so a reconciliation callback cannot count the same slice twice.
 
-Losing overlay focus removes the window before delayed lifecycle polling can
-carry it onto another app or system surface. Some system surfaces (for example
-a notification shade) may return focus without another activity resume; Airlock
+Losing overlay focus removes the window without waiting for lifecycle polling.
+A newly attached window that never receives focus is also removed after its
+initial grace period. Preparing the view before its confirming query avoids
+attaching with the snapshot taken before potentially slow view construction;
+querying UsageEvents and attaching a window are still separate operations, so
+this does not guarantee atomic navigation detection. Some system surfaces (for
+example a notification shade) may return focus without another activity resume; Airlock
 then reports recovery and waits for a real app-opening event. Likewise,
 conflicting same-millisecond events favor an empty candidate over guessing.
 Physical OEM testing must measure these conservative delays.
@@ -182,8 +207,9 @@ Debug builds log foreground transitions, recovery windows, query timeouts,
 overlay attachment failures, and stale-query recovery under
 `AirlockMonitor`. They do not log access codes, phone numbers, or app usage
 totals. `NAVIGATION_ONLY=true scripts/android-smoke.sh --skip-build` uses a
-debug-only immediate trigger for the real sanity path; production polling
-intervals remain unchanged.
+debug-only immediate trigger for the real sanity path and one-shot delayed
+foreground results to exercise attachment races and independent window expiry.
+The release hook is a no-op; test delays do not enter production polling.
 
 ## Android References
 

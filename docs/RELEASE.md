@@ -1,6 +1,6 @@
 # Release Guide
 
-Last updated: September 13, 2026
+Last updated: September 14, 2026
 
 This guide covers the two supported ways to share Airlock builds:
 
@@ -270,7 +270,7 @@ the workflow does not bypass it or silently downgrade to an unpublished draft.
 
 CI supplies `-PairlockVersionCode` through Gradle's environment-property support;
 the checked-in local default stays at 8. `versionName` remains the human-managed
-value in `app/build.gradle`, currently `0.1.7`. Update it for a named release.
+value in `app/build.gradle`, currently `0.1.8`. Update it for a named release.
 Play release names use `Airlock <version code>` so CI uploads are distinguishable.
 After CI starts publishing, any later manual upload must also exceed Play's
 highest code; the old local default cannot be uploaded as an update.

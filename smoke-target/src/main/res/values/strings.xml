@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">Smoke Target</string>
     <string name="smoke_target_label">Smoke Target</string>
+    <string name="smoke_target_second_label">Smoke Target — Second Activity</string>
 </resources>

@@ -1,1 +1,1 @@
-Improved blocking reliability when switching apps, clearer extra-time requests, and smoother navigation.
+Improved blocker behavior during quick app switches and navigation between screens. Blockers clear more reliably after you leave an app, while unfinished requests and approval entry are preserved when you return.

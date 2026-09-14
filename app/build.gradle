@@ -43,7 +43,7 @@ android {
         minSdk 26
         targetSdk 36
         versionCode requestedVersionCode.toInteger()
-        versionName "0.1.7"
+        versionName "0.1.8"
     }
 
     if (releaseSigningConfigured) {

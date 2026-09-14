@@ -49,6 +49,36 @@ newly versioned, validated bundle is needed before shipping the updated source.
 
 ## Last Verified Evidence
 
+The September 14 overlay follow-up prepares each blocker before a separate
+foreground confirmation, expires attached windows independently of stalled
+queries, and tracks activity classes through same-app screen handoffs. The
+service now carries one reducer state instead of duplicated foreground fields;
+empty or stale state cannot clear recovery health. See `RELIABILITY.md` for
+watchdog budgets and `BLOCKER_INVESTIGATION.md` for scope and limitations.
+
+Local validation passed all 122 JVM tests, debug assembly/lint, release-source
+Java compilation, and standalone target assembly/lint. Lint has no errors;
+existing warnings cover the Gradle wrapper, the Back dispatcher's `TargetApi`,
+and the standalone target's missing icon. That initial validation generated
+no distributable release. The requested replacement is prepared as `0.1.8`,
+with its version code allocated by the Internal-publishing CI workflow.
+
+The expanded gesture/three-button navigation matrix passed on the Android 17
+Pixel 8 emulator in `app/build/reports/android-smoke/20260914-182241`, including
+delayed-result Home navigation, independent removal during an eight-second
+query stall, a never-focused window beneath the notification shade, and the
+two-activity handoff. After bounding accelerated attachment retries, the final
+APK passed the gesture matrix again in `20260914-182814` and the complete
+setup/retained-input/approval/celebration flow in `20260914-183324`.
+
+Two harness issues were isolated: the first navigation attempt read a window
+inventory without Android 17's focus fields, so the shade check now reads the
+full WindowManager dump; the first broad attempt used a two-word ADB search
+query, so the successful rerun used CI's `TARGET_QUERY=Smoke`. Physical Pixel
+and Samsung qualification, battery impact, and multi-window/PiP remain open.
+Task-started emulator, ADB, Gradle, and smoke-runner processes were stopped;
+process exit was verified.
+
 GitHub-hosted Android CI passed on September 14 for commit `6911362`:
 <https://github.com/dankhole/AirLockAndroid/actions/runs/34871293494>.
 All six release-helper tests, 99 JVM tests, visible-text audit, debug lint,
