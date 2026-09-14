@@ -19,7 +19,7 @@ last reviewed repository state; it is not permission to discard newer work.
 | --- | --- |
 | Play application ID | `com.dankhole.airlock` |
 | Java namespace | `com.dankhole.airlockandroid` |
-| Version | Internal testing: `versionCode 10006`, `versionName 0.1.7`, published by CI on September 14 |
+| Version | Internal testing: `versionCode 10012`, `versionName 0.1.8`, published by CI on September 14 |
 | SDK | min 26, compile/target 36 |
 | Runtime stack | Platform Java views; no AndroidX, Compose, Kotlin, or third-party runtime dependency |
 | Release certificate SHA-256 | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
@@ -41,13 +41,28 @@ and decision-first blocker UI. It byte-matches the signed Gradle output and
 is superseded by CI release 10006. The version-7 and version-8 artifacts must
 not be uploaded as updates.
 
-The September 13 unexpected-blocker fixes are source changes described in
-[`BLOCKER_INVESTIGATION.md`](BLOCKER_INVESTIGATION.md). The existing version-8
-bundle above predates this investigation and does **not** contain these fixes.
-No replacement distributable has been generated or copied for this task; a
-newly versioned, validated bundle is needed before shipping the updated source.
+The September 13 and 14 unexpected-blocker fixes described in
+[`BLOCKER_INVESTIGATION.md`](BLOCKER_INVESTIGATION.md) are included in CI release
+10012. The existing version-8 bundle above predates this investigation and must
+not be used to distribute the updated source.
 
 ## Last Verified Evidence
+
+Release `10012` (`0.1.8`) was published to Google Play Internal testing from
+commit `49ad229e12d1e875ce7de2c6b6bf38958faa26be` on September 14:
+<https://github.com/dankhole/AirLockAndroid/actions/runs/34907837560>.
+All six release-helper tests, 123 JVM tests, visible-text audit, debug/release
+builds, lint, and the complete API 36 emulator smoke suite passed. Smoke report
+`20260914-231643` covers both navigation modes and the setup, retained-input,
+approval, and ordinary/emergency celebration flows. CI then verified the
+existing upload certificate and signed bundle, uploaded one AAB, and committed
+the Internal-track edit at 23:29 UTC with release name `Airlock 10012` and status
+`completed`. The bundle is saved in the run's `play-bundle-10012` artifact;
+its SHA-256 is
+`610fbb6fa0a62675931481f5f631ce598acae5c85de5152466e4974077042bcf`.
+CI stopped its emulator and ADB; local task-started build and monitoring
+processes exited. Physical tester installation/update, multi-day reliability,
+and battery qualification remain unverified. Automatic publishing stays off.
 
 The September 14 overlay follow-up prepares each blocker before a separate
 foreground confirmation, expires attached windows independently of stalled
@@ -60,12 +75,12 @@ Local validation passed all 122 JVM tests, debug assembly/lint, release-source
 Java compilation, and standalone target assembly/lint. Lint has no errors;
 existing warnings cover the Gradle wrapper, the Back dispatcher's `TargetApi`,
 and the standalone target's missing icon. That initial validation generated
-no distributable release. The requested replacement is prepared as `0.1.8`,
-with its version code allocated by the Internal-publishing CI workflow.
+no distributable release. The requested replacement was subsequently published
+as `0.1.8`, with its version code allocated by the Internal-publishing workflow.
 
 Release run `34905421762` stopped before build or upload because SDK setup
 could not find the legacy `tools` package. Both SDK setup steps now explicitly
-request `platform-tools`; a new publishing run will execute all normal checks.
+request `platform-tools`; subsequent release runs passed SDK setup.
 
 Run `34905597460` passed the build checks but exposed a cold-rendering regression
 in the API 36 emulator: the initial-focus watchdog removed a legitimate blocker
@@ -74,8 +89,8 @@ Publishing was skipped. Initial focus now has a bounded two-second allowance;
 fresh evidence cannot extend it, and acquired-focus loss still removes the
 window immediately. A regression test covers delayed initial focus and the
 unchanged loss behavior. All 123 JVM tests, debug assembly/lint, release assembly,
-and release bundle generation passed locally after this correction. The CI
-emulator gate must pass again before publishing.
+and release bundle generation passed locally after this correction. The final
+release run above also passed the complete CI emulator gate.
 
 Run `34906537749` passed all 123 JVM tests and both navigation modes, including
 the delayed-result, stalled-query, never-focused-window, and activity-handoff
@@ -83,7 +98,8 @@ regressions. The broad flow stopped at emergency submission: the API 36 Pixel 2
 keyboard covered the button's center even though its node remained in the UI
 dump, so the harness never submitted the entered code. The harness now dismisses
 the keyboard and verifies the retained code before locating the submit button.
-The celebration assertions remain required, and no bundle was uploaded.
+The celebration assertions remained required and passed in run `34907837560`.
+The failed run uploaded no bundle.
 
 The expanded gesture/three-button navigation matrix passed on the Android 17
 Pixel 8 emulator in `app/build/reports/android-smoke/20260914-182241`, including
@@ -385,10 +401,7 @@ copy. Removing the fallback remains an explicit later decision.
 3. Confirm remaining tester accounts, support email,
    and complete the `specialUse` foreground-service declaration/video before
    the first Play rollout.
-4. When a replacement release is requested, prepare and validate a newly
-   versioned bundle containing the September 13 blocker fixes, then upload it
-   through Internal testing and confirm Play-delivered installation.
-5. Collect reliability, approval-flow, and deterrence feedback, then explicitly
+4. Collect reliability, approval-flow, and deterrence feedback, then explicitly
    decide when to retire the signed-release per-digit override and qualify the
    shared-PIN calculation.
 
