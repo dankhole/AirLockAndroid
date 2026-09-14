@@ -4,9 +4,34 @@ plugins {
 
 def keystorePropertiesFile = rootProject.file("keystore.properties")
 def keystoreProperties = new Properties()
-def releaseSigningConfigured = keystorePropertiesFile.exists()
-if (releaseSigningConfigured) {
-    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+def signingEnvironment = [
+        storeFile: "AIRLOCK_KEYSTORE_FILE",
+        storePassword: "AIRLOCK_KEYSTORE_PASSWORD",
+        keyAlias: "AIRLOCK_KEY_ALIAS",
+        keyPassword: "AIRLOCK_KEY_PASSWORD"
+]
+if (signingEnvironment.values().any { System.getenv(it) != null }) {
+    signingEnvironment.each { property, variable ->
+        def value = System.getenv(variable)
+        if (value == null || value.isEmpty()) {
+            throw new GradleException("Missing signing environment variable: " + variable)
+        }
+        keystoreProperties[property] = value
+    }
+} else if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+def releaseSigningConfigured = !keystoreProperties.isEmpty()
+if (providers.gradleProperty("requireReleaseSigning").getOrElse("false") == "true"
+        && (!releaseSigningConfigured
+        || !rootProject.file(keystoreProperties["storeFile"]).isFile())) {
+    throw new GradleException("Release publishing requires the existing upload key.")
+}
+
+def requestedVersionCode = providers.gradleProperty("airlockVersionCode").getOrElse("8")
+if (!(requestedVersionCode ==~ /[1-9][0-9]{0,9}/)
+        || requestedVersionCode.toLong() > 2100000000L) {
+    throw new GradleException("airlockVersionCode must be between 1 and 2100000000.")
 }
 
 android {
@@ -17,7 +42,7 @@ android {
         applicationId "com.dankhole.airlock"
         minSdk 26
         targetSdk 36
-        versionCode 8
+        versionCode requestedVersionCode.toInteger()
         versionName "0.1.7"
     }
 

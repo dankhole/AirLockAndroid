@@ -172,7 +172,7 @@ public class ForegroundEventPolicyTest {
     }
 
     @Test
-    public void sameTimestampForegroundAfterPauseRestoresPackage() {
+    public void sameTimestampForegroundAfterPauseCannotResurrectPackage() {
         ForegroundEventPolicy.TimedCandidateState state =
                 ForegroundEventPolicy.knownTimedCandidate(
                         BLOCKED_APP,
@@ -195,7 +195,7 @@ public class ForegroundEventPolicyTest {
                 Build.VERSION_CODES.Q
         );
 
-        assertEquals(BLOCKED_APP, state.packageName);
+        assertNull(state.packageName);
     }
 
     @Test
@@ -218,33 +218,9 @@ public class ForegroundEventPolicyTest {
     }
 
     @Test
-    public void aggregateSeedYieldsToDelayedLifecycleEvidence() {
-        ForegroundEventPolicy.TimedCandidateState state =
-                ForegroundEventPolicy.seedTimedCandidate(
-                        ForegroundEventPolicy.unknownTimedCandidate(),
-                        BLOCKED_APP
-                );
-
-        state = ForegroundEventPolicy.applyTimedLifecycleEvent(
-                state,
-                UsageEvents.Event.ACTIVITY_RESUMED,
-                OTHER_APP,
-                150L,
-                Build.VERSION_CODES.Q
-        );
-
-        assertEquals(OTHER_APP, state.packageName);
-    }
-
-    @Test
     public void explicitExitBoundaryRejectsOldResumeAndAcceptsRealReturn() {
         ForegroundEventPolicy.TimedCandidateState state =
-                ForegroundEventPolicy.knownTimedCandidate(
-                        null,
-                        200L,
-                        200L,
-                        Collections.emptyMap()
-                );
+                knownEmptyAt(200L);
 
         state = ForegroundEventPolicy.applyTimedLifecycleEvent(
                 state,
@@ -498,28 +474,195 @@ public class ForegroundEventPolicyTest {
     }
 
     @Test
-    public void usageSummaryOnlySeedsAnUnknownForegroundAtSanityCheck() {
-        assertTrue(ForegroundEventPolicy.shouldSeedFromUsageSummary(
-                ForegroundEventPolicy.unknownCandidate(),
-                true
+    public void globalBoundariesAreRecognizedBeforePackageNameFiltering() {
+        int[] boundaryTypes = {
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE,
+                UsageEvents.Event.KEYGUARD_SHOWN,
+                UsageEvents.Event.DEVICE_SHUTDOWN,
+                UsageEvents.Event.DEVICE_STARTUP
+        };
+        for (int type : boundaryTypes) {
+            assertTrue(ForegroundEventPolicy.shouldApplyLifecycleEvent(
+                    200L, type, null, 100L, Collections.emptySet(), Build.VERSION_CODES.Q
+            ));
+            assertTrue(ForegroundEventPolicy.isOverlayInterruptionEvent(
+                    type, null, BLOCKED_APP, Collections.emptySet(), Build.VERSION_CODES.Q
+            ));
+            ForegroundEventPolicy.TimedCandidateState state =
+                    ForegroundEventPolicy.knownTimedCandidate(
+                            BLOCKED_APP, 100L, 100L, Collections.emptyMap()
+                    );
+            state = apply(state, new TimedEvent(200L, type, null));
+            assertTrue(state.known);
+            assertNull(state.packageName);
+            assertEquals(200L, state.latestBoundaryEventTimestampMs);
+        }
+        assertFalse(ForegroundEventPolicy.isForegroundBoundaryEvent(
+                UsageEvents.Event.DEVICE_STARTUP, Build.VERSION_CODES.P
         ));
+        assertFalse(ForegroundEventPolicy.isForegroundBoundaryEvent(
+                UsageEvents.Event.KEYGUARD_SHOWN, Build.VERSION_CODES.O
+        ));
+    }
 
-        assertFalse(ForegroundEventPolicy.shouldSeedFromUsageSummary(
-                ForegroundEventPolicy.knownCandidate(SYSTEM_UI),
-                true
-        ));
-        assertFalse(ForegroundEventPolicy.shouldSeedFromUsageSummary(
-                ForegroundEventPolicy.knownCandidate(BLOCKED_APP),
-                true
-        ));
-        assertFalse(ForegroundEventPolicy.shouldSeedFromUsageSummary(
-                ForegroundEventPolicy.knownCandidate(null),
-                true
-        ));
-        assertFalse(ForegroundEventPolicy.shouldSeedFromUsageSummary(
-                ForegroundEventPolicy.unknownCandidate(),
-                false
-        ));
+    @Test
+    public void bootCutoffRejectsPriorBootHistoryWithoutInventingForeground() {
+        ForegroundEventPolicy.TimedCandidateState state =
+                ForegroundEventPolicy.unknownTimedCandidate(200L);
+        state = apply(state, new TimedEvent(100L, UsageEvents.Event.ACTIVITY_RESUMED, BLOCKED_APP));
+        state = apply(state, new TimedEvent(200L, UsageEvents.Event.ACTIVITY_RESUMED, BLOCKED_APP));
+        assertFalse(state.known);
+        assertNull(state.packageName);
+        state = apply(state, new TimedEvent(201L, UsageEvents.Event.ACTIVITY_RESUMED, OTHER_APP));
+        assertEquals(OTHER_APP, state.packageName);
+    }
+
+    @Test
+    public void explicitExitRejectsSameMillisecondResumeAndAcceptsLaterReturn() {
+        ForegroundEventPolicy.TimedCandidateState state =
+                knownEmptyAt(200L);
+        state = apply(state, new TimedEvent(200L, UsageEvents.Event.ACTIVITY_RESUMED, BLOCKED_APP));
+        assertNull(state.packageName);
+        state = apply(state, new TimedEvent(201L, UsageEvents.Event.ACTIVITY_RESUMED, BLOCKED_APP));
+        assertEquals(BLOCKED_APP, state.packageName);
+    }
+
+    @Test
+    public void delayedGlobalBoundaryDoesNotEraseLaterForegroundEvidence() {
+        ForegroundEventPolicy.TimedCandidateState state =
+                ForegroundEventPolicy.knownTimedCandidate(
+                        OTHER_APP, 300L, 300L, Collections.emptyMap()
+                );
+        state = apply(state, new TimedEvent(200L, UsageEvents.Event.DEVICE_STARTUP, null));
+        state = apply(state, new TimedEvent(100L, UsageEvents.Event.ACTIVITY_RESUMED, BLOCKED_APP));
+        assertEquals(OTHER_APP, state.packageName);
+        assertEquals(200L, state.latestBoundaryEventTimestampMs);
+    }
+
+    @Test
+    public void rebootBoundariesRejectPriorSessionAcrossDeliveryOrdersAndReplay() {
+        List<TimedEvent> events = new ArrayList<>();
+        events.add(new TimedEvent(100L, UsageEvents.Event.ACTIVITY_RESUMED, BLOCKED_APP));
+        events.add(new TimedEvent(200L, UsageEvents.Event.DEVICE_SHUTDOWN, null));
+        events.add(new TimedEvent(250L, UsageEvents.Event.DEVICE_STARTUP, null));
+        assertAcrossDeliveryOrders(events, null);
+        events.add(new TimedEvent(300L, UsageEvents.Event.ACTIVITY_RESUMED, OTHER_APP));
+        assertAcrossDeliveryOrders(events, OTHER_APP);
+    }
+
+    @Test
+    public void sameMillisecondGlobalBoundaryWinsEveryDeliveryOrder() {
+        List<TimedEvent> events = new ArrayList<>();
+        events.add(new TimedEvent(200L, UsageEvents.Event.ACTIVITY_RESUMED, BLOCKED_APP));
+        events.add(new TimedEvent(200L, UsageEvents.Event.KEYGUARD_SHOWN, null));
+        assertAcrossDeliveryOrders(events, null);
+    }
+
+    @Test
+    public void equalTimestampForegroundPackagesRemainAmbiguousThroughReplay() {
+        List<TimedEvent> events = new ArrayList<>();
+        events.add(new TimedEvent(200L, UsageEvents.Event.ACTIVITY_RESUMED, BLOCKED_APP));
+        events.add(new TimedEvent(200L, UsageEvents.Event.ACTIVITY_RESUMED, OTHER_APP));
+        events.add(new TimedEvent(300L, UsageEvents.Event.ACTIVITY_PAUSED, SYSTEM_UI));
+        assertAcrossDeliveryOrders(events, null);
+        events.add(new TimedEvent(301L, UsageEvents.Event.ACTIVITY_RESUMED, OTHER_APP));
+        assertAcrossDeliveryOrders(events, OTHER_APP);
+    }
+
+    @Test
+    public void sameTimestampResumeAndBackgroundStayClosedAcrossReplay() {
+        List<TimedEvent> events = new ArrayList<>();
+        events.add(new TimedEvent(200L, UsageEvents.Event.ACTIVITY_RESUMED, BLOCKED_APP));
+        events.add(new TimedEvent(200L, UsageEvents.Event.ACTIVITY_PAUSED, BLOCKED_APP));
+        events.add(new TimedEvent(300L, UsageEvents.Event.ACTIVITY_PAUSED, OTHER_APP));
+        assertAcrossDeliveryOrders(events, null);
+    }
+
+    @Test
+    public void newestResumeCloseSurvivesPruningAndLateReplay() {
+        ForegroundEventPolicy.TimedCandidateState state =
+                ForegroundEventPolicy.unknownTimedCandidate();
+        TimedEvent resume = new TimedEvent(100L, UsageEvents.Event.ACTIVITY_RESUMED, BLOCKED_APP);
+        state = apply(state, resume);
+        state = apply(state, new TimedEvent(100L, UsageEvents.Event.ACTIVITY_PAUSED, BLOCKED_APP));
+        state = ForegroundEventPolicy.pruneTimedEvidence(state, 300L);
+        state = apply(state, resume);
+        assertNull(state.packageName);
+        assertEquals(Long.valueOf(100L), state.latestBackgroundEventTimestamps.get(BLOCKED_APP));
+    }
+
+    @Test
+    public void repeatedSlowSnapshotsRetainExitEvidenceAfterItLeavesTheQueryWindow() {
+        ForegroundEventPolicy.TimedCandidateState state =
+                ForegroundEventPolicy.knownTimedCandidate(
+                        BLOCKED_APP, 10_000L, 10_000L, Collections.emptyMap()
+                );
+        List<TimedEvent> events = new ArrayList<>();
+        events.add(new TimedEvent(10_000L, UsageEvents.Event.ACTIVITY_RESUMED, BLOCKED_APP));
+        events.add(new TimedEvent(15_000L, UsageEvents.Event.ACTIVITY_PAUSED, BLOCKED_APP));
+        events.add(new TimedEvent(15_001L, UsageEvents.Event.ACTIVITY_RESUMED, OTHER_APP));
+        long previousEnd = 12_000L;
+        long[] queryEnds = {20_000L, 27_000L, 34_000L, 41_000L};
+        for (int query = 0; query < queryEnds.length; query++) {
+            long end = queryEnds[query];
+            long start = ForegroundPollPolicy.queryStartMs(end, previousEnd, 0L, false);
+            for (TimedEvent event : events) {
+                if (event.timestampMs >= start && event.timestampMs < end) {
+                    state = apply(state, event);
+                }
+            }
+            // Snapshot metadata is retained even when rendering from its result
+            // is forbidden. Later overlap windows will no longer contain this exit.
+            state = ForegroundEventPolicy.knownTimedCandidate(
+                    state.packageName, state.candidateEventTimestampMs,
+                    state.latestForegroundEventTimestampMs, state.latestForegroundPackageName,
+                    state.latestBoundaryEventTimestampMs, state.latestBackgroundEventTimestamps
+            );
+            boolean fresh = ForegroundPollPolicy.isResultFresh(
+                    end, end + (query == queryEnds.length - 1 ? 100L : 3_000L)
+            );
+            assertEquals(query == queryEnds.length - 1, fresh);
+            assertEquals(OTHER_APP, state.packageName);
+            assertEquals(15_001L, state.latestForegroundEventTimestampMs);
+            previousEnd = end;
+        }
+    }
+
+    private static ForegroundEventPolicy.TimedCandidateState knownEmptyAt(long boundaryMs) {
+        return ForegroundEventPolicy.knownTimedCandidate(
+                null, boundaryMs, Long.MIN_VALUE, null, boundaryMs, Collections.emptyMap()
+        );
+    }
+
+    private static void assertAcrossDeliveryOrders(List<TimedEvent> events, String expectedPackage) {
+        Random random = new Random(0xB007L);
+        for (int scenario = 0; scenario < 100; scenario++) {
+            List<TimedEvent> delivered = new ArrayList<>(events);
+            Collections.shuffle(delivered, random);
+            ForegroundEventPolicy.TimedCandidateState state =
+                    ForegroundEventPolicy.unknownTimedCandidate();
+            for (TimedEvent event : delivered) {
+                state = apply(state, event);
+            }
+            assertTrue(state.known);
+            assertEquals("delivery=" + delivered, expectedPackage, state.packageName);
+            for (int replay = 0; replay < 3; replay++) {
+                Collections.shuffle(delivered, random);
+                for (TimedEvent event : delivered) {
+                    state = apply(state, event);
+                    assertEquals("replay=" + delivered, expectedPackage, state.packageName);
+                }
+            }
+        }
+    }
+
+    private static ForegroundEventPolicy.TimedCandidateState apply(
+            ForegroundEventPolicy.TimedCandidateState state,
+            TimedEvent event
+    ) {
+        return ForegroundEventPolicy.applyTimedLifecycleEvent(
+                state, event.type, event.packageName, event.timestampMs, Build.VERSION_CODES.Q
+        );
     }
 
     private static final class TimedEvent {

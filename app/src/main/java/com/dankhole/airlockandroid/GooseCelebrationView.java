@@ -19,7 +19,8 @@ final class GooseCelebrationView extends View {
     private final String honkText;
     private float progress;
     private ValueAnimator animator;
-    private boolean animationCancelled;
+    private long animationGeneration;
+    private Runnable pendingCompletion;
 
     GooseCelebrationView(Context context) {
         super(context);
@@ -28,16 +29,12 @@ final class GooseCelebrationView extends View {
     }
 
     void start(Runnable onFinished) {
-        if (animator != null) {
-            animator.cancel();
-        }
-        animationCancelled = false;
+        cancelAnimationAndCompletion();
+        long generation = animationGeneration;
         if (!ValueAnimator.areAnimatorsEnabled()) {
             progress = 1f;
             invalidate();
-            if (onFinished != null) {
-                post(onFinished);
-            }
+            scheduleCompletion(onFinished, generation, 0L);
             return;
         }
         animator = ValueAnimator.ofFloat(0f, 1f);
@@ -50,14 +47,18 @@ final class GooseCelebrationView extends View {
         animator.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationCancel(Animator animation) {
-                animationCancelled = true;
+                if (generation == animationGeneration) {
+                    animationGeneration++;
+                }
             }
 
             @Override
             public void onAnimationEnd(Animator animation) {
-                animator = null;
-                if (!animationCancelled && onFinished != null) {
-                    postDelayed(onFinished, 250L);
+                if (animator == animation) {
+                    animator = null;
+                }
+                if (generation == animationGeneration) {
+                    scheduleCompletion(onFinished, generation, 250L);
                 }
             }
         });
@@ -66,11 +67,34 @@ final class GooseCelebrationView extends View {
 
     @Override
     protected void onDetachedFromWindow() {
+        cancelAnimationAndCompletion();
+        super.onDetachedFromWindow();
+    }
+
+    private void scheduleCompletion(Runnable onFinished, long generation, long delayMs) {
+        if (onFinished == null) {
+            return;
+        }
+        pendingCompletion = () -> {
+            if (generation != animationGeneration || !isAttachedToWindow() || !isShown()) {
+                return;
+            }
+            pendingCompletion = null;
+            onFinished.run();
+        };
+        postDelayed(pendingCompletion, delayMs);
+    }
+
+    private void cancelAnimationAndCompletion() {
+        animationGeneration++;
+        if (pendingCompletion != null) {
+            removeCallbacks(pendingCompletion);
+            pendingCompletion = null;
+        }
         if (animator != null) {
             animator.cancel();
             animator = null;
         }
-        super.onDetachedFromWindow();
     }
 
     @Override

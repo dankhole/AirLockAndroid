@@ -27,6 +27,8 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
     private static final String COMMAND_RESET = "reset";
     private static final String COMMAND_SEED = "seed";
     private static final String COMMAND_FORCE_FOREGROUND_SANITY = "force_foreground_sanity";
+    private static final String COMMAND_STOP_MONITORING_SERVICE = "stop_monitoring_service";
+    private static final String COMMAND_START_MONITORING_SERVICE = "start_monitoring_service";
     private static final String DEFAULT_TARGET_PACKAGE = "com.google.android.youtube";
     private static final String FIXTURE_PHONE_NUMBER = "5555551212";
     private static final String FIXTURE_MASTER_PIN = "1234";
@@ -45,6 +47,21 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
         }
         if (COMMAND_FORCE_FOREGROUND_SANITY.equals(command)) {
             forceForegroundSanityCheck(context, intent);
+            return;
+        }
+        if (COMMAND_STOP_MONITORING_SERVICE.equals(command)) {
+            context.stopService(new Intent(context, MonitoringService.class));
+            succeed("monitoring service stopped; saved duty unchanged");
+            return;
+        }
+        if (COMMAND_START_MONITORING_SERVICE.equals(command)) {
+            if (!Preferences.isMonitoringRequested(context)) {
+                fail("Monitoring must be requested before restarting its service");
+            } else if (MonitoringService.requestStart(context)) {
+                succeed("monitoring service start requested");
+            } else {
+                fail("Monitoring service start denied");
+            }
             return;
         }
         fail("Unknown fixture command: " + command);

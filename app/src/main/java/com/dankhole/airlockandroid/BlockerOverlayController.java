@@ -32,6 +32,7 @@ final class BlockerOverlayController {
     private final Context context;
     private final Listener listener;
     private final Map<String, FormState> formStates = new HashMap<>();
+    private long celebrationGeneration;
 
     BlockerOverlayController(Context context, Listener listener) {
         this.context = context;
@@ -39,6 +40,7 @@ final class BlockerOverlayController {
     }
 
     View build(String packageName, String appLabel, long usedMinutes, int limitMinutes) {
+        celebrationGeneration++;
         ScrollView scrollView = new ScrollView(context);
         scrollView.setFillViewport(true);
         scrollView.setClipToPadding(true);
@@ -75,6 +77,7 @@ final class BlockerOverlayController {
     }
 
     void clearAllFormStates() {
+        celebrationGeneration++;
         formStates.clear();
     }
 
@@ -769,6 +772,7 @@ final class BlockerOverlayController {
     }
 
     private void showUnlockCelebration(LinearLayout card, int approvedMinutes) {
+        long generation = ++celebrationGeneration;
         listener.onUnlockCelebrationStarted();
         KeyboardHelper.hide(context, card);
         card.removeAllViews();
@@ -797,17 +801,24 @@ final class BlockerOverlayController {
         body.setId(R.id.blocker_summary);
         body.setGravity(Gravity.CENTER);
         card.addView(body, UiStyle.fullWidth(context, 0));
-        card.post(() -> card.announceForAccessibility(
-                context.getResources().getQuantityString(
+        card.post(() -> {
+            if (isCurrentCelebration(card, generation)) {
+                card.announceForAccessibility(context.getResources().getQuantityString(
                         R.plurals.blocker_unlock_announcement,
                         approvedMinutes,
                         approvedMinutes
-                )
-        ));
-        gooseView.start(() -> listener.onUnlockCelebrationFinished(approvedMinutes));
+                ));
+            }
+        });
+        gooseView.start(() -> {
+            if (isCurrentCelebration(card, generation)) {
+                listener.onUnlockCelebrationFinished(approvedMinutes);
+            }
+        });
     }
 
     private void showEmergencyPauseCelebration(LinearLayout card) {
+        long generation = ++celebrationGeneration;
         listener.onEmergencyCelebrationStarted();
         KeyboardHelper.hide(context, card);
         card.removeAllViews();
@@ -832,10 +843,22 @@ final class BlockerOverlayController {
         body.setId(R.id.blocker_summary);
         body.setGravity(Gravity.CENTER);
         card.addView(body, UiStyle.fullWidth(context, 0));
-        card.post(() -> card.announceForAccessibility(
-                context.getString(R.string.blocker_emergency_announcement)
-        ));
-        gooseView.start(listener::onEmergencyCelebrationFinished);
+        card.post(() -> {
+            if (isCurrentCelebration(card, generation)) {
+                card.announceForAccessibility(
+                        context.getString(R.string.blocker_emergency_announcement)
+                );
+            }
+        });
+        gooseView.start(() -> {
+            if (isCurrentCelebration(card, generation)) {
+                listener.onEmergencyCelebrationFinished();
+            }
+        });
+    }
+
+    private boolean isCurrentCelebration(View card, long generation) {
+        return generation == celebrationGeneration && card.isAttachedToWindow() && card.isShown();
     }
 
     private TextView errorText() {

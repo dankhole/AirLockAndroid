@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: August 31, 2026
+Last updated: September 13, 2026
 
 ## Current Stage
 
@@ -41,7 +41,55 @@ and decision-first blocker UI. It byte-matches the signed Gradle output and
 remains local pending upload. The version-7 artifact is obsolete and must not
 be uploaded.
 
+The September 13 unexpected-blocker fixes are source changes described in
+[`BLOCKER_INVESTIGATION.md`](BLOCKER_INVESTIGATION.md). The existing version-8
+bundle above predates this investigation and does **not** contain these fixes.
+No replacement distributable has been generated or copied for this task; a
+newly versioned, validated bundle is needed before shipping the updated source.
+
 ## Last Verified Evidence
+
+The September 13 unexpected-blocker investigation passed all 99 JVM tests,
+debug assembly, and debug lint (one existing Gradle-wrapper update warning;
+no code findings). The expanded gesture/three-button recovery matrix passed at
+`app/build/reports/android-smoke/20260913-184526`; the final service code also
+passed both navigation modes in `20260913-185013` before that run stopped on
+an ADB search-text harness issue. After correcting search input and explicitly
+closing the keyboard before navigating the long approval form, the complete
+setup/permissions/retained-state/approval/celebration UI flow passed at
+`app/build/reports/android-smoke/20260913-185927`.
+
+The subsequent removal of forced keyboard-show flags passed the same Gradle
+batch and a focused final-APK keyboard/reboot regression in
+`app/build/reports/blocker-reboot-check`. That check verified no automatic
+keyboard on initial/reopened blockers, explicit-tap opening, first-Back
+keyboard dismissal without leaving the blocker, and no keyboard on Home. A
+reboot from the visible blocker restarted monitoring, left Home and Settings
+free of attached blocker windows, and blocked only after the guarded target
+actually reopened. Emulator usage diagnostics also confirmed a daily bucket
+beginning at 10:30 AM rather than local midnight, supporting the conservative
+bucket filtering described in `RELIABILITY.md`. The emulator, smoke runners,
+Gradle daemon, and task-started ADB server were stopped and process exit was
+verified. These are local Android 17 Pixel 8 emulator results; physical-device
+and multi-day qualification remain outstanding. No release bundle was built,
+copied, uploaded, or installed on a physical phone for this investigation.
+
+On September 13, the GitHub Actions preparation passed all 74 JVM tests, debug
+lint, debug/release assembly, release bundle generation, and the separate
+debug-only smoke-target build/lint. A fresh source-only copy with no signing
+configuration passed the same build checks using CI version code 10001;
+inspection confirmed package `com.dankhole.airlock`, min SDK 26, and target SDK
+36. The existing locally signed AAB passed signature and upload-certificate
+verification. Missing/partial signing configuration, version code 0, and an
+unsigned AAB were rejected by the publishing gates as intended. Six Python
+release-helper tests, the visible-text audit, and actionlint also passed.
+The full release-validation smoke suite passed with the new standalone target
+on the local Android 17 Pixel 8 emulator at
+`app/build/reports/android-smoke/20260913-103156`, including both navigation
+modes. No Play upload or GitHub-hosted run was performed; the workflow's API 36
+Linux emulator still needs its first hosted validation. No new distributable
+was copied into `releases/`, and the previously recorded candidate remains
+unchanged. This remains emulator evidence, not physical-device qualification.
 
 On August 11, 2026, source through commit `16bd88c` passed:
 
@@ -206,7 +254,7 @@ remains open.
   master-PIN authorization while Duty is active.
 - Foreground-service monitoring with overlapping UsageEvents, timestamped
   foreground/background evidence, delayed-event reduction, gesture recovery,
-  startup-only UsageStats seeding, bounded workers, batched persistence, health
+  current-boot lifecycle authority, bounded workers, batched persistence, health
   diagnostics, boot/update restart, and screen-off suspension.
 - Full-screen dark blocker with a decision-first home and separate request,
   approval, and emergency forms. It makes active requests and additive new
@@ -256,16 +304,19 @@ copy. Removing the fallback remains an explicit later decision.
 3. Confirm remaining tester accounts, support email,
    and complete the `specialUse` foreground-service declaration/video before
    the first Play rollout.
-4. Upload the verified version-8 bundle through the Internal testing track and
-   confirm Play-delivered installation.
+4. When a replacement release is requested, prepare and validate a newly
+   versioned bundle containing the September 13 blocker fixes, then upload it
+   through Internal testing and confirm Play-delivered installation.
 5. Collect reliability, approval-flow, and deterrence feedback, then explicitly
    decide when to retire the signed-release per-digit override and qualify the
    shared-PIN calculation.
 
 ## Known Release Gaps
 
-- No CI; local JVM/build/lint and the batched emulator smoke script are the
-  automated gates.
+- GitHub Actions build, smoke, and opt-in Internal publishing are prepared in
+  `.github/workflows/android.yml`; the first hosted run and Google Play API
+  credentials remain outstanding. Activation and signing-secret setup are in
+  [`RELEASE.md`](RELEASE.md#github-actions-automation).
 - The broad emulator smoke runner has intermittently shown an Android 17
   rotation/UI-dump race, although the consolidated candidate run passed it.
 - The complete physical-device release matrix has not been recorded as passed.
@@ -274,8 +325,13 @@ copy. Removing the fallback remains an explicit later decision.
 - OEM force-stop, Active apps Stop, Restricted battery mode, and uninstall
   cannot be self-corrected without user action; this is an Android/platform
   limit, not a promised security boundary.
-- Multi-window, picture-in-picture, midnight/timezone changes, and aggressive
-  OEM background controls still require broader device evidence.
+- Multi-window/PiP focus cannot be reliably inferred from a single UsageEvents
+  candidate; those modes remain unqualified. Midnight/timezone changes and
+  aggressive OEM background controls still need physical-device evidence.
+- Conservative foreground and usage recovery can delay blocking when Android
+  supplies ambiguous events or daily buckets that straddle local midnight.
+  Existing saved usage totals are preserved, including prior overcounts; see
+  `RELIABILITY.md` for the limits of the September 13 fixes.
 - Keyholder validation currently accepts exactly 10 digits, so international
   phone-number support is not implemented.
 - Master-PIN, approval, and emergency-code entry are not attempt-throttled. The

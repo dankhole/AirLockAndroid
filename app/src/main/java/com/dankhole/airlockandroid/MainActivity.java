@@ -34,7 +34,6 @@ import android.widget.Toast;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 public class MainActivity extends Activity {
@@ -1335,11 +1334,17 @@ public class MainActivity extends Activity {
         boolean posted = USAGE_REFRESH_EXECUTOR.tryExecute(() -> {
             try {
                 Preferences.pruneOldUsageIfNeeded(appContext);
-                Map<String, Long> observedUsage = UsageTracker.queryTodayFromSystemStats(
+                UsageTracker.Snapshot observedUsage = UsageTracker.queryTodayFromSystemStats(
                         appContext,
                         selectedPackages
                 );
-                Preferences.reconcileUsageTodayMs(appContext, observedUsage);
+                if (observedUsage.matchesCurrentDay()) {
+                    Preferences.saveUsageForDayMs(
+                            appContext,
+                            observedUsage.day,
+                            observedUsage.usageByPackage
+                    );
+                }
             } catch (RuntimeException ignored) {
                 // The next resume or service reconciliation will retry.
             }

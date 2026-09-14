@@ -118,7 +118,9 @@ Expected result: selected app is blocked after its daily budget is exhausted.
 
 ### Recents And App Switching
 
-Expected result: a blocked app never becomes interactive after a gesture or app switch; its overlay returns within one monitoring poll.
+Expected result: Home, Recents, and unguarded apps remain clear. After an
+unambiguous guarded-app resume, its blocker returns within one monitoring poll;
+ambiguous or missing evidence shows recovery and must not guess a target.
 
 1. Put an over-limit app in recents, open an unblocked app, and use the bottom-edge horizontal gesture to quick-switch into the over-limit app.
 2. Confirm the blocking overlay appears in well under one second and the app behind it cannot be tapped.
@@ -128,7 +130,7 @@ Expected result: a blocked app never becomes interactive after a gesture or app 
 6. Scroll between task cards without selecting one and confirm the blocker does
    not reappear while Recents remains foreground.
 7. Remain in Recents for at least 35 seconds and confirm the blocker does not
-   reattach after the aggregate foreground sanity check.
+   reattach during a later foreground lookback/poll.
 8. Dismiss the blocked app's task, go Home, and confirm Recents, Home, and the
    launcher remain usable.
 9. Return to the blocked app and confirm the overlay is rebuilt and still
@@ -233,8 +235,13 @@ Expected result: goose duty resumes after reboot when enabled.
 1. Start monitoring.
 2. Reboot device.
 3. Unlock device.
-4. Confirm Airlock's monitoring notification appears with `The goose is on duty!`.
-5. Open a selected over-limit app and confirm blocking still works.
+4. Confirm the monitoring notification returns. Until Android reports current
+   activity evidence, it must show recovery rather than claim active blocking.
+5. Stay on Home and then open Settings; confirm no blocker attaches in either.
+6. Open a selected over-limit app and confirm blocking still works.
+7. Repeat a quick reboot directly from a visible blocker and while an ordinary
+   or emergency celebration is active. Confirm the old window is gone during
+   shutdown, on the keyguard, and on the first unlocked Home screen.
 
 ### Monitoring Self-Recovery
 
@@ -249,8 +256,10 @@ off, and recovery work remains bounded.
 3. Restore Usage Access. Confirm normal monitoring resumes within 30 seconds,
    or immediately after returning to Airlock, without re-entering the master
    PIN.
-4. Repeat by revoking and restoring Display Over Other Apps. Confirm the
-   overlay is removed while access is missing and returns after recovery.
+4. Repeat by revoking and restoring Display Over Other Apps, app notifications,
+   and the monitoring notification channel. Confirm the overlay is removed while
+   any required access is missing, the access gate returns, and recovery does not
+   attach over Home or Settings.
 5. With duty on, reinstall the same APK using `adb -e install -r`. Confirm
    `MY_PACKAGE_REPLACED` restarts the foreground service and an over-limit app
    is blocked.
@@ -292,6 +301,12 @@ off or the keyguard is visible and resumes promptly after unlock.
    appears promptly.
 5. Confirm today's saved usage did not increase for time spent behind the
    keyguard.
+6. Repeat short sleep/wake cycles while Home, Settings, the blocker approval
+   keyboard, and a celebration are visible. Inspect WindowManager to verify the
+   overlay is detached, not merely absent from a UI hierarchy dump.
+7. Open/dismiss the notification shade and power menu from a blocker. Confirm
+   the old window stays gone; if Android supplies no new resume, recovery remains
+   visible until a real app opening. Verify typing on the blocker still works.
 
 ### Monitoring Performance And Battery
 

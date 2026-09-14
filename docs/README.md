@@ -1,6 +1,6 @@
 # Documentation Map
 
-Last reviewed: August 23, 2026
+Last reviewed: September 13, 2026
 
 Use this directory as the repository knowledge base. `AGENTS.md` is the short
 entry point; these files hold the deeper product and engineering context. Read
@@ -14,6 +14,7 @@ tests.
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Runtime flow, component ownership, state model, and behavioral invariants | Java structure, persistence, authorization, or Android APIs |
 | [`DESIGN.md`](DESIGN.md) | Screen hierarchy, dark visual system, accessibility baseline, and system-area behavior | UI, styling, forms, responsive layout, insets, or Goose visuals |
 | [`RELIABILITY.md`](RELIABILITY.md) | Monitoring contract, recovery matrix, polling budgets, and platform limits | Service lifecycle, UsageStats, overlays, boot, battery, or health |
+| [`BLOCKER_INVESTIGATION.md`](BLOCKER_INVESTIGATION.md) | September 2026 unexpected-blocker findings, fixes, review scope, and limits | Investigating regressions or reviewing the blocker hardening |
 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | Local setup, coding/style conventions, debug tooling, and routine validation | Implementing or testing code |
 | [`PRODUCT_LANGUAGE.md`](PRODUCT_LANGUAGE.md) | Goose/Keyholder roles, voice, and approval-flow wording | UI, notifications, SMS copy, screenshots, or listing text |
 | [`TEST_PLAN.md`](TEST_PLAN.md) | Release-level manual and device acceptance matrix | Behavior changes or release qualification |

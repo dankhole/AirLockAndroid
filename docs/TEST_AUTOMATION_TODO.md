@@ -1,6 +1,6 @@
 # Test Automation TODO
 
-Last reviewed: August 11, 2026
+Last reviewed: September 13, 2026
 
 This backlog converts the functional and visual checks in `docs/TEST_PLAN.md`
 into repeatable tests without adding AndroidX, Compose, Kotlin, or runtime
@@ -141,9 +141,15 @@ it cannot accidentally drive a connected physical phone.
 
 ## CI Exit Criteria
 
-- [ ] Run JVM tests, assemble, and lint on every pull request.
-- [ ] Run the P0 emulator smoke suite once per UI/lifecycle change set or on a
-  scheduled build, not on every tiny edit.
-- [ ] Upload screenshots, hierarchy dumps, and logs when emulator tests fail.
+- [x] Configure JVM tests, assemble, and lint on every pull request in
+  `.github/workflows/android.yml`.
+- [x] Configure the complete P0 emulator smoke suite on master pushes and manual
+  runs, using the separate debug-only `:smoke-target` app.
+- [x] Configure screenshots, hierarchy dumps, and logs as smoke-run artifacts.
+- [ ] Record the first successful GitHub-hosted build and API 36 emulator run.
 - [ ] Block release candidates on P0 functional failures, crashes, ANRs, or a
   missing physical-device test record.
+
+The Internal-testing upload job already depends on all automated checks. It
+does not establish physical-device qualification; see `docs/RELEASE.md` for
+activation and the remaining wider-release gates.

@@ -26,9 +26,11 @@ final class UsageLedger {
     private final LongSupplier elapsedRealtime;
     private final long persistIntervalMs;
     private final Map<String, Long> totalsMs = new HashMap<>();
+    private final Map<String, Long> countedThroughElapsedMs = new HashMap<>();
     private final Set<String> dirtyPackages = new HashSet<>();
 
     private String cachedDay;
+    private long dayObservedElapsedMs;
     private long lastPersistElapsedMs;
 
     UsageLedger(Store store, LongSupplier elapsedRealtime, long persistIntervalMs) {
@@ -67,12 +69,15 @@ final class UsageLedger {
         String currentDay = store.currentDay();
         if (cachedDay == null) {
             cachedDay = currentDay;
+            dayObservedElapsedMs = elapsedRealtime.getAsLong();
         } else if (!cachedDay.equals(currentDay)) {
             flush(true);
             cachedDay = currentDay;
             totalsMs.clear();
+            countedThroughElapsedMs.clear();
             dirtyPackages.clear();
-            lastPersistElapsedMs = elapsedRealtime.getAsLong();
+            dayObservedElapsedMs = elapsedRealtime.getAsLong();
+            lastPersistElapsedMs = dayObservedElapsedMs;
         }
 
         for (String packageName : selectedPackages) {
@@ -82,19 +87,39 @@ final class UsageLedger {
         }
     }
 
-    void add(String packageName, long deltaMs) {
-        if (deltaMs <= 0L || deltaMs > MAX_POLL_DELTA_MS) {
+    void add(String packageName, long intervalStartElapsedMs, long intervalEndElapsedMs) {
+        long intervalMs = intervalEndElapsedMs - intervalStartElapsedMs;
+        if (cachedDay == null || intervalStartElapsedMs < 0L
+                || intervalMs <= 0L || intervalMs > MAX_POLL_DELTA_MS) {
+            return;
+        }
+        // A reconciliation callback can notice midnight before the foreground
+        // callback does. Never carry that previous-day polling slice into today.
+        long countFromElapsedMs = Math.max(intervalStartElapsedMs, dayObservedElapsedMs);
+        Long countedThrough = countedThroughElapsedMs.get(packageName);
+        if (countedThrough != null) {
+            countFromElapsedMs = Math.max(countFromElapsedMs, countedThrough);
+        }
+        long deltaMs = intervalEndElapsedMs - countFromElapsedMs;
+        if (deltaMs <= 0L) {
             return;
         }
         long current = totalsMs.containsKey(packageName)
                 ? totalsMs.get(packageName)
                 : store.read(cachedDay, packageName);
         totalsMs.put(packageName, current + deltaMs);
+        countedThroughElapsedMs.put(packageName, intervalEndElapsedMs);
         dirtyPackages.add(packageName);
     }
 
-    void mergeObserved(String observedDay, Map<String, Long> observedUsage) {
-        if (cachedDay == null || !cachedDay.equals(observedDay)) {
+    void mergeObserved(
+            String observedDay,
+            Map<String, Long> observedUsage,
+            long observedThroughElapsedMs
+    ) {
+        if (cachedDay == null || !cachedDay.equals(observedDay)
+                || observedThroughElapsedMs < 0L
+                || observedThroughElapsedMs > elapsedRealtime.getAsLong()) {
             return;
         }
         for (Map.Entry<String, Long> entry : observedUsage.entrySet()) {
@@ -105,6 +130,13 @@ final class UsageLedger {
                     : 0L;
             if (observedMs >= currentMs) {
                 totalsMs.put(packageName, observedMs);
+                // The next foreground interval may begin before this snapshot.
+                // Its imported portion has already contributed to the total.
+                Long countedThrough = countedThroughElapsedMs.get(packageName);
+                countedThroughElapsedMs.put(packageName, Math.max(
+                        countedThrough == null ? 0L : countedThrough,
+                        observedThroughElapsedMs
+                ));
                 dirtyPackages.remove(packageName);
             }
         }

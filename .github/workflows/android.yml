@@ -1,0 +1,202 @@
+name: Android CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to Google Play Internal testing after all checks pass
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  # Let a master release finish; newer pushes replace only pending runs.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    name: Tests, lint, and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      version-code: ${{ steps.version.outputs.code }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      - name: Install compile SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Allocate version code
+        id: version
+        env:
+          PLAY_VERSION_CODE_BASE: ${{ vars.PLAY_VERSION_CODE_BASE || '10000' }}
+        run: |
+          code="$(python3 scripts/ci-release.py version)"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "ORG_GRADLE_PROJECT_airlockVersionCode=$code" >> "$GITHUB_ENV"
+      - name: Check release automation and visible text
+        run: |
+          python3 -m unittest discover -s scripts/tests -v
+          python3 scripts/ci-release.py audit
+          bash -n scripts/android-smoke.sh
+      - name: Build and validate without signing credentials
+        run: >-
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+          :app:assembleRelease :app:bundleRelease :smoke-target:assembleDebug :smoke-target:lintDebug
+      - name: Save smoke APKs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: smoke-apks
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            smoke-target/build/outputs/apk/debug/smoke-target-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: Save test and lint reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+            smoke-target/build/reports/
+          retention-days: 14
+
+  smoke:
+    name: Emulator release smoke
+    needs: checks
+    # Keep PR feedback fast; master and manual runs exercise the full release gate.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: smoke-apks
+      - name: Install UI inspection tools and enable KVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run full smoke suite and both navigation modes
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          TARGET_PACKAGE: com.dankhole.airlock.smoketarget
+          TARGET_QUERY: Smoke
+          RELEASE_VALIDATION: 'true'
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_8
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb -e install -r smoke-target/build/outputs/apk/debug/smoke-target-debug.apk
+            scripts/android-smoke.sh --skip-build
+      - name: Ensure task emulator and adb exit
+        if: always()
+        run: |
+          adb -e emu kill || true
+          adb kill-server || true
+      - name: Save smoke screenshots, hierarchy dumps, and logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: smoke-reports
+          path: app/build/reports/android-smoke/
+          retention-days: 14
+
+  publish:
+    name: Publish to Internal testing
+    needs: [checks, smoke]
+    if: >-
+      github.ref == 'refs/heads/master' &&
+      ((github.event_name == 'push' && vars.PLAY_AUTO_PUBLISH == 'true') ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: play-internal
+    env:
+      ORG_GRADLE_PROJECT_airlockVersionCode: ${{ needs.checks.outputs.version-code }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+        with:
+          # Keep signing-job state out of shared caches.
+          cache-disabled: true
+      - name: Install compile SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Prepare and verify the existing upload key
+        env:
+          AIRLOCK_KEYSTORE_BASE64: ${{ secrets.AIRLOCK_KEYSTORE_BASE64 }}
+          AIRLOCK_KEYSTORE_PASSWORD: ${{ secrets.AIRLOCK_KEYSTORE_PASSWORD }}
+          AIRLOCK_KEY_ALIAS: ${{ secrets.AIRLOCK_KEY_ALIAS }}
+          AIRLOCK_KEY_PASSWORD: ${{ secrets.AIRLOCK_KEY_PASSWORD }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/ci-release.py prepare-signing --path "$RUNNER_TEMP/airlock-upload.jks"
+      - name: Build signed release
+        env:
+          AIRLOCK_KEYSTORE_FILE: ${{ runner.temp }}/airlock-upload.jks
+          AIRLOCK_KEYSTORE_PASSWORD: ${{ secrets.AIRLOCK_KEYSTORE_PASSWORD }}
+          AIRLOCK_KEY_ALIAS: ${{ secrets.AIRLOCK_KEY_ALIAS }}
+          AIRLOCK_KEY_PASSWORD: ${{ secrets.AIRLOCK_KEY_PASSWORD }}
+        run: |
+          python3 scripts/ci-release.py audit
+          ./gradlew --no-daemon -PrequireReleaseSigning=true :app:assembleRelease :app:bundleRelease
+          python3 scripts/ci-release.py verify-bundle
+          sha256sum app/build/outputs/bundle/release/app-release.aab >> "$GITHUB_STEP_SUMMARY"
+          echo "Version code: $ORG_GRADLE_PROJECT_airlockVersionCode; source: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove upload key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/airlock-upload.jks"
+      - name: Save signed bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: play-bundle-${{ needs.checks.outputs.version-code }}
+          path: app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish bundle and release notes
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.dankhole.airlock
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          releaseName: Airlock ${{ needs.checks.outputs.version-code }}
+          tracks: internal
+          status: completed
+          whatsNewDirectory: play-store/whatsnew

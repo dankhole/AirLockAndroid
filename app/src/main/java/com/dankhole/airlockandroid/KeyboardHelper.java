@@ -56,12 +56,8 @@ final class KeyboardHelper {
         input.setCursorVisible(true);
         input.requestFocus();
 
-        input.postDelayed(() -> requestKeyboard(context, input, InputMethodManager.SHOW_IMPLICIT), 40);
-        input.postDelayed(() -> {
-            if (input.hasFocus()) {
-                requestKeyboard(context, input, InputMethodManager.SHOW_FORCED);
-            }
-        }, 160);
+        input.postDelayed(() -> requestKeyboard(context, input), 40);
+        input.postDelayed(() -> requestKeyboard(context, input), 160);
     }
 
     static void hide(Context context, View view) {
@@ -72,11 +68,17 @@ final class KeyboardHelper {
         }
     }
 
-    private static void requestKeyboard(Context context, EditText input, int flags) {
+    private static void requestKeyboard(Context context, EditText input) {
+        if (!input.isAttachedToWindow() || !input.isShown()
+                || !input.hasWindowFocus() || !input.hasFocus()) {
+            return;
+        }
         InputMethodManager inputMethodManager =
                 (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
         if (inputMethodManager != null) {
-            inputMethodManager.showSoftInput(input, flags);
+            // SHOW_FORCED can leave the keyboard visible across apps on older
+            // Android versions. These requests follow an explicit input tap.
+            inputMethodManager.showSoftInput(input, 0);
         }
     }
 

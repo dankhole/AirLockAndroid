@@ -48,34 +48,34 @@ final class CriticalApps {
 
         Intent home = new Intent(Intent.ACTION_MAIN);
         home.addCategory(Intent.CATEGORY_HOME);
-        addActivityPackages(packageManager, home, packages);
+        boolean complete = addActivityPackages(packageManager, home, packages);
 
-        addActivityPackages(
+        complete &= addActivityPackages(
                 packageManager,
                 new Intent(Intent.ACTION_DIAL, Uri.parse("tel:")),
                 packages
         );
-        addActivityPackages(
+        complete &= addActivityPackages(
                 packageManager,
                 new Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:")),
                 packages
         );
-        addActivityPackages(
+        complete &= addActivityPackages(
                 packageManager,
                 new Intent(MediaStore.ACTION_IMAGE_CAPTURE),
                 packages
         );
-        addServicePackages(
+        complete &= addServicePackages(
                 packageManager,
                 new Intent(AutofillService.SERVICE_INTERFACE),
                 packages
         );
-        addServicePackages(
+        complete &= addServicePackages(
                 packageManager,
                 new Intent(CREDENTIAL_PROVIDER_SERVICE_INTERFACE),
                 packages
         );
-        addResolvedActivityPackage(
+        complete &= addResolvedActivityPackage(
                 packageManager,
                 new Intent(Settings.ACTION_SETTINGS),
                 packages
@@ -87,15 +87,23 @@ final class CriticalApps {
                 addPackage(packages, telecomManager.getDefaultDialerPackage());
             }
         } catch (RuntimeException ignored) {
+            complete = false;
             // Other independently resolved categories remain protected.
         }
 
         try {
             addPackage(packages, Telephony.Sms.getDefaultSmsPackage(context));
         } catch (RuntimeException ignored) {
+            complete = false;
             // The SENDTO query above still protects visible messaging handlers.
         }
 
+        if (!complete) {
+            // A temporary platform lookup failure must not make an app that was
+            // already known to be critical selectable or blockable. A complete
+            // later refresh can retire discoveries that no longer apply.
+            packages.addAll(cachedPackages);
+        }
         cachedPackages = Collections.unmodifiableSet(packages);
         cachedAtElapsedMs = SystemClock.elapsedRealtime();
     }
@@ -109,7 +117,7 @@ final class CriticalApps {
         return cachedPackages;
     }
 
-    private static void addActivityPackages(
+    private static boolean addActivityPackages(
             PackageManager packageManager,
             Intent intent,
             Set<String> packages
@@ -124,12 +132,14 @@ final class CriticalApps {
                     addPackage(packages, info.activityInfo.packageName);
                 }
             }
+            return true;
         } catch (RuntimeException ignored) {
             // Continue with the other independently resolved safety categories.
+            return false;
         }
     }
 
-    private static void addServicePackages(
+    private static boolean addServicePackages(
             PackageManager packageManager,
             Intent intent,
             Set<String> packages
@@ -141,12 +151,14 @@ final class CriticalApps {
                     addPackage(packages, info.serviceInfo.packageName);
                 }
             }
+            return true;
         } catch (RuntimeException ignored) {
             // Continue with the other independently resolved safety categories.
+            return false;
         }
     }
 
-    private static void addResolvedActivityPackage(
+    private static boolean addResolvedActivityPackage(
             PackageManager packageManager,
             Intent intent,
             Set<String> packages
@@ -159,8 +171,10 @@ final class CriticalApps {
             if (resolved != null && resolved.activityInfo != null) {
                 addPackage(packages, resolved.activityInfo.packageName);
             }
+            return true;
         } catch (RuntimeException ignored) {
             // Known package names still protect the platform Settings app.
+            return false;
         }
     }
 

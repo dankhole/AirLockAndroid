@@ -1,6 +1,6 @@
 # Monitoring Reliability
 
-Last updated: August 31, 2026
+Last updated: September 13, 2026
 
 ## Reliability Contract
 
@@ -35,15 +35,19 @@ recorded. Do not turn an emulator pass into a device-reliability claim.
 | App update | `MY_PACKAGE_REPLACED` | Start duty if it was requested |
 | Usage Access revoked or temporarily unavailable | AppOps check and query result | Keep service/notification alive; retry every 30 seconds |
 | Overlay access revoked | Settings check | Hide blocker, show required state, retry every 30 seconds |
-| Delayed or replayed UsageEvents | Ten-second overlapping query window plus timestamped foreground/background evidence | Clear a backgrounded candidate immediately, accept genuinely delayed lifecycle evidence in chronological order, and prevent stale overlap resumes from resurrecting an app after newer foreground or matching-background evidence |
-| Unknown foreground after service creation | Five-minute lifecycle lookback plus 30-second aggregate sanity check | Seed only a never-observed initial candidate; aggregate stats never override a known launcher, System UI, app, or explicit background transition |
+| Delayed or replayed UsageEvents | Ten-second overlap from the previous query end, widened across scheduler gaps to a five-minute maximum | Reduce delayed evidence chronologically; reject resumes at/before a session boundary or matching background, and treat conflicting same-millisecond resumes as ambiguous |
+| Slow successful foreground query | Result age exceeds two seconds | Retain its reduced history to keep the query cursor consistent, but remove the overlay, skip usage increments, and report recovery until a fresh query completes |
+| Reboot/runtime restart or shutdown | Current boot time, `DEVICE_STARTUP`/`DEVICE_SHUTDOWN`, and shutdown broadcast | Never replay an open activity from the previous boot; shutdown removes the window while preserving requested Duty |
+| Overlay loses focus | Identity-guarded focus callback after initial attachment | Remove the window and require later activity evidence; retain form state |
+| Access or selection changes during a query | Recheck current Duty, required access, and selected apps at completion and immediately before attaching/retaining a window | Discard authorization from the request-time snapshot before counting or attaching |
+| Unknown foreground after service creation | Five-minute lifecycle lookback bounded by the current boot/session | Wait for unambiguous activity evidence and report recovery; aggregate last-used timestamps never authorize a blocker |
 | Stuck foreground query | Ten-second main-thread watchdog | Use at most two process-wide workers with no queue; reject additional work and retry every 30 seconds until a worker returns or the process restarts |
 | Unexpected foreground-loop exception | Poll and completion boundaries | Remove stale UI, mark monitoring unhealthy, abandon the query identity, and schedule a bounded recovery poll |
 | Overlay attach or post-attach initialization failure | Window attachment check and runtime exception boundary | Retain authority over any attached view, detach it immediately, report unhealthy monitoring, and retry attachment with exponential backoff |
-| Overlay detach failure | Attached-view check around `removeViewImmediate` | Retain the authoritative view reference and retry removal from 200 ms to 30 seconds; never let keyboard cleanup or persistence failure skip removal |
-| Navigation during a grant celebration | Continued lifecycle polling and four-second watchdog | Keep the ordinary celebration only over the same confirmed foreground app; detach it on navigation, unknown foreground, or deadline |
+| Overlay detach failure or deferred removal | Attached-view check after every `removeViewImmediate` outcome, including success | Make the retiring root invisible, retain the authoritative view reference and retry removal from 200 ms to 30 seconds; never let keyboard cleanup or persistence failure skip removal |
+| Navigation during a grant celebration | Continued lifecycle polling, focus-loss removal, and independent four-second watchdog | Keep the ordinary celebration only over the same confirmed foreground app; detach it on navigation, unknown foreground, or deadline |
 | Explicit Leave App or successful SMS launch | Successful destination launch | Hide immediately and establish a foreground-exit boundary so delayed events from the old guarded-app session cannot reattach the blocker over Home or Messages |
-| Screen off or keyguard visible | Screen/user-present broadcasts plus state check | Flush usage, stop querying, resume immediately after unlock |
+| Screen off or keyguard visible | Broadcasts, lifecycle boundary events, and fresh screen/keyguard checks at query start and completion | Detach, flush usage, discard earlier session authority, and resume querying after unlock |
 | Android background mode is Restricted | `ActivityManager.isBackgroundRestricted()` | Show a required warning, continue best-effort checks while alive, and re-promote the service when Airlock is reopened after the restriction is removed |
 | Android 13+ Active apps Stop or force-stop | No callback; later visible through `ApplicationExitInfo` | User must reopen Airlock; requested duty starts again |
 
@@ -99,10 +103,14 @@ guarded-app resume cannot override a newer foreground event or its own later
 background event. Exact duplicates at the newest timestamp are skipped and
 recent background evidence is bounded to the overlap window. This explicit
 empty transition is different from having no startup information.
-`queryUsageStats()` is interval-aggregated and may seed only the latter during a
-bounded sanity check, after a wider lifecycle lookback. It must never replace a
-known launcher, Recents, app, or empty transition state, because doing so can
-attach the blocker after the guarded app has left the foreground.
+`queryUsageStats()` is interval-aggregated and never supplies foreground
+authority, even at startup. A last-used timestamp does not prove an app is still
+in front. A bounded lifecycle lookback may recover current-boot activity
+evidence; otherwise monitoring reports that it is waiting to identify the app.
+Screen, keyguard, shutdown, startup, explicit exits, and clock changes establish
+inclusive timestamp boundaries that an overlapping old resume cannot cross.
+Conflicting events in the same millisecond leave the candidate empty until a
+strictly later unambiguous resume.
 
 The five-minute sticky-blocker record retains form state and identifies which
 blocked package may need rebuilding after a temporary interruption. It never
@@ -122,9 +130,41 @@ that it is already absent); otherwise it retains the reference, reports degraded
 health, and retries removal with bounded backoff. The same rule applies when
 `addView` succeeds but later styling or focus initialization fails. Ordinary
 unlock celebrations continue foreground polling and remain visible only while
-their guarded package is confirmed foreground, with a four-second watchdog for
-a lost animation callback. Emergency-pass celebrations use the same watchdog
-but preserve the no-UsageStats-query rule while the day pass is active.
+their guarded package is confirmed foreground. An independent four-second main
+handler deadline removes either celebration even while a Binder query is stuck.
+Delayed animation and keyboard callbacks validate attachment/current ownership
+and are canceled when their view leaves. Keyboard requests follow explicit
+input taps and never use the cross-app-sticky `SHOW_FORCED` flag. Emergency-pass celebrations preserve
+the no-UsageStats-query rule while the day pass is active.
+
+## Conservative Recovery And Remaining Device Limits
+
+Daily usage imports accept only individual Android daily buckets wholly inside
+the captured local day and query end, with plausible durations. Results keep
+their original day and are rejected after a midnight/timezone/clock mismatch.
+Android can expand queries to whole buckets that straddle local midnight, so
+those buckets are skipped instead of assigning yesterday's time to today.
+Local polling and existing batched totals continue; system reconciliation may
+recover only part of a day on devices with misaligned buckets. Existing saved
+totals from earlier builds are preserved, including any earlier overcount;
+there is no destructive automatic usage reset. Polling intervals are clipped
+at the first observed new-day boundary and at imported-through elapsed-time
+watermarks, so a reconciliation callback cannot count the same slice twice.
+
+Losing overlay focus removes the window before delayed lifecycle polling can
+carry it onto another app or system surface. Some system surfaces (for example
+a notification shade) may return focus without another activity resume; Airlock
+then reports recovery and waits for a real app-opening event. Likewise,
+conflicting same-millisecond events favor an empty candidate over guessing.
+Physical OEM testing must measure these conservative delays.
+
+Android 10+ multi-window can keep multiple activities resumed and transfer top
+focus without a resume/pause event. UsageEvents is not a general window-focus
+API, and the current single-candidate monitor cannot guarantee correct full-screen
+blocking in split-screen or picture-in-picture. Do not claim those modes are
+qualified; include them in physical-device acceptance. See Android's
+[multi-resume contract](https://developer.android.com/develop/ui/views/layout/support-multi-window-mode#multi-resume)
+and [usage interval contract](https://developer.android.com/reference/android/app/usage/UsageStatsManager#queryUsageStats(int,%20long,%20long)).
 
 ## Diagnostics
 
@@ -139,7 +179,7 @@ adb -e shell dumpsys deviceidle whitelist
 ```
 
 Debug builds log foreground transitions, recovery windows, query timeouts,
-overlay attachment failures, and aggregate candidate seeding under
+overlay attachment failures, and stale-query recovery under
 `AirlockMonitor`. They do not log access codes, phone numbers, or app usage
 totals. `NAVIGATION_ONLY=true scripts/android-smoke.sh --skip-build` uses a
 debug-only immediate trigger for the real sanity path; production polling

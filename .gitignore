@@ -4,6 +4,9 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+*service-account*.json
+gha-creds-*.json
+__pycache__/
 *.iml
 .idea/
 .DS_Store

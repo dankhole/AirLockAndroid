@@ -81,9 +81,13 @@ ORIGINAL_OVERRIDE_DENSITY="$(adb_e shell wm density | sed -n 's/.*Override densi
 ORIGINAL_USAGE_OP="default"
 ORIGINAL_OVERLAY_OP="default"
 ORIGINAL_NOTIFICATION_STATE="denied"
+ORIGINAL_NOTIFICATION_CHANNEL_STATE=""
+NOTIFICATION_CHANNEL_TOUCHED=false
 ORIGINAL_TARGET_NOTIFICATION_STATE="denied"
 TARGET_NOTIFICATION_MANAGED=false
 APP_INSTALLED=false
+DEVICE_PUT_TO_SLEEP=false
+EXPECTED_BLOCKER_ATTACHMENTS=0
 
 dump_ui() {
     local name="$1"
@@ -97,6 +101,9 @@ wait_for_id() {
     local id="$1"
     local timeout_seconds="${2:-15}"
     local attempt
+    if [[ "$id" == "blocker_root" ]]; then
+        EXPECTED_BLOCKER_ATTACHMENTS=$((EXPECTED_BLOCKER_ATTACHMENTS + 1))
+    fi
     for ((attempt = 0; attempt < timeout_seconds * 2; attempt++)); do
         if dump_ui "wait-$id" 2>/dev/null \
                 && grep -q "resource-id=\"$PACKAGE:id/$id\"" "$LATEST_XML"; then
@@ -133,6 +140,155 @@ wait_for_log() {
         sleep 0.2
     done
     fail "Timed out waiting for log '$expected' during $CURRENT_SCENARIO"
+}
+
+# UI automation cannot inspect a sleeping display, and a hidden window can be
+# absent from its hierarchy while still attached. Inspect WindowManager itself.
+blocker_window_present() {
+    local destination="$REPORT_DIR/$CURRENT_SCENARIO-windows.txt"
+    adb_e shell dumpsys window windows >"$destination" || return 2
+    grep -q 'WINDOW MANAGER WINDOWS' "$destination" || return 2
+    awk -v package="$PACKAGE" '
+        /^[[:space:]]*Window #[0-9]+ Window\{/ {
+            if (owned && overlay) found = 1
+            owned = index($0, package) > 0
+            overlay = 0
+        }
+        /ty=(APPLICATION_OVERLAY|2038)/ { overlay = 1 }
+        END { exit (found || (owned && overlay)) ? 0 : 1 }
+    ' "$destination"
+}
+
+wait_for_blocker_window_absent() {
+    local timeout_seconds="${1:-5}"
+    local attempt status
+    for ((attempt = 0; attempt < timeout_seconds * 4; attempt++)); do
+        if blocker_window_present; then
+            sleep 0.25
+        else
+            status=$?
+            [[ "$status" == "1" ]] && return 0
+            fail "Could not inspect WindowManager during $CURRENT_SCENARIO"
+            return 1
+        fi
+    done
+    fail "Blocker window remained attached during $CURRENT_SCENARIO"
+}
+
+assert_no_blocker_window_for() {
+    local seconds="${1:-3}"
+    local attempt status
+    for ((attempt = 0; attempt < seconds * 4; attempt++)); do
+        if blocker_window_present; then
+            fail "Blocker window reappeared during $CURRENT_SCENARIO"
+            return 1
+        else
+            status=$?
+            if [[ "$status" != "1" ]]; then
+                fail "Could not inspect WindowManager during $CURRENT_SCENARIO"
+                return 1
+            fi
+        fi
+        sleep 0.25
+    done
+}
+
+wait_for_monitoring_service() {
+    local expected="$1"
+    local attempt present
+    local destination="$REPORT_DIR/$CURRENT_SCENARIO-services.txt"
+    for ((attempt = 0; attempt < 20; attempt++)); do
+        adb_e shell dumpsys activity services "$PACKAGE" >"$destination"
+        present=false
+        if grep -Eq 'ServiceRecord\{[^}]*MonitoringService' "$destination"; then
+            present=true
+        fi
+        [[ "$present" == "$expected" ]] && return 0
+        sleep 0.25
+    done
+    fail "Monitoring service presence did not become $expected during $CURRENT_SCENARIO"
+}
+
+wait_for_display_awake() {
+    local expected="$1"
+    local attempt awake
+    local destination="$REPORT_DIR/$CURRENT_SCENARIO-power.txt"
+    for ((attempt = 0; attempt < 20; attempt++)); do
+        adb_e shell dumpsys power >"$destination"
+        awake=false
+        if grep -q 'mWakefulness=Awake' "$destination"; then
+            awake=true
+        elif ! grep -Eq 'mWakefulness=(Asleep|Dozing)' "$destination"; then
+            sleep 0.25
+            continue
+        fi
+        [[ "$awake" == "$expected" ]] && return 0
+        sleep 0.25
+    done
+    fail "Display awake state did not become $expected during $CURRENT_SCENARIO"
+}
+
+force_completed_foreground_poll() {
+    local token="$CURRENT_SCENARIO-$RANDOM-$RANDOM"
+    fixture force_foreground_sanity --es sanity_token "$token" >/dev/null
+    wait_for_log "debug foreground sanity check completed token=$token" 10
+}
+
+start_monitoring_service_with_exemption() {
+    # Android grants boot/sticky starts its own background-start exemption.
+    # The debug broadcast has no such exemption while Home or Settings is open;
+    # supply a 10-second test allowance without changing permanent battery policy.
+    adb_e shell cmd deviceidle tempwhitelist -d 10000 "$PACKAGE" >/dev/null
+    fixture start_monitoring_service >/dev/null
+}
+
+notification_channel_switch_attribute() {
+    local attribute="$1"
+    xmllint --xpath \
+        "string((//node[@checkable='true' and @resource-id='android:id/switch_widget'])[1]/@$attribute)" \
+        "$LATEST_XML" 2>/dev/null
+}
+
+set_notification_channel_enabled() {
+    local expected="$1"
+    local attempt bounds coordinates left top right bottom
+    local actual=""
+    adb_e shell am start -W -a android.settings.CHANNEL_NOTIFICATION_SETTINGS \
+        --es android.provider.extra.APP_PACKAGE "$PACKAGE" \
+        --es android.provider.extra.CHANNEL_ID airlock_monitoring_silent_v2 >/dev/null
+    for ((attempt = 0; attempt < 10; attempt++)); do
+        if dump_ui "notification-channel" 2>/dev/null; then
+            actual="$(notification_channel_switch_attribute checked)"
+            [[ "$actual" == "true" || "$actual" == "false" ]] && break
+        fi
+        sleep 0.25
+    done
+    if [[ "$actual" != "true" && "$actual" != "false" ]]; then
+        fail "Could not read the notification channel switch during $CURRENT_SCENARIO"
+        return 1
+    fi
+    if [[ -z "$ORIGINAL_NOTIFICATION_CHANNEL_STATE" ]]; then
+        ORIGINAL_NOTIFICATION_CHANNEL_STATE="$actual"
+        cp "$LATEST_XML" "$REPORT_DIR/notification-channel-original.xml"
+    fi
+    [[ "$actual" == "$expected" ]] && return 0
+    bounds="$(notification_channel_switch_attribute bounds)"
+    if [[ ! "$bounds" =~ ^\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]$ ]]; then
+        fail "Could not locate the notification channel switch: $bounds"
+        return 1
+    fi
+    coordinates="$(printf '%s' "$bounds" | sed 's/\]\[/,/' | tr -d '[]')"
+    IFS=',' read -r left top right bottom <<< "$coordinates"
+    NOTIFICATION_CHANNEL_TOUCHED=true
+    adb_e shell input tap "$(((left + right) / 2))" "$(((top + bottom) / 2))"
+    for ((attempt = 0; attempt < 10; attempt++)); do
+        if dump_ui "notification-channel-$expected" 2>/dev/null \
+                && [[ "$(notification_channel_switch_attribute checked)" == "$expected" ]]; then
+            return 0
+        fi
+        sleep 0.25
+    done
+    fail "Notification channel switch did not become $expected during $CURRENT_SCENARIO"
 }
 
 view_attribute() {
@@ -258,6 +414,7 @@ run_blocker_navigation_scenario() {
     adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
     wait_for_id blocker_root 20
     assert_blocker_clear_of_navigation_bar
+    blocker_window_present || fail "Could not identify the attached blocker in WindowManager"
 
     adb_e shell input keyevent KEYCODE_APP_SWITCH
     wait_for_id_absent blocker_root 5
@@ -284,6 +441,82 @@ run_blocker_navigation_scenario() {
     adb_e shell input keyevent KEYCODE_BACK
     wait_for_id_absent blocker_root 10
     capture_current_artifacts "$CURRENT_SCENARIO-back"
+
+    CURRENT_SCENARIO="blocker-restart-home-$mode_name"
+    fixture stop_monitoring_service >/dev/null
+    wait_for_monitoring_service false
+    wait_for_blocker_window_absent
+    start_monitoring_service_with_exemption
+    wait_for_monitoring_service true
+    force_completed_foreground_poll
+    assert_no_blocker_window_for
+    adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    wait_for_id blocker_root 20
+
+    CURRENT_SCENARIO="blocker-restart-unguarded-$mode_name"
+    adb_e shell am start -W -a android.settings.SETTINGS >/dev/null
+    wait_for_blocker_window_absent
+    fixture stop_monitoring_service >/dev/null
+    wait_for_monitoring_service false
+    start_monitoring_service_with_exemption
+    wait_for_monitoring_service true
+    force_completed_foreground_poll
+    assert_no_blocker_window_for
+    adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    wait_for_id blocker_root 20
+
+    CURRENT_SCENARIO="blocker-screen-off-$mode_name"
+    DEVICE_PUT_TO_SLEEP=true
+    adb_e shell input keyevent KEYCODE_SLEEP
+    wait_for_display_awake false
+    wait_for_blocker_window_absent
+    assert_no_blocker_window_for 2
+    adb_e shell input keyevent KEYCODE_WAKEUP
+    wait_for_display_awake true
+    adb_e shell wm dismiss-keyguard
+    DEVICE_PUT_TO_SLEEP=false
+    adb_e shell input keyevent KEYCODE_HOME
+    wait_for_blocker_window_absent
+    force_completed_foreground_poll
+    assert_no_blocker_window_for
+
+    CURRENT_SCENARIO="blocker-wake-home-$mode_name"
+    DEVICE_PUT_TO_SLEEP=true
+    adb_e shell input keyevent KEYCODE_SLEEP
+    wait_for_display_awake false
+    wait_for_blocker_window_absent
+    adb_e shell input keyevent KEYCODE_WAKEUP
+    wait_for_display_awake true
+    adb_e shell wm dismiss-keyguard
+    DEVICE_PUT_TO_SLEEP=false
+    force_completed_foreground_poll
+    assert_no_blocker_window_for
+    adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    wait_for_id blocker_root 20
+
+    # A real channel toggle preserves the running service. Runtime-permission
+    # revocation can kill the process, and POST_NOTIFICATION app-ops do not
+    # control areNotificationsEnabled on newer Android versions.
+    CURRENT_SCENARIO="blocker-notifications-revoked-$mode_name"
+    set_notification_channel_enabled false
+    adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    wait_for_blocker_window_absent 6
+    wait_for_monitoring_service true
+    assert_no_blocker_window_for
+    adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null
+    wait_for_id permission_setup_scroll
+    tap_id permission_notifications_status
+    assert_id_contains permission_notifications_status "NOT DONE"
+    set_notification_channel_enabled true
+    adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null
+    wait_for_id main_scroll
+    force_completed_foreground_poll
+    assert_no_blocker_window_for
+    adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+    wait_for_id blocker_root 20
+    adb_e shell input keyevent KEYCODE_HOME
+    wait_for_blocker_window_absent
+    capture_artifacts "$CURRENT_SCENARIO-restored"
 }
 
 run_blocker_navigation_matrix() {
@@ -331,22 +564,40 @@ check_logs() {
             || grep -q "ANR in $PACKAGE" "$REPORT_DIR/final.log"; then
         fail "Crash or ANR detected; see $REPORT_DIR/final.log"
     fi
-    local overlay_changes
+    local overlay_changes transition_budget
     overlay_changes="$(grep -Ec "overlay added|hiding overlay" "$REPORT_DIR/final.log" || true)"
-    if ((overlay_changes > 20)); then
+    # Allow one rebuild per deliberately requested blocker session; scaling by
+    # exercised sessions keeps the loop check useful as the matrix grows.
+    transition_budget=$((EXPECTED_BLOCKER_ATTACHMENTS * 4 + 4))
+    if ((transition_budget < 20)); then
+        transition_budget=20
+    fi
+    if ((overlay_changes > transition_budget)); then
         fail "Possible overlay add/remove loop detected ($overlay_changes transitions)."
     fi
+    EXPECTED_BLOCKER_ATTACHMENTS=0
 }
 
 finish() {
     local exit_code="$1"
     set +e
+    if [[ "$DEVICE_PUT_TO_SLEEP" == true ]]; then
+        adb_e shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1
+        adb_e shell wm dismiss-keyguard >/dev/null 2>&1
+    fi
     if ((exit_code != 0)); then
         capture_artifacts "FAILED-$CURRENT_SCENARIO"
     fi
     if [[ "$APP_INSTALLED" == true ]]; then
         fixture reset >/dev/null 2>&1
         adb_e shell am force-stop "$PACKAGE" >/dev/null 2>&1
+        if [[ "$NOTIFICATION_CHANNEL_TOUCHED" == true \
+                && -n "$ORIGINAL_NOTIFICATION_CHANNEL_STATE" ]]; then
+            if ! set_notification_channel_enabled "$ORIGINAL_NOTIFICATION_CHANNEL_STATE"; then
+                printf 'Could not restore the original notification channel state.\n' >&2
+                exit_code=1
+            fi
+        fi
         adb_e shell appops set --uid "$PACKAGE" GET_USAGE_STATS "$ORIGINAL_USAGE_OP" >/dev/null 2>&1
         adb_e shell appops set --uid "$PACKAGE" SYSTEM_ALERT_WINDOW "$ORIGINAL_OVERLAY_OP" >/dev/null 2>&1
         if [[ "$ORIGINAL_NOTIFICATION_STATE" == "granted" ]]; then
@@ -537,6 +788,10 @@ tap_id blocker_unlock
 wait_for_id blocker_error
 assert_id_contains blocker_error REQUIRED
 type_id blocker_approval_code 123
+# The approval form is taller than the viewport while the IME is open.
+# Exercise the first-Back keyboard dismissal before navigating within the form.
+adb_e shell input keyevent KEYCODE_BACK
+wait_for_id blocker_approval_code
 tap_id blocker_flow_back
 tap_id blocker_new_request
 wait_for_id blocker_minutes

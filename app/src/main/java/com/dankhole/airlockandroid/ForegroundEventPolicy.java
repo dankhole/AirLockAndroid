@@ -49,6 +49,15 @@ final class ForegroundEventPolicy {
         return isForegroundEvent(type, sdkInt) || isBackgroundEvent(type, sdkInt);
     }
 
+    static boolean isForegroundBoundaryEvent(int type, int sdkInt) {
+        return (sdkInt >= Build.VERSION_CODES.P
+                && (type == UsageEvents.Event.SCREEN_NON_INTERACTIVE
+                || type == UsageEvents.Event.KEYGUARD_SHOWN))
+                || (sdkInt >= Build.VERSION_CODES.Q
+                && (type == UsageEvents.Event.DEVICE_SHUTDOWN
+                || type == UsageEvents.Event.DEVICE_STARTUP));
+    }
+
     static boolean shouldApplyLifecycleEvent(
             long eventTimestampMs,
             int type,
@@ -57,7 +66,8 @@ final class ForegroundEventPolicy {
             Set<String> processedKeysAtLatestTimestamp,
             int sdkInt
     ) {
-        if (packageName == null || !isLifecycleEvent(type, sdkInt)) {
+        if (!isForegroundBoundaryEvent(type, sdkInt)
+                && (packageName == null || !isLifecycleEvent(type, sdkInt))) {
             return false;
         }
         if (eventTimestampMs > latestProcessedTimestampMs) {
@@ -77,12 +87,13 @@ final class ForegroundEventPolicy {
     }
 
     static TimedCandidateState unknownTimedCandidate() {
+        return unknownTimedCandidate(Long.MIN_VALUE);
+    }
+
+    static TimedCandidateState unknownTimedCandidate(long boundaryTimestampMs) {
         return new TimedCandidateState(
-                null,
-                false,
-                Long.MIN_VALUE,
-                Long.MIN_VALUE,
-                new HashMap<>()
+                null, false, Long.MIN_VALUE, Long.MIN_VALUE,
+                null, boundaryTimestampMs, new HashMap<>()
         );
     }
 
@@ -92,11 +103,23 @@ final class ForegroundEventPolicy {
             long latestForegroundEventTimestampMs,
             Map<String, Long> latestBackgroundEventTimestamps
     ) {
+        return knownTimedCandidate(
+                packageName, candidateEventTimestampMs, latestForegroundEventTimestampMs,
+                packageName, Long.MIN_VALUE, latestBackgroundEventTimestamps
+        );
+    }
+
+    static TimedCandidateState knownTimedCandidate(
+            String packageName,
+            long candidateEventTimestampMs,
+            long latestForegroundEventTimestampMs,
+            String latestForegroundPackageName,
+            long latestBoundaryEventTimestampMs,
+            Map<String, Long> latestBackgroundEventTimestamps
+    ) {
         return new TimedCandidateState(
-                packageName,
-                true,
-                candidateEventTimestampMs,
-                latestForegroundEventTimestampMs,
+                packageName, true, candidateEventTimestampMs, latestForegroundEventTimestampMs,
+                latestForegroundPackageName, latestBoundaryEventTimestampMs,
                 latestBackgroundEventTimestamps
         );
     }
@@ -108,7 +131,11 @@ final class ForegroundEventPolicy {
             long eventTimestampMs,
             int sdkInt
     ) {
-        if (packageName == null || !isLifecycleEvent(type, sdkInt)) {
+        if (isForegroundBoundaryEvent(type, sdkInt)) {
+            return applyTimedBoundary(state, eventTimestampMs);
+        }
+        if (packageName == null || !isLifecycleEvent(type, sdkInt)
+                || eventTimestampMs <= state.latestBoundaryEventTimestampMs) {
             return state;
         }
 
@@ -121,11 +148,20 @@ final class ForegroundEventPolicy {
             if (eventTimestampMs < state.latestForegroundEventTimestampMs) {
                 return state;
             }
-            if (eventTimestampMs < latestPackageBackgroundMs) {
-                // The resume no longer names the current candidate, but it still
-                // superseded every earlier foreground event chronologically. If
-                // it also superseded the retained candidate, the later matching
-                // background proves that no foreground candidate remains.
+            if (eventTimestampMs == state.latestForegroundEventTimestampMs
+                    && !samePackage(packageName, state.latestForegroundPackageName)) {
+                // Millisecond timestamps cannot establish which of two resumed
+                // packages is current. Keep this ambiguity through overlap replay.
+                return new TimedCandidateState(
+                        null, true,
+                        Math.max(state.candidateEventTimestampMs, eventTimestampMs),
+                        eventTimestampMs, null, state.latestBoundaryEventTimestampMs,
+                        backgroundTimestamps
+                );
+            }
+            if (eventTimestampMs <= latestPackageBackgroundMs) {
+                // A matching background wins a timestamp collision: replaying an
+                // indistinguishable resume must never resurrect a departed app.
                 boolean supersededCandidate = !state.known
                         || eventTimestampMs >= state.candidateEventTimestampMs;
                 return new TimedCandidateState(
@@ -134,16 +170,13 @@ final class ForegroundEventPolicy {
                         supersededCandidate
                                 ? latestPackageBackgroundMs
                                 : state.candidateEventTimestampMs,
-                        Math.max(state.latestForegroundEventTimestampMs, eventTimestampMs),
+                        eventTimestampMs, packageName, state.latestBoundaryEventTimestampMs,
                         backgroundTimestamps
                 );
             }
             return new TimedCandidateState(
-                    packageName,
-                    true,
-                    eventTimestampMs,
-                    Math.max(state.latestForegroundEventTimestampMs, eventTimestampMs),
-                    backgroundTimestamps
+                    packageName, true, eventTimestampMs, eventTimestampMs,
+                    packageName, state.latestBoundaryEventTimestampMs, backgroundTimestamps
             );
         }
 
@@ -154,37 +187,30 @@ final class ForegroundEventPolicy {
         boolean clearsCandidate = !state.known
                 || (samePackage(state.packageName, packageName)
                 && eventTimestampMs >= state.candidateEventTimestampMs);
-        if (!clearsCandidate) {
-            return new TimedCandidateState(
-                    state.packageName,
-                    state.known,
-                    state.candidateEventTimestampMs,
-                    state.latestForegroundEventTimestampMs,
-                    backgroundTimestamps
-            );
-        }
         return new TimedCandidateState(
-                null,
-                true,
-                eventTimestampMs,
-                state.latestForegroundEventTimestampMs,
-                backgroundTimestamps
+                clearsCandidate ? null : state.packageName,
+                clearsCandidate || state.known,
+                clearsCandidate ? eventTimestampMs : state.candidateEventTimestampMs,
+                state.latestForegroundEventTimestampMs, state.latestForegroundPackageName,
+                state.latestBoundaryEventTimestampMs, backgroundTimestamps
         );
     }
 
-    static TimedCandidateState seedTimedCandidate(
+    static TimedCandidateState applyTimedBoundary(
             TimedCandidateState state,
-            String packageName
+            long eventTimestampMs
     ) {
-        if (state.known || packageName == null) {
+        if (eventTimestampMs <= state.latestBoundaryEventTimestampMs) {
             return state;
         }
+        boolean clearsCandidate = !state.known
+                || state.candidateEventTimestampMs <= eventTimestampMs;
         return new TimedCandidateState(
-                packageName,
+                clearsCandidate ? null : state.packageName,
                 true,
-                Long.MIN_VALUE,
-                state.latestForegroundEventTimestampMs,
-                state.latestBackgroundEventTimestamps
+                clearsCandidate ? eventTimestampMs : state.candidateEventTimestampMs,
+                state.latestForegroundEventTimestampMs, state.latestForegroundPackageName,
+                eventTimestampMs, state.latestBackgroundEventTimestamps
         );
     }
 
@@ -195,16 +221,18 @@ final class ForegroundEventPolicy {
         Map<String, Long> retained = new HashMap<>();
         for (Map.Entry<String, Long> entry
                 : state.latestBackgroundEventTimestamps.entrySet()) {
-            if (entry.getValue() >= oldestRetainedTimestampMs) {
+            if (entry.getValue() >= oldestRetainedTimestampMs
+                    || (samePackage(entry.getKey(), state.latestForegroundPackageName)
+                    && entry.getValue() >= state.latestForegroundEventTimestampMs)) {
+                // Retain the close of the newest resume even outside the query
+                // overlap, so widening a later query cannot resurrect that resume.
                 retained.put(entry.getKey(), entry.getValue());
             }
         }
         return new TimedCandidateState(
-                state.packageName,
-                state.known,
-                state.candidateEventTimestampMs,
-                state.latestForegroundEventTimestampMs,
-                retained
+                state.packageName, state.known, state.candidateEventTimestampMs,
+                state.latestForegroundEventTimestampMs, state.latestForegroundPackageName,
+                state.latestBoundaryEventTimestampMs, retained
         );
     }
 
@@ -217,6 +245,9 @@ final class ForegroundEventPolicy {
     ) {
         if (blockedPackage == null) {
             return false;
+        }
+        if (isForegroundBoundaryEvent(type, sdkInt)) {
+            return true;
         }
         if (blockedPackage.equals(packageName)) {
             return isLifecycleEvent(type, sdkInt);
@@ -261,20 +292,6 @@ final class ForegroundEventPolicy {
                 && elapsedRealtimeMs < celebrationDeadlineElapsedMs;
     }
 
-    static boolean shouldSeedFromUsageSummary(
-            CandidateState state,
-            boolean runSanityCheck
-    ) {
-        return runSanityCheck && !state.known;
-    }
-
-    static boolean shouldSeedFromUsageSummary(
-            TimedCandidateState state,
-            boolean runSanityCheck
-    ) {
-        return runSanityCheck && !state.known;
-    }
-
     static final class CandidateState {
         final String packageName;
         final boolean known;
@@ -290,6 +307,8 @@ final class ForegroundEventPolicy {
         final boolean known;
         final long candidateEventTimestampMs;
         final long latestForegroundEventTimestampMs;
+        final String latestForegroundPackageName;
+        final long latestBoundaryEventTimestampMs;
         final Map<String, Long> latestBackgroundEventTimestamps;
 
         private TimedCandidateState(
@@ -297,12 +316,16 @@ final class ForegroundEventPolicy {
                 boolean known,
                 long candidateEventTimestampMs,
                 long latestForegroundEventTimestampMs,
+                String latestForegroundPackageName,
+                long latestBoundaryEventTimestampMs,
                 Map<String, Long> latestBackgroundEventTimestamps
         ) {
             this.packageName = packageName;
             this.known = known;
             this.candidateEventTimestampMs = candidateEventTimestampMs;
             this.latestForegroundEventTimestampMs = latestForegroundEventTimestampMs;
+            this.latestForegroundPackageName = latestForegroundPackageName;
+            this.latestBoundaryEventTimestampMs = latestBoundaryEventTimestampMs;
             this.latestBackgroundEventTimestamps =
                     new HashMap<>(latestBackgroundEventTimestamps);
         }

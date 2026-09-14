@@ -1,6 +1,6 @@
 # Release Guide
 
-Last updated: August 25, 2026
+Last updated: September 13, 2026
 
 This guide covers the two supported ways to share Airlock builds:
 
@@ -37,7 +37,7 @@ Keep these roles separate after Play enrollment:
 | Key | Use |
 | --- | --- |
 | App-signing key | Google-managed key that signs APKs Play delivers. Record its public fingerprint from App integrity. |
-| Upload key | Local key that signs AABs uploaded to Play and the separately distributed release APK. Keep it offline and backed up. |
+| Upload key | Existing key that signs AABs and direct-distribution APKs. Keep the local copy backed up; CI uses a protected secret and a temporary runner file. |
 
 The local release certificate was accepted while registering the Play package.
 Do not change application ID `com.dankhole.airlock` or regenerate the local
@@ -174,6 +174,136 @@ Testers must open the opt-in link while signed into a Google account on the
 tester list. They can then install and update Airlock through Play Store.
 Internal releases are normally available within minutes, though first-time
 processing can take longer.
+
+### GitHub Actions Automation
+
+`.github/workflows/android.yml` prepares the same application for automated
+Internal testing. It never targets production or changes the listing, tester
+list, privacy declarations, or signing identity. The workflow is ready in source;
+credentials and the first successful hosted run are still required.
+
+| Trigger | Behavior |
+| --- | --- |
+| Pull request | Release-helper tests, visible-text audit, JVM tests, debug lint, debug/release builds, and test-target build/lint; no secrets or upload. |
+| Push/merge to `master` | All build checks, then the full emulator smoke suite including both navigation modes. Publishes only when repository variable `PLAY_AUTO_PUBLISH` is `true`. |
+| Actions > Android CI > Run workflow | Runs build and emulator checks. The `publish` checkbox defaults to false; selecting it publishes only when the selected branch is `master`. |
+
+Publishing depends on both build and smoke success. Missing secrets, a different
+upload certificate, unsigned/tampered bundles, invalid version codes, and failed
+copy audits stop publishing. An active master run finishes before another starts;
+GitHub may replace pending runs with newer pushes. This ships the newest queued
+changes rather than guaranteeing a separate release for every intermediate commit.
+
+The emulator job uses an API 36 Google APIs x86_64 Pixel 8 on Ubuntu, installs
+the separate `:smoke-target` debug APK, and runs:
+
+```sh
+TARGET_PACKAGE=com.dankhole.airlock.smoketarget TARGET_QUERY=Smoke \
+  RELEASE_VALIDATION=true scripts/android-smoke.sh --skip-build
+```
+
+The target has no permissions or runtime dependencies, has no release variant,
+and is never included in Airlock. This removes dependence on a preinstalled
+third-party app. Reports, screenshots, UI dumps, and logs are saved as Actions
+artifacts. Failed smoke checks must be investigated; they are not ignored or
+automatically retried into a green release signal. Physical Pixel/Samsung and
+multi-day checks remain required for release qualification and wider release;
+this workflow distributes Internal-testing candidates.
+
+#### One-Time Credentials And Activation
+
+1. Commit and push the workflow and supporting changes when ready. Until then,
+   none of this runs on GitHub. The credential-free jobs can run immediately
+   afterward, with publishing disabled.
+2. Enable the Google Play Android Developer API in a Google Cloud project and
+   create a dedicated service account. Invite its email in Play Console's
+   **Users and permissions**, scoped to `com.dankhole.airlock`. Grant app-view
+   access and **Release apps to testing tracks**. Production-release, financial,
+   account-admin, and tester-list management permissions are unnecessary for
+   this workflow. The app's first Play upload already exists; account and app
+   policy requirements must still be satisfied. See
+   [Google's API setup](https://developers.google.com/android-publisher/getting_started)
+   and [Play permission definitions](https://support.google.com/googleplay/android-developer/answer/9844686).
+3. Create the GitHub environment **play-internal** under repository
+   **Settings > Environments**, restricting deployment branches to `master`.
+   Leave required reviewers off for automatic Internal-testing releases.
+   Environment availability depends on the repository's visibility and GitHub
+   plan; see [GitHub's environment setup](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
+4. Add these **environment secrets**, keeping values out of source and logs:
+
+   | Secret | Value |
+   | --- | --- |
+   | `AIRLOCK_KEYSTORE_BASE64` | Base64 contents of the existing upload keystore; do not generate a new key. Line wrapping is accepted. |
+   | `AIRLOCK_KEYSTORE_PASSWORD` | Existing keystore password. |
+   | `AIRLOCK_KEY_ALIAS` | Existing upload-key alias. |
+   | `AIRLOCK_KEY_PASSWORD` | Existing key password. |
+   | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Complete service-account JSON key from Google Cloud. |
+
+   The public upload fingerprint is pinned in `scripts/ci-release.py` to the
+   certificate documented above. Signing material is decoded with private file
+   permissions under `RUNNER_TEMP`, checked before building, then deleted even
+   after failure. The signing job disables Gradle caching. No secret file is
+   uploaded as an artifact. Restrict changes to the workflow and scripts to
+   trusted contributors, since they execute in the signing job.
+5. Confirm the first computed CI version code exceeds every version code already
+   uploaded to Play. The default is `10000 + GITHUB_RUN_NUMBER`. If necessary,
+   set repository variable `PLAY_VERSION_CODE_BASE` to a higher integer before
+   the run. This must be a repository variable, not an environment variable,
+   because the credential-free build allocates it.
+6. Run **Android CI** manually on `master` with `publish` off, confirm both jobs
+   pass on GitHub, then start a new manual run with `publish` on. Verify the
+   resulting Internal release and install/update through a tester's Play Store.
+7. Set repository variable **PLAY_AUTO_PUBLISH=true** under **Settings > Secrets
+   and variables > Actions > Variables**. Every subsequent `master` push is now
+   eligible to publish after the checks. Set it to `false` to stop future
+   automatic uploads; this does not cancel an already-started publish job.
+
+All Actions are pinned to commit SHAs; Dependabot checks them monthly. The
+publishing adapter is [upload-google-play](https://github.com/r0adkll/upload-google-play),
+configured with `tracks: internal` and `status: completed`. If Google requires
+manual Console review or another account action, the failure remains visible;
+the workflow does not bypass it or silently downgrade to an unpublished draft.
+
+#### Versions, Release Notes, And Retries
+
+CI supplies `-PairlockVersionCode` through Gradle's environment-property support;
+the checked-in local default stays at 8. `versionName` remains the human-managed
+value in `app/build.gradle`, currently `0.1.7`. Update it for a named release.
+Play release names use `Airlock <version code>` so CI uploads are distinguishable.
+After CI starts publishing, any later manual upload must also exceed Play's
+highest code; the old local default cannot be uploaded as an update.
+
+Update `play-store/whatsnew/whatsnew-en-US` with each user-visible change. The
+audit checks visible string/plural/array values, listing text, and release notes
+for internal-only markers and the notes' 500-character limit. It does not OCR
+screenshots or inspect videos; continue the visual release review.
+
+GitHub reruns keep the same run number and therefore the same version code.
+Retrying a failed check before upload is fine. If a bundle was already uploaded
+or the commit outcome is uncertain, inspect Play first and start a **new manual
+workflow run** instead of uploading that version again. Do not rerun an old
+release to roll back; ship a new version from `master`. If the workflow is
+recreated or its version-code base changes, confirm the next code is still
+higher than Play's highest code. The upper bound is 2,100,000,000.
+
+The run summary records the source commit, version code, and bundle checksum;
+verified signed builds retain the AAB for 30 days before the Play upload begins.
+Nothing is copied into
+`releases/` or published as a GitHub Release by this workflow.
+
+Local tooling checks require only Python 3's standard library:
+
+```sh
+python3 -m unittest discover -s scripts/tests -v
+python3 scripts/ci-release.py audit
+GITHUB_RUN_NUMBER=1 python3 scripts/ci-release.py version
+```
+
+Local signing still reads ignored `keystore.properties`. CI instead supplies
+all four `AIRLOCK_KEYSTORE_FILE`, `AIRLOCK_KEYSTORE_PASSWORD`, `AIRLOCK_KEY_ALIAS`,
+and `AIRLOCK_KEY_PASSWORD` environment variables. Partial environment
+configuration fails instead of falling back to another key. The publishing
+build also requires `-PrequireReleaseSigning=true`.
 
 ## Before Wider Release
 

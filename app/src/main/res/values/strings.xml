@@ -396,6 +396,8 @@
     <string name="monitoring_issue_usage_unavailable">Android usage data is temporarily unavailable. The goose is retrying!</string>
     <string name="monitoring_requirement_usage">Usage Access is off. Open Airlock to restore goose duty!</string>
     <string name="monitoring_requirement_overlay">Display Over Other Apps is off. Open Airlock to restore blocking!</string>
+    <string name="monitoring_requirement_notifications">Notifications are off. Open Airlock to restore visible Goose Duty!</string>
+    <string name="monitoring_issue_foreground_unknown">Waiting to identify the current app. Blocking will resume when Android reports an app opening.</string>
     <string name="monitoring_requirement_keyholder">The Keyholder number is missing. Open Airlock to finish setup!</string>
     <string name="monitoring_requirement_pin">The master PIN is missing. Open Airlock to finish setup!</string>
     <string name="monitoring_requirement_pin_update">The Master PIN must be updated to 4 digits other than 0000. Open Airlock to restore Goose Duty!</string>

@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: August 24, 2026
+Last updated: September 13, 2026
 
 ## Runtime Flow
 
@@ -41,7 +41,7 @@ Overlay
 | Dashboard and local settings | `MainActivity`, `MasterPinPrompt`, `UsageSummaryRenderer` |
 | App discovery and limit wizard | `AppCatalogLoader`, `AppPickerAdapter`, `AppSelectionActivity`, `EditAuthorization` |
 | Monitoring lifecycle and recovery | `MonitoringService`, `MonitoringHealth`, `BootReceiver` |
-| Foreground-event decisions and bounded work | `ForegroundEventPolicy`, `BoundedTaskExecutor` |
+| Foreground-event decisions and bounded work | `ForegroundEventPolicy`, `ForegroundPollPolicy`, `BoundedTaskExecutor` |
 | Usage accounting | `UsageLedger`, `UsageTracker`, `Preferences` |
 | Blocking form and unlock UX | `BlockerOverlayController`, `ApprovalCodePolicy`, `GooseCelebrationView` |
 | Safety exclusions | `CriticalApps`, `Preferences`, `MonitoringService` |
@@ -83,8 +83,8 @@ technically keep a foreground service running without the Android 13 runtime
 notification permission. This prevents Airlock from presenting invisible
 background monitoring as a fully configured experience. If notification access
 is revoked while Duty is already running, the dashboard returns to the gate but
-the service remains best-effort active; notification visibility does not
-silently clear the saved Duty intent.
+the service remains alive to report/retry recovery and removes its blocker.
+Notification visibility does not silently clear the saved Duty intent.
 
 ### `AppSelectionActivity`
 
@@ -145,7 +145,9 @@ home apps, phone/dial handlers, messaging handlers, camera handlers, Settings,
 detected autofill services, and Android 14+ credential-provider services such
 as password managers. The picker refreshes this set after returning from
 another app, and the service refreshes it immediately before a new blocking
-session. `Preferences` also filters every read/write so a stale or manually
+session. An incomplete refresh preserves earlier critical discoveries instead
+of treating a failed lookup as proof that a handler is safe. `Preferences` also
+filters every read/write so a stale or manually
 modified selection cannot make these apps blockable. Narrow
 `<queries>` intent declarations provide only the package visibility needed for
 those safety checks; the app does not request `QUERY_ALL_PACKAGES`.
@@ -166,17 +168,27 @@ A foreground service with a persistent notification. It is the runtime core of t
 
 Normal foreground detection uses a one-second cadence and a ten-second
 UsageEvents overlap so delayed events are not permanently skipped. Android 15+
-queries filter to lifecycle event types. A newly observed launcher or system
+queries include activity lifecycle and screen/keyguard/boot boundary events. A newly observed launcher or system
 surface starts a bounded gesture-recovery window that polls at 200 ms for up to
 three seconds. Recovery for an already-blocked app can continue at 500 ms
 through 15 seconds before returning to normal cadence. Poll starts stay on that
 cadence instead of adding Binder query duration after every interval. A
 `PAUSED` or `STOPPED` event for the current candidate immediately creates a
 known transition state and removes its overlay; only a later foreground event
-can name the next candidate. A low-frequency UsageStats sanity check runs every
-30 seconds but may seed only the service's initial, never-observed state. It
-cannot replace a lifecycle candidate or an explicit transition state,
-especially around launcher, Recents, or System UI.
+can name the next candidate. A bounded lifecycle lookback can recover missing
+startup evidence within the current boot/session. Aggregate last-used timestamps
+never authorize a blocker. Conflicting same-millisecond evidence stays empty,
+and explicit/global exit boundaries prevent overlap replay from resurrecting
+an old session. Successful slow queries still advance reduced history, but
+results older than two seconds cannot authorize a window. Current Duty, access,
+selection, device state, and evidence age are checked again after constructing
+the blocker, immediately before attachment.
+
+Overlay focus loss removes the old window and retains the actual focus-loss
+time as the boundary for recognizing a later return. Detachment retains view
+ownership through failures; retiring views are made invisible while removal
+retries. Celebration deadlines are independent of query completion and stale
+animation/keyboard callbacks cannot act on detached or replaced views.
 
 UsageStats work pauses while the screen is off or the keyguard is showing and
 resumes immediately on screen-on/unlock. Foreground queries have a ten-second
@@ -186,6 +198,12 @@ occupied, new work is rejected and retries back off to 30 seconds. Hung calls
 therefore cannot create an unbounded thread or queued-work leak. Neither
 UsageStats query path runs on the main thread. Battery impact still needs
 physical-device testing.
+
+Usage reconciliation captures one local-day/time snapshot and imports only
+plausible daily buckets wholly within that day. Unassignable straddling buckets
+are skipped. The ledger clips polling intervals at a detected day change and at
+per-app imported-through timestamps, preventing duplicate time around a
+reconciliation callback. Conservative recovery limits are in `RELIABILITY.md`.
 
 During an emergency day pass, the service keeps the enabled state and foreground notification but skips foreground and full-day UsageStats queries. It checks the pause deadline once per minute, survives reboot through `BootReceiver`, and resumes normal validation and polling automatically.
 
