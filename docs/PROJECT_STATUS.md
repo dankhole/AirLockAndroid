@@ -19,27 +19,27 @@ last reviewed repository state; it is not permission to discard newer work.
 | --- | --- |
 | Play application ID | `com.dankhole.airlock` |
 | Java namespace | `com.dankhole.airlockandroid` |
-| Version | Candidate `versionCode 8`, `versionName 0.1.7`; version 1 is on Internal testing |
+| Version | Internal testing: `versionCode 10006`, `versionName 0.1.7`, published by CI on September 14 |
 | SDK | min 26, compile/target 36 |
 | Runtime stack | Platform Java views; no AndroidX, Compose, Kotlin, or third-party runtime dependency |
 | Release certificate SHA-256 | `0A:AB:51:C0:4B:D6:A5:13:EC:67:52:59:15:B7:8A:30:AA:78:E6:E9:55:E3:C5:B3:A8:58:FB:99:80:33:9E:7B` |
 | Developer verification | New Play package accepted with the existing release certificate; old sideload package remains a separate registration |
 | Play App Signing | Enabled; Google Play signs delivered releases |
 
-The uploaded artifact is `releases/Airlock-0.1.0-internal-1.aab`; its checksum
+The initial uploaded artifact was `releases/Airlock-0.1.0-internal-1.aab`; its checksum
 is recorded in [`PLAY_CONSOLE_SUBMISSION.md`](PLAY_CONSOLE_SUBMISSION.md). Play
-reports release `1 (0.1.0)` as available to internal testers. A tester has seen
+previously reported release `1 (0.1.0)` as available to internal testers. A tester has seen
 a generic Play Store installation error, so delivery on a physical tester
 device is not yet confirmed.
 
-The current replacement candidate is
+The previous local replacement candidate was
 `releases/Airlock-0.1.7-internal-8.aab` (SHA-256
 `a9e78424b40ea236bdaad71e4dac8b77949d7441cf14160eb9139dfeb21d12a9`).
 It includes the overlay lifecycle and navigation hardening, documented PIN
 calculation, hidden per-digit override, independent one-hour request expiry,
 and decision-first blocker UI. It byte-matches the signed Gradle output and
-remains local pending upload. The version-7 artifact is obsolete and must not
-be uploaded.
+is superseded by CI release 10006. The version-7 and version-8 artifacts must
+not be uploaded as updates.
 
 The September 13 unexpected-blocker fixes are source changes described in
 [`BLOCKER_INVESTIGATION.md`](BLOCKER_INVESTIGATION.md). The existing version-8
@@ -67,12 +67,16 @@ remains unset. The first manual publishing test, version code `10006`, passed
 all build/smoke checks, upload-certificate verification, signed release build,
 and bundle verification. The signed bundle is saved in its Actions artifacts:
 <https://github.com/dankhole/AirLockAndroid/actions/runs/34875154023>.
-Google Play rejected creation of the release edit with “The caller does not
-have permission,” before bundle upload. Verify Play Console app access and
-**Release apps to testing tracks** for
-`airlock-ci@airlock-508603.iam.gserviceaccount.com`; Google Cloud IAM roles alone
-do not grant Play Console access. No new build was uploaded to Play. The upload
-path, physical-device install/update, and multi-day qualification remain unverified.
+The initial attempt was denied before upload because the service account lacked
+Play Console access. After the owner invited
+`airlock-ci@airlock-508603.iam.gserviceaccount.com`, rerunning only the failed
+publishing job succeeded: one bundle uploaded and the Internal-track edit
+committed at 18:01 UTC on September 14. The published source is `6acc0b4`,
+release name `Airlock 10006`, status `completed`. The signed bundle remains in
+the run's `play-bundle-10006` artifact. Tester Play Store install/update and
+multi-day physical-device qualification remain unverified; automatic publishing
+on future pushes remains disabled until `PLAY_AUTO_PUBLISH=true` is set.
+
 
 The September 13 unexpected-blocker investigation passed all 99 JVM tests,
 debug assembly, and debug lint (one existing Gradle-wrapper update warning;
