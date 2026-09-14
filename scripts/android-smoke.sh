@@ -1061,6 +1061,10 @@ adb_e shell monkey -p "$TARGET_PACKAGE" -c android.intent.category.LAUNCHER 1 >/
 wait_for_id blocker_root 20
 tap_id blocker_emergency_option
 type_id blocker_emergency_code "$emergency_code"
+# The keyboard covers the submit button's center on the API 36 Pixel 2.
+# Its node still has bounds in the dump, so dismiss the IME before locating it.
+adb_e shell input keyevent KEYCODE_BACK
+assert_id_contains blocker_emergency_code "$emergency_code"
 tap_id blocker_emergency_submit
 wait_for_id blocker_celebration 10
 adb_e shell am start -W -n "$PACKAGE/$COMPONENT_NAMESPACE.MainActivity" >/dev/null

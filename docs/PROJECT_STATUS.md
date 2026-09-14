@@ -77,6 +77,14 @@ unchanged loss behavior. All 123 JVM tests, debug assembly/lint, release assembl
 and release bundle generation passed locally after this correction. The CI
 emulator gate must pass again before publishing.
 
+Run `34906537749` passed all 123 JVM tests and both navigation modes, including
+the delayed-result, stalled-query, never-focused-window, and activity-handoff
+regressions. The broad flow stopped at emergency submission: the API 36 Pixel 2
+keyboard covered the button's center even though its node remained in the UI
+dump, so the harness never submitted the entered code. The harness now dismisses
+the keyboard and verifies the retained code before locating the submit button.
+The celebration assertions remain required, and no bundle was uploaded.
+
 The expanded gesture/three-button navigation matrix passed on the Android 17
 Pixel 8 emulator in `app/build/reports/android-smoke/20260914-182241`, including
 delayed-result Home navigation, independent removal during an eight-second
@@ -386,10 +394,9 @@ copy. Removing the fallback remains an explicit later decision.
 
 ## Known Release Gaps
 
-- GitHub Actions build, smoke, and opt-in Internal publishing are prepared in
-  `.github/workflows/android.yml`; all five GitHub environment secret names are
-  configured, but a successful hosted smoke run and live publishing validation
-  remain outstanding. Activation and signing-secret setup are in
+- GitHub Actions build, smoke, and manual Internal publishing have passed in
+  hosted CI. Automatic publishing on pushes remains disabled; releases use an
+  explicit workflow dispatch. Activation and signing-secret setup are in
   [`RELEASE.md`](RELEASE.md#github-actions-automation).
 - The broad emulator smoke runner has intermittently shown an Android 17
   rotation/UI-dump race, although the consolidated candidate run passed it.
