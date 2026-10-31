@@ -26,12 +26,14 @@ and existing plus new settings/consent emulator smoke passed. Exact scope and
 remaining evidence gaps are recorded in `CONTENT_FILTERING.md`.
 This source change is not a published release. No existing release version or
 prior Play approval establishes readiness for the new Accessibility API use.
-The owner confirmed completion of the new Accessibility declaration/disclosure
+The owner reported completion of the new Accessibility declaration/disclosure
 requirements and required physical-device content-filter checks before authorizing
-the next Internal-testing release. This is owner-reported, not independently
-verified device/Console evidence. Broader Pixel/Samsung multi-day reliability and
-battery qualification remain outstanding. Version 0.1.9 is prepared for the next
-CI-allocated version code; publication is not complete until verified below.
+the next Internal-testing release. Device checks remain owner-reported rather
+than independently verified. The subsequent Play API response contradicts the
+reported declaration readiness: **the Accessibility declaration must still be
+updated**. Version 0.1.9 / code 10015 was uploaded but its release was rejected;
+no new Internal rollout is confirmed. Broader Pixel/Samsung multi-day reliability
+and battery qualification remain outstanding.
 
 ## Release Identity
 
@@ -67,6 +69,28 @@ The September 13 and 14 unexpected-blocker fixes described in
 not be used to distribute the updated source.
 
 ## Last Verified Evidence
+
+### October 31: 0.1.9 publication blocked
+
+The content-filter changes were squash-merged onto `master` as
+`bbbdbd6b0060e2384155ba09d796d43f867a8a57` and pushed. Release run
+<https://github.com/dankhole/AirLockAndroid/actions/runs/41220985920> allocated
+version code **10015** for version **0.1.9**. Hosted tests/lint, debug/release
+builds, the full API 36 emulator smoke suite including both navigation modes,
+and existing-upload-key/bundle verification passed. The signed AAB is retained
+in the run's `play-bundle-10015` artifact. CI stopped its emulator and ADB and
+removed its temporary upload key; local task processes also exited.
+
+The Play action logged `Successfully uploaded 1 artifacts`, then failed with
+**`Your accessibility permission declaration needs to be updated.`** No committed
+Internal release or tester availability is confirmed. Update the Accessibility
+declaration/disclosure requirements in Play Console before attempting another
+release. Because this bundle was uploaded, do **not** rerun the old publishing
+job with code 10015; inspect Play state and start a new manual workflow with a
+fresh code after resolving the declaration. Automatic publishing remains unset.
+The redundant non-publishing push run was canceled in favor of this release run.
+
+### Previously published Internal release
 
 Release `10012` (`0.1.8`) was published to Google Play Internal testing from
 commit `49ad229e12d1e875ce7de2c6b6bf38958faa26be` on September 14:
@@ -427,11 +451,12 @@ copy. Removing the fallback remains an explicit later decision.
 
 ## Known Release Gaps
 
-- The owner confirmed the required content-filter device checks and Accessibility
-  declaration/disclosure requirements before authorizing the 0.1.9 Internal release;
-  supporting evidence has not been independently inspected. Source-backed rules
-  are not universal short-video coverage; Facebook is best-effort and
-  safety-critical handlers remain excluded.
+- The 0.1.9 Internal release is blocked by Play's explicit requirement to update
+  the Accessibility declaration, despite prior owner-reported readiness. The AAB
+  upload succeeded but no completed rollout is confirmed. Required content-filter
+  device checks remain owner-reported, with supporting evidence not independently
+  inspected. Source-backed rules are not universal short-video coverage;
+  Facebook is best-effort and safety-critical handlers remain excluded.
 
 - GitHub Actions build, smoke, and manual Internal publishing have passed in
   hosted CI. Automatic publishing on pushes remains disabled; releases use an
