@@ -1,6 +1,6 @@
 # UI And Accessibility Design
 
-Last reviewed: August 23, 2026
+Last reviewed: October 31, 2026
 
 This document is the source of truth for Airlock's visual hierarchy,
 interaction styling, accessibility baseline, and system-area behavior. Product
@@ -43,8 +43,9 @@ Keep this top-to-bottom order:
 5. Keyholder number.
 6. Master PIN.
 7. Guarded apps and limits.
-8. Emergency day pass.
-9. Android access review, battery warning, and privacy link.
+8. Content-filter summary and master-PIN-protected submenu.
+9. Emergency day pass.
+10. Android access review, battery warning, and privacy link.
 
 Settings with valid saved values should collapse to status summaries. Do not
 turn every section into a permanently expanded form. Starting or stopping Duty
@@ -61,6 +62,19 @@ and weakening active configuration must keep the current master-PIN gates.
 - Search text, selection, wizard step, and typed minutes survive configuration
   recreation. Active-Duty edit authorization remains process-local and expires
   after the documented background grace period.
+
+### Content Filters
+
+- The submenu is always master-PIN protected, including when Duty is off.
+- Show only a summary outside it. Inside, use independent supported-surface
+  choices, clear unavailable/critical-app states and current service status.
+- Separate prominent Accessibility disclosure and affirmative consent from PIN
+  verification. Declining must not enable access or filters. Android revocation
+  must always remain available and unobstructed.
+- Explain Duty/emergency behavior, ordinary-approval independence, package/version
+  limitations and best-effort Facebook coverage without promising universal filtering.
+- Use the same process-local, configuration-safe, background-expiring editor
+  authorization model as app limits, but never its Duty-off bypass.
 
 ### Master PIN Prompts
 

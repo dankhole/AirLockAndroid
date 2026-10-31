@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: September 14, 2026
+Last updated: October 31, 2026
 
 ## Current Stage
 
@@ -12,6 +12,26 @@ Physical-device release qualification and Play Console owner actions remain.
 
 Always inspect `git status` and preserve existing changes. This file records the
 last reviewed repository state; it is not permission to discard newer work.
+
+## Optional Content Filtering Work
+
+The owner approved an optional local-only Accessibility Service for native
+content filtering, with a separate master-PIN-protected settings submenu and
+prominent consent. Implementation scope, selector provenance, runtime safety and
+qualification are tracked in [`CONTENT_FILTERING.md`](CONTENT_FILTERING.md).
+Selective filtering requires Android 13+ for public cache bypass; ordinary app
+limits retain minSdk 26. Local implementation and parallel review are complete:
+211 JVM tests, 20 Python tests, debug assembly/lint, release manifest/Java checks,
+and existing plus new settings/consent emulator smoke passed. Exact scope and
+remaining evidence gaps are recorded in `CONTENT_FILTERING.md`.
+This source change is not a published release. No existing release version or
+prior Play approval establishes readiness for the new Accessibility API use.
+The owner confirmed completion of the new Accessibility declaration/disclosure
+requirements and required physical-device content-filter checks before authorizing
+the next Internal-testing release. This is owner-reported, not independently
+verified device/Console evidence. Broader Pixel/Samsung multi-day reliability and
+battery qualification remain outstanding. Version 0.1.9 is prepared for the next
+CI-allocated version code; publication is not complete until verified below.
 
 ## Release Identity
 
@@ -406,6 +426,12 @@ copy. Removing the fallback remains an explicit later decision.
    shared-PIN calculation.
 
 ## Known Release Gaps
+
+- The owner confirmed the required content-filter device checks and Accessibility
+  declaration/disclosure requirements before authorizing the 0.1.9 Internal release;
+  supporting evidence has not been independently inspected. Source-backed rules
+  are not universal short-video coverage; Facebook is best-effort and
+  safety-critical handlers remain excluded.
 
 - GitHub Actions build, smoke, and manual Internal publishing have passed in
   hosted CI. Automatic publishing on pushes remains disabled; releases use an

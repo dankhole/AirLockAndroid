@@ -1,6 +1,6 @@
 # Documentation Map
 
-Last reviewed: September 13, 2026
+Last reviewed: October 31, 2026
 
 Use this directory as the repository knowledge base. `AGENTS.md` is the short
 entry point; these files hold the deeper product and engineering context. Read
@@ -12,6 +12,7 @@ tests.
 | [`PROJECT_STATUS.md`](PROJECT_STATUS.md) | Current stage, shipped capabilities, open decisions, next sequence | Starting any new task or release work |
 | [`APP_PLAN.md`](APP_PLAN.md) | Product purpose, scope, non-goals, and roadmap | Product behavior or feature scope |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Runtime flow, component ownership, state model, and behavioral invariants | Java structure, persistence, authorization, or Android APIs |
+| [`CONTENT_FILTERING.md`](CONTENT_FILTERING.md) | Optional native content filters, consent, supported selectors, safety and implementation plan | Accessibility, Shorts/Reels/Stories filtering, or content settings |
 | [`DESIGN.md`](DESIGN.md) | Screen hierarchy, dark visual system, accessibility baseline, and system-area behavior | UI, styling, forms, responsive layout, insets, or Goose visuals |
 | [`RELIABILITY.md`](RELIABILITY.md) | Monitoring contract, recovery matrix, polling budgets, and platform limits | Service lifecycle, UsageStats, overlays, boot, battery, or health |
 | [`BLOCKER_INVESTIGATION.md`](BLOCKER_INVESTIGATION.md) | September 2026 unexpected-blocker findings, fixes, review scope, and limits | Investigating regressions or reviewing the blocker hardening |

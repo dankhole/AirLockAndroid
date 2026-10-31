@@ -22,8 +22,9 @@ final class CriticalApps {
     private static final String CREDENTIAL_PROVIDER_SERVICE_INTERFACE =
             "android.service.credentials.CredentialProviderService";
 
-    private static Set<String> cachedPackages = Collections.emptySet();
-    private static long cachedAtElapsedMs;
+    private static final FilterSnapshot UNAVAILABLE_FILTER_SNAPSHOT =
+            new FilterSnapshot(Collections.emptySet(), false, 0L);
+    private static final DiscoveryCache discoveryCache = new DiscoveryCache();
 
     private CriticalApps() {
     }
@@ -36,7 +37,50 @@ final class CriticalApps {
         return packageNames.removeAll(packages(context));
     }
 
-    static synchronized void refresh(Context context) {
+    /** No discovery/Binder work: incomplete, cold or expired snapshots are not authority. */
+    static boolean hasReliableSnapshot() {
+        FilterSnapshot snapshot = discoveryCache.snapshot().filterSnapshot;
+        return snapshot.isReliable(SystemClock.elapsedRealtime());
+    }
+
+    /** Content-only eligibility: no discovery, Binder calls or discovery-monitor wait. */
+    static boolean canFilterFromSnapshot(String packageName) {
+        FilterSnapshot snapshot = discoveryCache.snapshot().filterSnapshot;
+        return snapshot.canFilter(packageName, SystemClock.elapsedRealtime());
+    }
+
+    static final class FilterSnapshot {
+        private final Set<String> packages;
+        private final boolean complete;
+        private final long capturedAtMs;
+
+        FilterSnapshot(Set<String> packages, boolean complete, long capturedAtMs) {
+            this.packages = Collections.unmodifiableSet(new HashSet<>(packages));
+            this.complete = complete;
+            this.capturedAtMs = capturedAtMs;
+        }
+
+        boolean isReliable(long elapsedNowMs) {
+            return isSnapshotReliable(complete, capturedAtMs, elapsedNowMs);
+        }
+
+        boolean canFilter(String packageName, long elapsedNowMs) {
+            return packageName != null && !packageName.isEmpty() && isReliable(elapsedNowMs)
+                    && !packages.contains(packageName);
+        }
+    }
+
+    static boolean isSnapshotReliable(boolean complete, long capturedAtMs, long elapsedNowMs) {
+        return complete && capturedAtMs >= 0L && elapsedNowMs >= capturedAtMs
+                && elapsedNowMs - capturedAtMs < CACHE_DURATION_MS;
+    }
+
+    /**
+     * Only reservation/publication synchronize; no discovery holds a reader lock.
+     * An optional stuck Binder call therefore cannot stall legacy cached reads.
+     */
+    static void refresh(Context context) {
+        long generation = discoveryCache.beginRefresh();
         PackageManager packageManager = context.getPackageManager();
         Set<String> packages = new HashSet<>();
         packages.add(context.getPackageName());
@@ -98,23 +142,77 @@ final class CriticalApps {
             // The SENDTO query above still protects visible messaging handlers.
         }
 
-        if (!complete) {
-            // A temporary platform lookup failure must not make an app that was
-            // already known to be critical selectable or blockable. A complete
-            // later refresh can retire discoveries that no longer apply.
-            packages.addAll(cachedPackages);
-        }
-        cachedPackages = Collections.unmodifiableSet(packages);
-        cachedAtElapsedMs = SystemClock.elapsedRealtime();
+        discoveryCache.publish(generation, packages, complete, SystemClock.elapsedRealtime());
     }
 
-    private static synchronized Set<String> packages(Context context) {
+    /** Immutable publication shared by legacy readers and content-only readers. */
+    static final class PublishedSnapshot {
+        final Set<String> packages;
+        final long capturedAtMs;
+        final FilterSnapshot filterSnapshot;
+
+        private PublishedSnapshot(Set<String> packages, long capturedAtMs,
+                FilterSnapshot filterSnapshot) {
+            this.packages = packages;
+            this.capturedAtMs = capturedAtMs;
+            this.filterSnapshot = filterSnapshot;
+        }
+    }
+
+    /** Pure publication coordination; platform discovery always runs outside its monitor. */
+    static final class DiscoveryCache {
+        private long generation;
+        private volatile PublishedSnapshot published = new PublishedSnapshot(
+                Collections.emptySet(), 0L, UNAVAILABLE_FILTER_SNAPSHOT);
+
+        PublishedSnapshot snapshot() {
+            return published;
+        }
+
+        synchronized long beginRefresh() {
+            // Keep known critical packages available to legacy readers while making
+            // content eligibility fail closed, even if discovery never returns.
+            PublishedSnapshot previous = published;
+            published = new PublishedSnapshot(previous.packages, previous.capturedAtMs,
+                    UNAVAILABLE_FILTER_SNAPSHOT);
+            return ++generation;
+        }
+
+        synchronized boolean publish(long completedGeneration, Set<String> discovered,
+                boolean complete, long capturedAtMs) {
+            if (completedGeneration != generation) {
+                // A newer failed/in-flight lookup cannot erase a positive safety
+                // discovery from another caller. Keep the restriction for legacy
+                // app limits, but never let stale work grant content authority.
+                if (!published.filterSnapshot.complete
+                        && !published.packages.containsAll(discovered)) {
+                    Set<String> conservative = new HashSet<>(published.packages);
+                    conservative.addAll(discovered);
+                    published = new PublishedSnapshot(Collections.unmodifiableSet(conservative),
+                            published.capturedAtMs, UNAVAILABLE_FILTER_SNAPSHOT);
+                }
+                return false;
+            }
+            Set<String> packages = new HashSet<>(discovered);
+            if (!complete) {
+                // Failed lookups retain previously known critical handlers. Only
+                // a complete later discovery can retire previous discoveries.
+                packages.addAll(published.packages);
+            }
+            FilterSnapshot filters = new FilterSnapshot(packages, complete, capturedAtMs);
+            published = new PublishedSnapshot(filters.packages, capturedAtMs, filters);
+            return true;
+        }
+    }
+
+    private static Set<String> packages(Context context) {
+        PublishedSnapshot snapshot = discoveryCache.snapshot();
         long elapsedNow = SystemClock.elapsedRealtime();
-        if (cachedPackages.isEmpty()
-                || elapsedNow - cachedAtElapsedMs >= CACHE_DURATION_MS) {
+        if (snapshot.packages.isEmpty()
+                || elapsedNow - snapshot.capturedAtMs >= CACHE_DURATION_MS) {
             refresh(context.getApplicationContext());
         }
-        return cachedPackages;
+        return discoveryCache.snapshot().packages;
     }
 
     private static boolean addActivityPackages(

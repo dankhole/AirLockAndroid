@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: September 14, 2026
+Last updated: October 31, 2026
 
 ## Runtime Flow
 
@@ -44,7 +44,8 @@ Overlay
 | Foreground-event decisions and bounded work | `ForegroundEventPolicy`, `ForegroundPollPolicy`, `BoundedTaskExecutor` |
 | Usage accounting | `UsageLedger`, `UsageTracker`, `Preferences` |
 | Blocking form and unlock UX | `BlockerOverlayController`, `ApprovalCodePolicy`, `GooseCelebrationView` |
-| Safety exclusions | `CriticalApps`, `Preferences`, `MonitoringService` |
+| Safety exclusions | `CriticalApps`, `Preferences`, `MonitoringService`, content-filter settings/service |
+| Optional native content filters | `ContentFilterSettingsActivity`, `ContentFilterSettings`, `ContentFilterService`, `ContentFilterAccess`, `ContentDetectionPolicy` |
 | Styling, insets, keyboard, and mascot | `UiStyle`, `KeyboardHelper`, `GooseMascotView` |
 | Notification rendering | `MonitoringNotificationFactory`, `NotificationAccessPolicy` |
 | External privacy link | `AppLinks` |
@@ -101,6 +102,19 @@ configuration recreation but not process death. The editing session expires
 after more than 30 seconds in the background. Wizard step, selected packages,
 search text, and minute input survive activity recreation independently of the
 authorization decision.
+
+### Optional Content Filters
+
+The PIN-protected content submenu manages a fixed supported-surface catalog and
+versioned Accessibility consent. Its authorization is process-local even when
+Duty is off. `ContentFilterService` uses bounded, event-driven local inspection
+and Android Back to leave recognized feeds. It does not supply foreground
+authority to `MonitoringService`, grant app time, or attach another overlay.
+The existing first-run gate and app-limit prerequisites remain unchanged.
+Content-filter outages are reported separately without disabling ordinary limits.
+Emergency pauses apply to both; ordinary approvals apply only to app limits.
+See `CONTENT_FILTERING.md` for supported selectors, runtime boundaries, provenance,
+limitations and qualification gates. No inspected UI content is persisted.
 
 ### `BlockerOverlayController`
 
@@ -327,13 +341,11 @@ to explain the PIN calculation.
 
 `UsageStatsManager` gives enough information to infer which app is foregrounded. The manifest declares `PACKAGE_USAGE_STATS`, but users must enable the permission in Android Settings.
 
-Why not Accessibility Service for MVP:
-
-- It adds policy review and prominent disclosure requirements.
-- It increases trust risk.
-- It is not required for whole-app usage limits.
-
-Accessibility can become useful later for blocking specific in-app surfaces like Reels or Shorts.
+Accessibility is not used for whole-app usage limits or as a reliability
+shortcut. The owner-approved optional content filters use a separate, disclosed
+Accessibility Service only for selected native Shorts/Reels/Stories surfaces.
+This adds sensitive-access trust costs and Play declaration/review requirements;
+see `CONTENT_FILTERING.md` and `PLAY_CONSOLE_SUBMISSION.md`.
 
 ### Overlay Blocking
 

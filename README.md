@@ -18,12 +18,16 @@ This repo builds locally with the Gradle wrapper after Android SDK setup.
 - Approval code entry grants the minutes approved when the request code was generated and plays a goose animation.
 - Master-PIN-protected generation of three hashed, one-time emergency codes; each pauses all blocking for 24 hours.
 - Boot receiver restarts monitoring if monitoring was enabled.
+- Optional master-PIN-protected native content filters on Android 13+, with
+  separate Accessibility consent; see [supported surfaces and limitations](docs/CONTENT_FILTERING.md).
 
 ## Why This Shape
 
 The easiest responsible starting point is not a fork of a large blocker app. This scaffold keeps the first version small and focused while borrowing architectural lessons from TapBlok, Curbox, Open TimeLimit, and Mindful.
 
-The MVP avoids direct `SEND_SMS`, `READ_SMS`, broad `QUERY_ALL_PACKAGES`, and Accessibility Service. Those are useful later only if the product requirements justify the policy and trust cost.
+Airlock avoids direct SMS permissions and broad `QUERY_ALL_PACKAGES` access.
+Accessibility is optional and limited to explicitly consented, selected content
+filters; ordinary app-time monitoring continues to use Usage Access.
 
 ## Requirements
 
@@ -75,6 +79,8 @@ Start with [the documentation map](docs/README.md) and
 
 - `MainActivity`: access gate, dashboard settings, health, usage, and Duty controls.
 - `AppSelectionActivity`: two-step guarded-app and limit editor.
+- `ContentFilterSettingsActivity`: PIN-locked content choices and consent.
+- `ContentFilterService`: bounded, local Accessibility detection and Back navigation.
 - `MonitoringService`: foreground detection, usage accrual, recovery, and overlay lifecycle.
 - `BlockerOverlayController`: blocker form state, validation, and celebrations.
 - `Preferences`: local state, per-app limits, approval records, and emergency codes.
@@ -103,6 +109,7 @@ Start with [the documentation map](docs/README.md) and
 - [Current Project Status](docs/PROJECT_STATUS.md)
 - [App Plan](docs/APP_PLAN.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Content Filtering](docs/CONTENT_FILTERING.md)
 - [UI And Accessibility Design](docs/DESIGN.md)
 - [Monitoring Reliability](docs/RELIABILITY.md)
 - [Development Guide](docs/DEVELOPMENT.md)

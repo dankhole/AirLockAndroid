@@ -1,6 +1,6 @@
 # Monitoring Reliability
 
-Last updated: September 14, 2026
+Last updated: October 31, 2026
 
 ## Reliability Contract
 
@@ -91,6 +91,19 @@ recorded. Do not turn an emulator pass into a device-reliability claim.
   including across activity recreation.
 - No UsageStats query while the display is off, the keyguard is visible, or an
   emergency day pass is active.
+
+## Optional Content Filtering
+
+Accessibility is used only for explicitly selected native content surfaces, not
+as a fallback for UsageEvents or an app-monitoring reliability shortcut. The
+content service has independent bounded work and health, does not persist screen
+data, and cannot stop normal app limits when unavailable. Critical-app checks,
+current consent/configuration, Duty/emergency state and fresh focused-window
+identity must be revalidated before navigation. It never uses blind Back loops,
+Home fallback, wake locks, exact alarms or another foreground service.
+See `CONTENT_FILTERING.md` for the implementation-specific runtime budget and
+remaining device/version/locale qualification. Unknown UI is left alone, not
+reported as proof that all short-form content was blocked.
 
 ## Android Limits
 

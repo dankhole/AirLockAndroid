@@ -46,6 +46,23 @@ public class MainActivity extends Activity {
     private static final BoundedTaskExecutor USAGE_REFRESH_EXECUTOR =
             new BoundedTaskExecutor(1, 30_000L, MainActivity::newUsageRefreshThread);
 
+    private static final BoundedTaskExecutor CONTENT_STATUS_EXECUTOR =
+            new BoundedTaskExecutor(1, 10_000L, MainActivity::newUsageRefreshThread);
+    private final Runnable contentStatusRefresh = new Runnable() {
+        @Override
+        public void run() {
+            requestContentFilterStatus();
+            if (activityResumed && !activityDestroyed) {
+                statusText.postDelayed(this, 2_000L);
+            }
+        }
+    };
+    private final Runnable contentAccessListener = this::requestContentFilterStatus;
+    private AlertDialog contentFilterPinDialog;
+    private TextView contentFilterSummaryText;
+    private String contentFilterWarning = "";
+    private boolean contentStatusInFlight;
+    private int contentStatusGeneration;
     private TextView statusText;
     private TextView monitoringDiagnosticsText;
     private TextView permissionsSummaryText;
@@ -125,6 +142,15 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         activityResumed = true;
+        contentStatusGeneration++;
+        try {
+            contentFilterWarning = ContentFilterSettings.configuredFilters(this).isEmpty()
+                    ? "" : getString(R.string.content_filter_checking);
+        } catch (RuntimeException ignored) {
+            contentFilterWarning = getString(R.string.content_filter_load_error);
+        }
+        ContentFilterAccess.addListener(contentAccessListener);
+        statusText.post(contentStatusRefresh);
         ensureEnabledServiceRunning();
         refresh();
         requestUsageRefresh();
@@ -138,6 +164,13 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         activityResumed = false;
+        contentStatusGeneration++;
+        statusText.removeCallbacks(contentStatusRefresh);
+        ContentFilterAccess.removeListener(contentAccessListener);
+        if (contentFilterPinDialog != null) {
+            contentFilterPinDialog.dismiss();
+            contentFilterPinDialog = null;
+        }
         hideEmergencyCodes();
         super.onPause();
     }
@@ -251,6 +284,7 @@ public class MainActivity extends Activity {
         root.addView(buildAccountabilityCard(preferences), UiStyle.fullWidth(this, 14));
         root.addView(buildMasterPinCard(), UiStyle.fullWidth(this, 14));
         root.addView(buildAppLimitsCard(), UiStyle.fullWidth(this, 14));
+        root.addView(buildContentFilterCard(), UiStyle.fullWidth(this, 14));
         root.addView(buildEmergencyAccessCard(), UiStyle.fullWidth(this, 14));
         root.addView(buildPermissionsCard(), UiStyle.fullWidth(this, 4));
 
@@ -258,6 +292,94 @@ public class MainActivity extends Activity {
         phoneInput.addTextChangedListener(watcher);
 
         return scrollView;
+    }
+
+    private LinearLayout buildContentFilterCard() {
+        LinearLayout card = sectionCard(getString(R.string.content_filter_title),
+                getString(R.string.content_filter_dashboard_helper));
+        contentFilterSummaryText = UiStyle.statusText(this);
+        contentFilterSummaryText.setId(R.id.main_content_filter_status);
+        contentFilterSummaryText.setText(R.string.content_filter_checking);
+        UiStyle.setStatus(contentFilterSummaryText, UiStyle.STATUS_WARNING);
+        card.addView(contentFilterSummaryText, UiStyle.fullWidth(this, 10));
+        Button open = UiStyle.secondaryButton(this, getString(R.string.content_filter_manage));
+        open.setId(R.id.main_content_filter_settings);
+        open.setOnClickListener(view -> {
+            if (contentFilterPinDialog != null || !activityResumed) {
+                return;
+            }
+            int launchGeneration = contentStatusGeneration;
+            contentFilterPinDialog = ContentFilterSettingsActivity.showAuthorizationPrompt(this, () -> {
+                if (!activityResumed || activityDestroyed || launchGeneration != contentStatusGeneration) {
+                    return;
+                }
+                Intent intent = new Intent(this, ContentFilterSettingsActivity.class);
+                intent.putExtra(ContentFilterSettingsActivity.EXTRA_AUTHORIZATION_TOKEN,
+                        EditAuthorization.issue());
+                startActivity(intent);
+            }, () -> contentFilterPinDialog = null);
+        });
+        card.addView(open, UiStyle.buttonParams(this));
+        return card;
+    }
+
+    private void requestContentFilterStatus() {
+        if (!activityResumed || activityDestroyed || contentStatusInFlight) {
+            return;
+        }
+        contentStatusInFlight = true;
+        int generation = contentStatusGeneration;
+        Context context = getApplicationContext();
+        WeakReference<MainActivity> reference = new WeakReference<>(this);
+        boolean submitted = CONTENT_STATUS_EXECUTOR.tryExecute(() -> {
+            ContentFilterAccess.State state = ContentFilterAccess.State.UNAVAILABLE;
+            String summary;
+            String warning;
+            try {
+                state = ContentFilterAccess.state(context);
+                summary = ContentFilterAccess.statusText(context);
+                warning = ContentFilterAccess.warning(context);
+                for (ContentFilter filter : ContentFilterSettings.configuredFilters(context)) {
+                    if (!CriticalApps.canFilterFromSnapshot(filter.packageName())) {
+                        state = ContentFilterAccess.State.UNAVAILABLE;
+                        summary = context.getString(R.string.content_filter_unsafe_selection);
+                        warning = context.getString(CriticalApps.hasReliableSnapshot()
+                                ? R.string.content_filter_critical_unavailable
+                                : R.string.content_filter_safety_unavailable);
+                        break;
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                summary = context.getString(R.string.content_filter_load_error);
+                warning = summary;
+            }
+            MainActivity activity = reference.get();
+            if (activity == null) {
+                return;
+            }
+            ContentFilterAccess.State loadedState = state;
+            String loadedSummary = summary;
+            String loadedWarning = warning;
+            activity.runOnUiThread(() -> {
+                activity.contentStatusInFlight = false;
+                if (!activity.activityResumed || activity.activityDestroyed
+                        || generation != activity.contentStatusGeneration) {
+                    return;
+                }
+                activity.contentFilterSummaryText.setText(loadedSummary);
+                UiStyle.setStatus(activity.contentFilterSummaryText,
+                        loadedState == ContentFilterAccess.State.READY
+                                || loadedState == ContentFilterAccess.State.DISABLED
+                                ? UiStyle.STATUS_READY : UiStyle.STATUS_WARNING);
+                if (!activity.contentFilterWarning.equals(loadedWarning)) {
+                    activity.contentFilterWarning = loadedWarning;
+                    activity.refresh();
+                }
+            });
+        });
+        if (!submitted) {
+            contentStatusInFlight = false;
+        }
     }
 
     private LinearLayout buildMonitoringStatusCard() {
@@ -1017,6 +1139,10 @@ public class MainActivity extends Activity {
         } else if (enabled && !notifications) {
             stateTitle = getString(R.string.state_notifications_title);
             stateDetail = getString(R.string.state_notifications_detail);
+            stateStyle = UiStyle.STATUS_WARNING;
+        } else if (enabled && !contentFilterWarning.isEmpty()) {
+            stateTitle = getString(R.string.content_filter_health_warning_title);
+            stateDetail = getString(R.string.content_filter_health_warning_detail, contentFilterWarning);
             stateStyle = UiStyle.STATUS_WARNING;
         } else if (enabled) {
             stateTitle = getString(R.string.state_on_title);

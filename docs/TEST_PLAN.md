@@ -1,6 +1,6 @@
 # Test Plan
 
-Last updated: September 14, 2026
+Last updated: October 31, 2026
 
 ## Static Checks
 
@@ -101,6 +101,51 @@ Expected result: app limits persist.
 14. Open it again with the PIN, background it, kill the Airlock process without
     removing its task, and restore the task. Confirm the old launch Intent does
     not restore editing authorization.
+
+### Optional Content Filters
+
+Record Android/device and each target app version/language; source selectors or
+synthetic policy tests are not proof of actual app compatibility. Selective filters
+require Android 13/API 33+; older devices must report unsupported and keep ordinary
+app limits working without obtaining content roots.
+
+1. On clean install, verify all filters and consent are off. Enable the service
+   directly in Android without consent: no inspection or automatic Back may occur.
+2. Open the content submenu with Duty both off and on. Wrong/canceled PIN, direct
+   external activity launch, and a missing PIN must not expose editable settings.
+3. Authorize, rotate, and verify the session survives. Background for over 30
+   seconds (including Android permission settings), then return: require PIN
+   again. Background/kill the process and restore the task: no saved authorization.
+4. Decline the prominent disclosure: do not request Android access or start
+   filtering. Accept it, grant access, and select one filter at a time.
+5. Confirm the listed YouTube/Instagram/Facebook/Snapchat viewers trigger Back,
+   but Home, search, ordinary videos, inactive tabs, chats, compose screens and
+   unrelated apps do not. Test selected Facebook Reels labels in each supported
+   locale; do not count unsupported locale misses as qualified coverage.
+6. Open Reels from a direct message and document that the same selected viewer
+   may be blocked; there is no general DM exemption. Test Instagram Stories
+   independently of Reels. Unsupported TikTok/Explore/browser pages must not be
+   represented as filtered.
+7. Verify any app classified as a camera, messaging or other critical handler
+   is unavailable and cannot be enabled through stale stored selections.
+8. Navigate rapidly to Home/Recents/Settings/shade/keyboard while detection is
+   pending. No delayed Back may affect the destination. Repeat in both navigation
+   modes and with the ordinary app-limit overlay/approval form visible.
+9. Turn Duty off; activate an emergency pass; revoke required access; disable
+   Accessibility; withdraw consent; deselect the last filter; lock the device.
+   Each must prevent future inspections/actions as appropriate. Ordinary app-time
+   approval must not bypass a still-enabled content filter.
+10. Re-enable required access and verify truthful status/recovery. Loss of the
+    optional service must warn on dashboard/notification without stopping healthy
+    app-limit enforcement. Do not equate Android enabled-setting with connection.
+11. Flood scroll/content events and simulate delayed worker completion. Verify
+    bounded workers, one coalesced pending event, bounded traversal/action budgets,
+    no continuous idle scans, no navigation loop, and visible unavailable state
+    when work or action fails. No UI-content/preference writes per event.
+12. Repeat with largest fonts, landscape and TalkBack. Verify consent, unavailable
+    states and all controls remain readable/reachable. Test process/service
+    recreation, reboot, actual remote updates, multi-window and PiP on Pixel and
+    Samsung before claiming release readiness.
 
 ### Limit Enforcement
 

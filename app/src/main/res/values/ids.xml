@@ -56,6 +56,24 @@
     <item name="app_limit_save" type="id" />
     <item name="app_limit_back" type="id" />
 
+    <item name="main_content_filter_status" type="id" />
+    <item name="main_content_filter_settings" type="id" />
+    <item name="content_filter_scroll" type="id" />
+    <item name="content_filter_locked" type="id" />
+    <item name="content_filter_unlock" type="id" />
+    <item name="content_filter_status" type="id" />
+    <item name="content_filter_android_access" type="id" />
+    <item name="content_filter_warning" type="id" />
+    <item name="content_filter_consent" type="id" />
+    <item name="content_filter_open_settings" type="id" />
+    <item name="content_filter_turn_off" type="id" />
+    <item name="content_filter_back" type="id" />
+    <item name="content_filter_youtube_shorts" type="id" />
+    <item name="content_filter_instagram_reels" type="id" />
+    <item name="content_filter_facebook_reels" type="id" />
+    <item name="content_filter_snapchat_spotlight" type="id" />
+    <item name="content_filter_instagram_stories" type="id" />
+
     <item name="master_pin_dialog_input" type="id" />
 
     <item name="blocker_root" type="id" />

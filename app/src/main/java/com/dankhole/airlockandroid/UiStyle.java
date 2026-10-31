@@ -23,6 +23,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 
 final class UiStyle {
@@ -401,6 +402,25 @@ final class UiStyle {
         textView.setTextColor(COLOR_TEXT_INVERSE);
         textView.setTypeface(Typeface.DEFAULT_BOLD);
         return textView;
+    }
+
+    static Switch settingsSwitch(Context context, String text) {
+        Switch control = new Switch(context);
+        control.setText(text);
+        control.setTextSize(16);
+        control.setTextColor(buttonTextColors(COLOR_TEXT_PRIMARY, COLOR_TEXT_DISABLED));
+        control.setMinHeight(dp(context, 56));
+        control.setMinimumWidth(dp(context, 48));
+        control.setPadding(dp(context, 8), dp(context, 8), dp(context, 8), dp(context, 8));
+        control.setSwitchPadding(dp(context, 12));
+        control.setThumbTintList(new ColorStateList(
+                new int[][] {new int[] {-android.R.attr.state_enabled},
+                        new int[] {android.R.attr.state_checked}, new int[] {}},
+                new int[] {COLOR_TEXT_DISABLED, COLOR_PRIMARY_BRIGHT, COLOR_TEXT_MUTED}));
+        control.setTrackTintList(new ColorStateList(
+                new int[][] {new int[] {android.R.attr.state_checked}, new int[] {}},
+                new int[] {COLOR_PRIMARY_SOFT, COLOR_DISABLED_SURFACE}));
+        return control;
     }
 
     static Button primaryButton(Context context, String text) {

@@ -25,8 +25,12 @@ Before changing code:
   signing identity unless the user explicitly approves a migration. The Java
   namespace remains `com.dankhole.airlockandroid`; do not mechanically rename
   it just to match the Play application ID.
-- Do not add `SEND_SMS`, `READ_SMS`, `RECEIVE_SMS`, `QUERY_ALL_PACKAGES`, or an
-  Accessibility Service for the current product.
+- Do not add `SEND_SMS`, `READ_SMS`, `RECEIVE_SMS`, or `QUERY_ALL_PACKAGES`.
+  Accessibility is permitted only for the owner-approved optional content filters:
+  master-PIN-protected settings, separate prominent consent, supported-package
+  allowlisting, local ephemeral inspection, and unrestricted Android revocation.
+  Never use it as an app-monitoring reliability shortcut. See
+  [`docs/CONTENT_FILTERING.md`](docs/CONTENT_FILTERING.md).
 - Keep usage, settings, phone number, PIN material, and code state local. Cloud
   backup and device transfer must remain disabled unless a reviewed migration
   changes the privacy model.

@@ -13,7 +13,8 @@ final class MonitoringNotificationFactory {
     private MonitoringNotificationFactory() {
     }
 
-    static Notification build(Context context, String channelId, String monitoringIssue) {
+    static Notification build(Context context, String channelId, String monitoringIssue,
+            String contentFilterWarning) {
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager != null) {
             NotificationChannel channel = new NotificationChannel(
@@ -42,7 +43,17 @@ final class MonitoringNotificationFactory {
         boolean starting = monitoringIssue.equals(
                 context.getString(R.string.monitoring_issue_starting)
         ) && !emergencyPaused;
-        boolean needsAttention = !monitoringIssue.isEmpty() && !emergencyPaused && !starting;
+        boolean hasFilterWarning = contentFilterWarning != null && !contentFilterWarning.isEmpty()
+                && !emergencyPaused;
+        boolean needsAttention = (!monitoringIssue.isEmpty() || hasFilterWarning)
+                && !emergencyPaused && !starting;
+        String text = emergencyPaused
+                ? context.getString(R.string.notification_emergency_text)
+                : starting
+                ? context.getString(R.string.notification_starting_text)
+                : !monitoringIssue.isEmpty()
+                ? monitoringIssue : context.getString(R.string.notification_on_text);
+        if (hasFilterWarning) text += "\n" + contentFilterWarning;
 
         return new Notification.Builder(context, channelId)
                 .setContentTitle(emergencyPaused
@@ -52,13 +63,8 @@ final class MonitoringNotificationFactory {
                         : needsAttention
                         ? context.getString(R.string.notification_attention_title)
                         : context.getString(R.string.notification_on_title))
-                .setContentText(emergencyPaused
-                        ? context.getString(R.string.notification_emergency_text)
-                        : starting
-                        ? context.getString(R.string.notification_starting_text)
-                        : needsAttention
-                        ? monitoringIssue
-                        : context.getString(R.string.notification_on_text))
+                .setContentText(text)
+                .setStyle(new Notification.BigTextStyle().bigText(text))
                 .setSmallIcon(R.drawable.ic_stat_lock_clock)
                 .setContentIntent(openAirLock)
                 .setOngoing(true)

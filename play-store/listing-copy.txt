@@ -13,6 +13,8 @@ Need more time? Airlock opens your chosen SMS app with a request for your Keyhol
 
 Goose Duty includes clear permission checks, per-app usage totals, a persistent silent status notification, one-time emergency day passes, and recovery status when Android interrupts monitoring.
 
+On Android 13 or later, optional content filters can help you leave YouTube Shorts, Instagram Reels, Facebook Reels, Snapchat Spotlight, and Instagram Stories. These settings require the Master PIN. With your separate consent, Airlock uses Android Accessibility to inspect selected supported apps' interface metadata and automatically navigate Back from recognized screens. Screen content is not saved or transmitted. Filters follow Goose Duty and emergency day passes; extra app-time approvals do not disable them. Coverage varies by app version and language, and safety-critical apps are excluded. You can disable Accessibility access in Android settings at any time.
+
 Your selected apps, usage totals, limits, phone number, PIN hashes, and access-code state remain on your device. Airlock includes no ads, analytics, trackers, or online account.
 
 Airlock is an accountability aid, not tamper-proof parental-control or device-security software. A device owner can revoke Android access, force-stop the app, clear its data, or uninstall it.

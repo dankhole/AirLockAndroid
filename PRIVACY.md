@@ -1,6 +1,6 @@
 # Airlock Privacy Policy
 
-Effective date: August 23, 2026
+Effective date: October 31, 2026
 
 Airlock is a local-first app blocker. This policy explains what the app
 accesses, what it stores, and when information leaves the app.
@@ -12,6 +12,14 @@ accesses, what it stores, and when information leaves the app.
   user chooses to guard.
 - A Keyholder phone number entered directly by the user. Airlock does not read
   the device's contacts.
+- With separate consent and optional Accessibility access, supported selected
+  apps' interface metadata (package names, view identifiers, visibility, selection,
+  bounds, and limited Facebook accessibility descriptions), used to recognize
+  selected short-video or Stories screens and automatically navigate Back.
+  Accessibility descriptions may contain displayed post or message content;
+  Airlock compares bounded labels transiently, not their meaning. It does not
+  request text-change events, read text-field values, capture screenshots, or
+  save screen content.
 
 Airlock processes this information on the device. It does not upload app lists,
 usage history, or settings to an Airlock server.
@@ -21,6 +29,8 @@ usage history, or settings to an Airlock server.
 - Selected app package names.
 - Daily usage counters for selected apps.
 - Per-app daily limits.
+- Enabled content-filter choices and the accepted disclosure version. Interface
+  metadata used for filtering is processed transiently and is not stored or sent.
 - Keyholder phone number.
 - Master PIN hash, salt, and a PIN-derived approval lookup table. The plaintext
   PIN is not stored.
@@ -51,6 +61,12 @@ controlled by the user and by the selected SMS app and carrier.
 - Foreground Service: used to keep monitoring active while Airlock is not open.
 - Notifications: used to keep foreground-service and recovery status visible;
   Android 13+ requires a runtime permission.
+- Optional Accessibility Service: used only for consented content filters in
+  selected supported apps, not for ordinary app-time monitoring. Airlock inspects
+  the active interface to recognize selected feeds and performs Android Back to
+  leave them. Filtering follows Goose Duty and the emergency day pass. You can
+  withdraw consent in the PIN-protected content settings or disable the service
+  at any time in Android Accessibility settings; Airlock never obstructs that.
 
 Airlock does not request direct SMS read/send permissions.
 

@@ -1,17 +1,32 @@
 package com.dankhole.airlockandroid;
 
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.provider.Settings;
+import android.view.accessibility.AccessibilityManager;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.lang.reflect.Field;
+
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Debug-only deterministic state setup for emulator smoke tests. */
 public final class DebugFixtureReceiver extends BroadcastReceiver {
@@ -26,6 +41,7 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
     static final String EXTRA_DELAY_MS = "delay_ms";
     static final String EXTRA_TOKEN = "token";
 
+    private static final String COMMAND_CONTENT_FILTER_DIAGNOSTICS = "content_filter_diagnostics";
     private static final String COMMAND_RESET = "reset";
     private static final String COMMAND_SEED = "seed";
     private static final String COMMAND_FORCE_FOREGROUND_SANITY = "force_foreground_sanity";
@@ -39,6 +55,10 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         String command = intent.getStringExtra(EXTRA_COMMAND);
+        if (COMMAND_CONTENT_FILTER_DIAGNOSTICS.equals(command)) {
+            contentFilterDiagnostics(context);
+            return;
+        }
         if (COMMAND_RESET.equals(command)) {
             reset(context);
             succeed("reset");
@@ -79,6 +99,109 @@ public final class DebugFixtureReceiver extends BroadcastReceiver {
             return;
         }
         fail("Unknown fixture command: " + command);
+    }
+
+    /** Debug-only, bounded metadata query. Never retrieves accessibility windows or nodes. */
+    private void contentFilterDiagnostics(Context context) {
+        PendingResult pending = goAsync();
+        AtomicBoolean finished = new AtomicBoolean();
+        Handler main = new Handler(Looper.getMainLooper());
+        Runnable timeout = () -> finishDiagnostic(pending, finished, Activity.RESULT_CANCELED,
+                "content_filter_diagnostics:timeout");
+        main.postDelayed(timeout, ContentActionPolicy.WORK_TIMEOUT_MS);
+        if (!ContentFilterAccess.WORKER.tryExecute(() -> {
+            try {
+                JSONObject result = new JSONObject();
+                ComponentName target = new ComponentName(context, ContentFilterService.class);
+                result.put("schema", 1);
+                result.put("target", target.flattenToString());
+                String enabledSetting = Settings.Secure.getString(context.getContentResolver(),
+                        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+                boolean settingMatches = false;
+                if (enabledSetting != null) {
+                    for (String id : enabledSetting.split(":")) {
+                        settingMatches |= target.equals(ComponentName.unflattenFromString(id));
+                    }
+                }
+                result.put("setting_matches_target", settingMatches);
+                result.put("accessibility_enabled_setting", Settings.Secure.getInt(
+                        context.getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED, -1));
+                AccessibilityManager manager = context.getSystemService(AccessibilityManager.class);
+                if (manager == null) throw new IllegalStateException();
+                diagnosticServices(result, "generic", manager, target,
+                        AccessibilityServiceInfo.FEEDBACK_GENERIC);
+                diagnosticServices(result, "all", manager, target,
+                        AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
+                Object snapshot = diagnosticField(ContentFilterAccess.class, null, "platformSnapshot");
+                result.put("snapshot_access", snapshot == null ? "UNKNOWN"
+                        : diagnosticField(snapshot.getClass(), snapshot, "access").toString());
+                result.put("snapshot_age_ms", snapshot == null ? -1L
+                        : SystemClock.elapsedRealtime() - (long) diagnosticField(
+                                snapshot.getClass(), snapshot, "elapsedMs"));
+                ContentFilterService service;
+                synchronized (ContentFilterAccess.class) {
+                    service = (ContentFilterService) diagnosticField(
+                            ContentFilterAccess.class, null, "serviceOwner");
+                }
+                result.put("connected", service != null && (boolean) diagnosticField(
+                        ContentFilterService.class, service, "connected"));
+                result.put("cache_enabled", service != null
+                        && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                        ? service.isCacheEnabled() : JSONObject.NULL);
+                AccessibilityServiceInfo info = service == null ? null : service.getServiceInfo();
+                result.put("feedback_type", info == null ? -1 : info.feedbackType);
+                List<String> packages = info == null || info.packageNames == null ? null
+                        : new ArrayList<>(java.util.Arrays.asList(info.packageNames));
+                if (packages != null) Collections.sort(packages);
+                result.put("subscribed_packages", packages == null
+                        ? JSONObject.NULL : new JSONArray(packages));
+                finishDiagnostic(pending, finished, Activity.RESULT_OK, result.toString());
+            } catch (Exception failure) {
+                finishDiagnostic(pending, finished, Activity.RESULT_CANCELED,
+                        "content_filter_diagnostics:" + failure.getClass().getSimpleName());
+            } finally {
+                main.removeCallbacks(timeout);
+            }
+        })) {
+            main.removeCallbacks(timeout);
+            finishDiagnostic(pending, finished, Activity.RESULT_CANCELED,
+                    "content_filter_diagnostics:busy");
+        }
+    }
+
+    private static void diagnosticServices(JSONObject result, String prefix,
+            AccessibilityManager manager, ComponentName target, int mask) throws Exception {
+        List<AccessibilityServiceInfo> services = manager.getEnabledAccessibilityServiceList(mask);
+        List<String> ownIds = new ArrayList<>();
+        boolean match = false;
+        if (services != null) {
+            for (AccessibilityServiceInfo info : services) {
+                String id = info == null ? null : info.getId();
+                ComponentName component = id == null ? null : ComponentName.unflattenFromString(id);
+                if (component != null && target.getPackageName().equals(component.getPackageName())) {
+                    ownIds.add(id);
+                    match |= target.equals(component);
+                }
+            }
+        }
+        Collections.sort(ownIds);
+        result.put(prefix + "_count", services == null ? -1 : services.size());
+        result.put(prefix + "_own_ids", new JSONArray(ownIds));
+        result.put(prefix + "_matches_target", match);
+    }
+
+    private static Object diagnosticField(Class<?> owner, Object instance, String name)
+            throws Exception {
+        Field field = owner.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(instance);
+    }
+
+    private static void finishDiagnostic(PendingResult pending, AtomicBoolean finished,
+            int code, String data) {
+        if (!finished.compareAndSet(false, true)) return;
+        pending.setResult(code, data, null);
+        pending.finish();
     }
 
     @SuppressLint("ApplySharedPref")

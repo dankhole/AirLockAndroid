@@ -1,6 +1,6 @@
 # Airlock Product Plan
 
-Last updated: August 24, 2026
+Last updated: October 31, 2026
 
 ## Purpose
 
@@ -44,6 +44,9 @@ The MVP currently includes:
 - Four-digit request and approval codes. The platform-agnostic PIN calculation
   is implemented and accepted, while current debug and release build
   configurations also accept a fallback that adds 3 to each request-code digit modulo 10.
+- Optional PIN-locked content filters for supported Shorts/Reels/Spotlight
+  viewers and Instagram Stories, with separate local-only Accessibility consent.
+  They follow Duty and emergency pauses, not ordinary app-time approvals.
 - Three one-time emergency codes per replacement batch. Replacing a batch
   revokes the old one; each valid code pauses all blocking for 24 hours.
 
@@ -90,9 +93,10 @@ monitoring.
 
 - iOS, cloud accounts, remote dashboards, or cross-device sync.
 - Uninstall prevention, Device Owner enrollment, or tamper-proof enforcement.
-- Blocking specific in-app feeds, URLs, Reels, or Shorts.
-- Direct SMS permissions, broad installed-app visibility, or Accessibility
-  Service.
+- Universal in-app filtering, browser URLs, or semantic adult/violent-content
+  classification. Selected native surfaces are covered by the optional feature
+  described in `CONTENT_FILTERING.md`, not a general content-safety guarantee.
+- Direct SMS permissions or broad installed-app visibility.
 - Analytics, advertising, trackers, cloud backup, or app-usage uploads.
 - Settings-change delays, daily unlock caps, or a permanent audit history.
 

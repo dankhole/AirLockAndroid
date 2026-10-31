@@ -237,6 +237,23 @@ triggers. Neither component is merged into
 release builds. Smoke artifacts are written under
 `app/build/reports/android-smoke/`.
 
+### Content-Filter Settings Smoke
+
+After installing the current debug APK and `smoke-target` APK on exactly one
+emulator, run `python3 scripts/content-filter-smoke.py`. It destructively seeds
+and resets Airlock's debug fixture preferences, restores changed Android
+settings/access, and records sanitized reports under
+`app/build/reports/content-filter-smoke/`. It checks PIN/session and consent UI,
+not real third-party viewers or global Back. A bounded debug-only metadata query
+checks actual subscriptions and disabled cache without reading windows/nodes.
+UIAutomator can temporarily suppress services; configured Android access and live
+health remain separate. Host helpers are covered by
+`python3 -m unittest discover -s scripts/tests`.
+
+Selective filtering requires API 33+ public Accessibility cache controls; minSdk
+26 and existing Usage Access app limits remain unchanged. See
+`CONTENT_FILTERING.md` for supported surfaces and release qualification.
+
 ### Local Data And Backup
 
 App limits, usage totals, the Keyholder number, the salted PIN hash and

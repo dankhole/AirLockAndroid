@@ -12,6 +12,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -135,6 +136,9 @@ public class MonitoringService extends Service {
     private long nextForegroundPromotionAttemptElapsedMs;
     private long lastBackgroundRestrictionCheckElapsedMs;
     private String monitoringIssue = "";
+    private String contentFilterWarning = "";
+    private SharedPreferences.OnSharedPreferenceChangeListener contentFilterPreferenceListener;
+    private final Runnable contentFilterStatusListener = this::refreshContentFilterWarning;
     private int consecutiveOverlayFailures;
     private long nextOverlayAttemptElapsedMs;
     private Runnable overlayRemovalRetryRunnable;
@@ -192,6 +196,7 @@ public class MonitoringService extends Service {
                 previousServiceStartMs
         ));
         registerDeviceStateReceiver();
+        registerContentFilterStatusListener();
         emergencyPauseNotificationShown = Preferences.isEmergencyPauseActive(this);
         lastTickElapsedMs = SystemClock.elapsedRealtime();
         foregroundEvidenceStartMs = Math.max(0L,
@@ -253,6 +258,7 @@ public class MonitoringService extends Service {
         hideOverlay(false);
         flushUsageSafely(true, "final");
         unregisterDeviceStateReceiver();
+        unregisterContentFilterStatusListener();
         if (reconciliationHandler != null) {
             reconciliationHandler.removeCallbacksAndMessages(null);
         }
@@ -396,6 +402,7 @@ public class MonitoringService extends Service {
                 >= BACKGROUND_RESTRICTION_CHECK_INTERVAL_MS) {
             backgroundRestricted = AndroidPermissions.isBackgroundRestricted(this);
             lastBackgroundRestrictionCheckElapsedMs = elapsedNow;
+            refreshContentFilterWarning();
         }
         if (backgroundRestricted) {
             foregroundStatusRecoveryPending = true;
@@ -1917,7 +1924,57 @@ public class MonitoringService extends Service {
     }
 
     private Notification buildNotification() {
-        return MonitoringNotificationFactory.build(this, CHANNEL_ID, monitoringIssue);
+        return MonitoringNotificationFactory.build(
+                this, CHANNEL_ID, monitoringIssue, contentFilterWarning);
+    }
+
+    private void registerContentFilterStatusListener() {
+        try {
+            ContentFilterAccess.addListener(contentFilterStatusListener);
+            contentFilterPreferenceListener = (preferences, key) -> {
+                if (ContentFilterAccess.affectsConfiguration(key)) {
+                    handler.removeCallbacks(contentFilterStatusListener);
+                    handler.post(contentFilterStatusListener);
+                }
+            };
+            Preferences.prefs(this).registerOnSharedPreferenceChangeListener(
+                    contentFilterPreferenceListener);
+            refreshContentFilterWarning();
+        } catch (RuntimeException ignored) {
+            // The optional feature must not prevent ordinary monitor startup.
+        }
+    }
+
+    private void unregisterContentFilterStatusListener() {
+        handler.removeCallbacks(contentFilterStatusListener);
+        try {
+            ContentFilterAccess.removeListener(contentFilterStatusListener);
+            if (contentFilterPreferenceListener != null) {
+                Preferences.prefs(this).unregisterOnSharedPreferenceChangeListener(
+                        contentFilterPreferenceListener);
+            }
+        } catch (RuntimeException ignored) {
+            // Optional observer cleanup must not interrupt app-limit cleanup.
+        }
+    }
+
+    private void refreshContentFilterWarning() {
+        if (stopping) return;
+        String warning;
+        try {
+            // This API uses local settings/cache only and requests off-main platform probes.
+            warning = ContentFilterAccess.warning(this);
+        } catch (RuntimeException ignored) {
+            warning = getString(R.string.content_filter_status_unavailable);
+        }
+        if (!warning.equals(contentFilterWarning)) {
+            contentFilterWarning = warning;
+            try {
+                updateForegroundNotification();
+            } catch (RuntimeException ignored) {
+                // Do not turn an optional status refresh into an app-limit failure.
+            }
+        }
     }
 
     private String appLabel(String packageName) {

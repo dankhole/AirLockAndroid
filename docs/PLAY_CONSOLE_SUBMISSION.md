@@ -1,12 +1,18 @@
 # Play Console Submission Draft
 
-Last updated: August 31, 2026
+Last updated: October 31, 2026
 
 This document contains copy-ready values for the first Airlock internal
 test. Re-check them against the shipped build whenever behavior or data handling
 changes.
 
 ## Current Readiness
+
+Release identity/history below is an older submission draft; use
+`PROJECT_STATUS.md` for the actual published version. The optional content-filter
+source change requires the Accessibility declaration and review below before a
+new bundle is distributed. Existing published builds do not establish approval
+for this new sensitive API use.
 
 | Item | Status |
 | --- | --- |
@@ -94,6 +100,8 @@ Choose the apps you want to guard and give each one a daily time limit. Airlock 
 Need more time? Airlock opens your chosen SMS app with a request for your Keyholder. The reply code is tied to the amount of extra time requested. Airlock does not read or send SMS messages itself.
 
 Goose Duty includes clear permission checks, per-app usage totals, a persistent silent status notification, one-time emergency day passes, and recovery status when Android interrupts monitoring.
+
+On Android 13 or later, optional content filters can help you leave YouTube Shorts, Instagram Reels, Facebook Reels, Snapchat Spotlight, and Instagram Stories. These settings require the Master PIN. With your separate consent, Airlock uses Android Accessibility to inspect selected supported apps' interface metadata and automatically navigate Back from recognized screens. Screen content is not saved or transmitted. Filters follow Goose Duty and emergency day passes; extra app-time approvals do not disable them. Coverage varies by app version and language, and safety-critical apps are excluded. You can disable Accessibility access in Android settings at any time.
 
 Your selected apps, usage totals, limits, phone number, PIN hashes, and access-code state remain on your device. Airlock includes no ads, analytics, trackers, or online account.
 
@@ -185,6 +193,9 @@ collect or share user data as those terms are defined by the Data safety form:
 
 - App inventory, usage events, settings, phone number, and code state are
   processed and stored on device.
+- Optional Accessibility interface metadata is inspected only transiently on
+  device; content is not saved or transmitted. Filter choices and consent version
+  are stored locally. Recheck these facts against the exact submitted bundle.
 - No SDK or Airlock server receives data.
 - The SMS-app handoff occurs only after the user taps the text action and is a
   user-initiated transfer the user expects.
@@ -199,6 +210,33 @@ Master PIN is not stored, but its salted hash and a PIN-derived table of
 four-digit approval results are app-private. Pending approval values, requested
 minutes, and expiry remain temporarily. Emergency codes remain salted hashes.
 The approval calculation is a deterrent, not secure authentication.
+
+## Accessibility Service Declaration — Required Before Distribution
+
+Airlock is not a disability-assistance accessibility tool; do not mark it as one.
+Describe the optional, user-configured content filtering and why Usage Access
+cannot recognize individual in-app feeds. The service inspects narrowly scoped
+interface metadata transiently on-device and performs deterministic Android Back
+when a selected supported surface is recognized. It does not collect screen
+content, type text, take screenshots, prevent disable/uninstall, or use a backend.
+
+Before a bundle containing the service is distributed:
+
+1. Complete the Accessibility API declaration for the actual build in Play Console.
+2. Publish the matching privacy policy and listing disclosure, and verify the URL.
+3. Provide a review video showing the PIN-locked submenu; prominent disclosure;
+   both decline and affirmative consent paths; Android permission enablement;
+   a selected feed being exited while ordinary screens remain usable; and
+   unrestricted Android disable/revocation with truthful unavailable status.
+4. Show that all filters default off and enabling the service through Android
+   without in-app consent cannot inspect content. PIN knowledge is not consent.
+5. Verify app versions/locales and critical-handler exclusions on physical devices.
+6. Recheck current policy and Console requirements. Approval is not guaranteed,
+   and the existing foreground-service declaration does not cover Accessibility.
+
+See <https://support.google.com/googleplay/android-developer/answer/10964491>
+and <https://support.google.com/googleplay/android-developer/answer/16558241>.
+Owner Console actions, video submission and review remain uncompleted release gates.
 
 ## Foreground Service Declaration
 

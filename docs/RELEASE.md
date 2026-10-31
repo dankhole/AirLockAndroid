@@ -1,6 +1,6 @@
 # Release Guide
 
-Last updated: September 14, 2026
+Last updated: October 31, 2026
 
 This guide covers the two supported ways to share Airlock builds:
 
@@ -158,6 +158,13 @@ new-personal-account closed-test requirement.
    `docs/PLAY_CONSOLE_SUBMISSION.md`. Apps targeting Android 14+ must declare
    their foreground-service types; do not assume Internal testing is exempt.
 
+A bundle containing the optional Accessibility content filters also requires
+the separate declaration, prominent-disclosure demonstration and review described
+in `PLAY_CONSOLE_SUBMISSION.md`. Recheck the public policy/listing, GPL source
+and notice obligations (`THIRD_PARTY_NOTICES.md`), and physical-device supported
+app matrix before distribution. Prior Internal-track acceptance is not approval
+for this new API use.
+
 ### Ship an Internal Test Build
 
 1. Open **Testing > Internal testing > Releases**.
@@ -275,7 +282,7 @@ the workflow does not bypass it or silently downgrade to an unpublished draft.
 
 CI supplies `-PairlockVersionCode` through Gradle's environment-property support;
 the checked-in local default stays at 8. `versionName` remains the human-managed
-value in `app/build.gradle`, currently `0.1.8`. Update it for a named release.
+value in `app/build.gradle`, currently `0.1.9`. Update it for a named release.
 Play release names use `Airlock <version code>` so CI uploads are distinguishable.
 After CI starts publishing, any later manual upload must also exceed Play's
 highest code; the old local default cannot be uploaded as an update.
